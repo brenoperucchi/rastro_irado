@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS market_bars (
     low             REAL NOT NULL,
     close           REAL NOT NULL,
     volume          REAL,
+    real_volume     REAL DEFAULT 0,
+    delta           REAL DEFAULT 0,
     received_at     TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (symbol, timeframe, timestamp_utc)
 );
@@ -87,6 +89,23 @@ def init_db(db_path=None):
     conn.executescript(SCHEMA)
     conn.commit()
     print(f"Database initialized: {db_path or DB_PATH}")
+    conn.close()
+
+
+def migrate_delta(db_path=None):
+    """Adiciona colunas real_volume e delta se não existirem (migração)."""
+    conn = get_connection(db_path)
+    cursor = conn.execute("PRAGMA table_info(market_bars)")
+    cols = {row["name"] for row in cursor}
+
+    if "real_volume" not in cols:
+        conn.execute("ALTER TABLE market_bars ADD COLUMN real_volume REAL DEFAULT 0")
+        print("  + coluna real_volume adicionada")
+    if "delta" not in cols:
+        conn.execute("ALTER TABLE market_bars ADD COLUMN delta REAL DEFAULT 0")
+        print("  + coluna delta adicionada")
+
+    conn.commit()
     conn.close()
 
 

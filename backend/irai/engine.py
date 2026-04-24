@@ -57,6 +57,11 @@ class IRAISnapshot:
     win_open: float = 0.0
     win_current: float = 0.0
     stale_factors: list = field(default_factory=list)
+    # Cumulative Delta
+    bar_delta: float = 0.0
+    cum_delta: float = 0.0
+    cum_delta_norm: float = 0.0       # normalizado pelo volume médio
+    flow_confirms: Optional[bool] = None  # True=confirma, False=diverge, None=neutro
 
 
 def sigmoid(x: float) -> float:
@@ -234,7 +239,7 @@ class IRAIEngine:
         all_symbols = [TARGET] + FACTORS
         placeholders = ",".join(["?"] * len(all_symbols))
         query = f"""
-            SELECT symbol, timestamp_utc, open, close
+            SELECT symbol, timestamp_utc, open, high, low, close, real_volume, delta
             FROM market_bars
             WHERE timeframe = 'M5'
               AND symbol IN ({placeholders})
@@ -281,6 +286,8 @@ class IRAIEngine:
         win_bars = df[df["symbol"] == TARGET].sort_values("timestamp")
         n_bars = len(win_bars)
         snapshots = []
+        cum_delta = 0.0
+        cum_real_vol = 0.0
 
         for bar_idx, (_, win_row) in enumerate(win_bars.iterrows()):
             ts = win_row["timestamp"]
@@ -299,6 +306,36 @@ class IRAIEngine:
                 session_date=session_date,
             )
             snap.timestamp = ts.isoformat()
+
+            # Cumulative Delta
+            bar_d = float(win_row["delta"]) if "delta" in win_row.index and win_row["delta"] else 0.0
+            rv = float(win_row["real_volume"]) if "real_volume" in win_row.index and win_row["real_volume"] else 0.0
+            cum_delta += bar_d
+            cum_real_vol += rv
+
+            snap.bar_delta = round(bar_d, 0)
+            snap.cum_delta = round(cum_delta, 0)
+
+            # Normalizar: cum_delta / volume médio por barra * n_barras
+            avg_vol = cum_real_vol / (bar_idx + 1) if bar_idx >= 0 else 1
+            if avg_vol > 0:
+                snap.cum_delta_norm = round(cum_delta / avg_vol, 3)
+            else:
+                snap.cum_delta_norm = 0.0
+
+            # Flow confirms: delta positivo + P_up > 55 = confirma compra
+            #                delta negativo + P_up < 45 = confirma venda
+            if snap.p_up > 55 and cum_delta > 0:
+                snap.flow_confirms = True
+            elif snap.p_up < 45 and cum_delta < 0:
+                snap.flow_confirms = True
+            elif snap.p_up > 55 and cum_delta < 0:
+                snap.flow_confirms = False
+            elif snap.p_up < 45 and cum_delta > 0:
+                snap.flow_confirms = False
+            else:
+                snap.flow_confirms = None  # neutro / indeciso
+
             snapshots.append(snap)
 
         return snapshots

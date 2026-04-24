@@ -23,7 +23,7 @@ function barToTime(barIdx) {
 }
 
 /* ── Big Gauge ────────────────────────────────────── */
-function SignalGauge({ pUp, verdict, score, winReturn }) {
+function SignalGauge({ pUp, verdict, score, winReturn, flowConfirms, cumDeltaNorm }) {
   const isBuy = pUp >= 60
   const isSell = pUp <= 40
   const isNeutral = !isBuy && !isSell
@@ -88,8 +88,8 @@ function SignalGauge({ pUp, verdict, score, winReturn }) {
         </div>
       </div>
 
-      {/* WIN return */}
-      <div style={{ textAlign: 'right', minWidth: 130 }}>
+      {/* WIN return + flow */}
+      <div style={{ textAlign: 'right', minWidth: 150 }}>
         <div style={{
           fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.12em',
           color: '#64748B', textTransform: 'uppercase', marginBottom: 4,
@@ -99,10 +99,21 @@ function SignalGauge({ pUp, verdict, score, winReturn }) {
           color: winReturn >= 0 ? '#4ADE80' : '#F87171',
         }}>{winReturn >= 0 ? '+' : ''}{winReturn.toFixed(2)}%</div>
         <div style={{
-          marginTop: 6, fontFamily: 'var(--font-mono)', fontSize: 11,
-          color: winReturn * (pUp - 50) > 0 ? '#4ADE80' : '#F59E0B',
+          marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 11,
+          padding: '4px 10px', borderRadius: 4, display: 'inline-block',
+          background: flowConfirms === true ? 'rgba(74,222,128,0.12)'
+                    : flowConfirms === false ? 'rgba(251,191,36,0.12)'
+                    : 'rgba(148,163,184,0.08)',
+          color: flowConfirms === true ? '#4ADE80'
+               : flowConfirms === false ? '#FBBF24'
+               : '#64748B',
+          border: `1px solid ${flowConfirms === true ? 'rgba(74,222,128,0.2)'
+                             : flowConfirms === false ? 'rgba(251,191,36,0.2)'
+                             : 'rgba(148,163,184,0.1)'}`,
         }}>
-          {winReturn * (pUp - 50) > 0 ? '✓ IRAI confirma' : '⚡ divergência'}
+          {flowConfirms === true ? '✓ FLUXO CONFIRMA'
+           : flowConfirms === false ? '⚠ FLUXO DIVERGE'
+           : '— fluxo neutro'}
         </div>
       </div>
     </div>
@@ -327,6 +338,8 @@ export default function App() {
               verdict={now.verdict}
               score={now.score}
               winReturn={now.win_return}
+              flowConfirms={now.flow_confirms}
+              cumDeltaNorm={now.cum_delta_norm}
             />
 
             {/* ── MAIN CHART + FACTORS ── */}
@@ -410,6 +423,61 @@ export default function App() {
                     <Line yAxisId="pup" type="monotone" dataKey="p_up" stroke="#D4A84C" strokeWidth={2} dot={false} strokeDasharray="6 3" isAnimationActive={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
+
+                {/* ── CUMULATIVE DELTA MINI-CHART ── */}
+                <div style={{ marginTop: 4, paddingTop: 8, borderTop: '1px solid #1E293B22' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9, color: '#475569',
+                      letterSpacing: '0.1em', textTransform: 'uppercase',
+                    }}>
+                      📊 cumulative delta · fluxo de ordens
+                    </div>
+                    <div style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+                      color: now.cum_delta >= 0 ? '#4ADE80' : '#F87171',
+                    }}>
+                      {now.cum_delta >= 0 ? '▲' : '▼'} {(now.cum_delta / 1000).toFixed(0)}k
+                      <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
+                        norm {now.cum_delta_norm >= 0 ? '+' : ''}{now.cum_delta_norm?.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={60}>
+                    <ComposedChart data={series} margin={{ top: 2, right: 45, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="deltaPos" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#4ADE80" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#4ADE80" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="deltaNeg" x1="0" y1="1" x2="0" y2="0">
+                          <stop offset="0%" stopColor="#F87171" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#F87171" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="time" hide />
+                      <YAxis hide />
+                      <ReferenceLine y={0} stroke="#334155" strokeWidth={1} />
+                      <Area
+                        type="monotone" dataKey="cum_delta" stroke="none"
+                        fill="url(#deltaPos)" isAnimationActive={false}
+                        baseValue={0}
+                      />
+                      <Line
+                        type="monotone" dataKey="cum_delta" dot={false}
+                        stroke={now.cum_delta >= 0 ? '#4ADE80' : '#F87171'}
+                        strokeWidth={1.5} isAnimationActive={false}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between',
+                    fontFamily: 'var(--font-mono)', fontSize: 8, color: '#334155', marginTop: 2,
+                  }}>
+                    <span>acima da linha = compradores dominam</span>
+                    <span>abaixo = vendedores dominam</span>
+                  </div>
+                </div>
               </div>
 
               {/* Factor signals */}

@@ -174,6 +174,10 @@ def _snap_to_dict(snap) -> dict:
         "win_open": snap.win_open,
         "win_current": snap.win_current,
         "stale_factors": snap.stale_factors,
+        "bar_delta": snap.bar_delta,
+        "cum_delta": snap.cum_delta,
+        "cum_delta_norm": snap.cum_delta_norm,
+        "flow_confirms": snap.flow_confirms,
     }
 
 

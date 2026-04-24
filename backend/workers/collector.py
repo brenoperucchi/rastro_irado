@@ -48,6 +48,15 @@ logging.basicConfig(
 log = logging.getLogger("collector")
 
 
+def compute_bar_delta(open_p, high, low, close, real_volume):
+    """Aproximação de delta por posição de close na barra."""
+    bar_range = high - low
+    if bar_range <= 0 or real_volume <= 0:
+        return 0.0
+    close_pct = (close - low) / bar_range  # 0..1
+    return real_volume * (2 * close_pct - 1)
+
+
 def collect_recent_bars(symbol: str, source: str, conn: sqlite3.Connection, n_bars: int = 5) -> int:
     """Coleta as N barras M5 mais recentes de um símbolo."""
     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, n_bars)
@@ -62,14 +71,19 @@ def collect_recent_bars(symbol: str, source: str, conn: sqlite3.Connection, n_ba
         ts = datetime.fromtimestamp(bar[0], tz=timezone.utc)
         ts_iso = ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+        o, h, l, c = float(bar[1]), float(bar[2]), float(bar[3]), float(bar[4])
+        tick_vol = float(bar[5]) if bar[5] else 0
+        real_vol = float(bar[7]) if len(bar) > 7 and bar[7] else 0
+        delta = compute_bar_delta(o, h, l, c, real_vol)
+
         try:
             cursor.execute(
                 """INSERT OR IGNORE INTO market_bars
-                   (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (symbol, source, "M5", ts_iso,
-                 float(bar[1]), float(bar[2]), float(bar[3]), float(bar[4]),
-                 float(bar[5]) if bar[5] else 0),
+                   (symbol, source, timeframe, timestamp_utc, open, high, low, close,
+                    volume, real_volume, delta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (symbol, source, "M5", ts_iso, o, h, l, c,
+                 tick_vol, real_vol, delta),
             )
             if cursor.rowcount > 0:
                 inserted += 1
