@@ -11,7 +11,7 @@ Requer: MT5 já inicializado no terminal BR (XP).
 
 import math
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 
 log = logging.getLogger("iv_calc")
 
@@ -84,6 +84,12 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
     """
     Descobre a opção ATM call do front-month para o ativo subjacente.
 
+    Filtros aplicados:
+    - Habilita symbols via symbol_select (necessário no MT5)
+    - Ignora opções semanais (sufixo W1..W5)
+    - Seleciona strike mais próximo do spot com preço válido
+    - Usa last price como fallback se bid/ask = 0 (after-hours)
+
     Returns:
         dict com {symbol, strike, spot, mid_price, days_to_expiry, series_letter}
         ou None se não encontrar.
@@ -91,11 +97,20 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
     mt5 = mt5_module
 
     # 1. Preço spot do subjacente
+    mt5.symbol_select(underlying, True)
     tick = mt5.symbol_info_tick(underlying)
-    if tick is None or tick.bid <= 0:
+    if tick is None:
         log.warning(f"Sem tick para {underlying}")
         return None
-    spot = (tick.bid + tick.ask) / 2 if tick.ask > 0 else tick.bid
+
+    # Preferir bid/ask, fallback para last
+    if tick.bid > 0 and tick.ask > 0:
+        spot = (tick.bid + tick.ask) / 2
+    elif tick.last > 0:
+        spot = tick.last
+    else:
+        log.warning(f"Sem preço para {underlying}")
+        return None
 
     # 2. Determinar série (letra) do mês corrente e próximo
     today = date.today()
@@ -104,11 +119,10 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
     current_letter = CALL_SERIES[current_month]
     next_letter = CALL_SERIES[next_month]
 
-    # 3. Listar opções disponíveis
-    # Pattern: BOVA + letter + strike (ex: BOVAE115, BOVAF120)
+    # 3. Prefix: BOVA11 -> BOVA
     prefix = underlying.replace("11", "")  # "BOVA"
 
-    # Tentar mês corrente primeiro, depois próximo
+    # 4. Tentar mês corrente primeiro, depois próximo
     for series_letter in [current_letter, next_letter]:
         pattern = f"{prefix}{series_letter}*"
         symbols = mt5.symbols_get(pattern)
@@ -117,35 +131,56 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
             log.debug(f"Nenhum symbol para pattern {pattern}")
             continue
 
-        # 4. Filtrar symbols válidos e encontrar ATM
+        # 5. Filtrar: ignorar semanais (W suffix) e strikes fora do range ATM
         candidates = []
         for sym_info in symbols:
             name = sym_info.name
-            # Extrair strike do nome (números após a letra de série)
-            strike_str = name[len(prefix) + 1:]  # Remove "BOVA" + letter
+
+            # Ignorar opções semanais (BOVAE187W2, BOVAE187W4, etc.)
+            suffix = name[len(prefix) + 1:]  # Tudo após "BOVAE"
+            if "W" in suffix:
+                continue
+
+            # Extrair strike do nome
+            strike_str = suffix
             try:
                 strike = float(strike_str)
-                # Alguns tickers podem ter formato com decimais
-                if strike > 1000:
-                    strike = strike / 100  # ex: 11500 -> 115.00
-                elif strike > 200:
-                    strike = strike / 10   # ex: 1150 -> 115.0
             except ValueError:
                 continue
 
+            # Filtrar range: só considerar strikes ±15 do spot
+            if abs(strike - spot) > 15:
+                continue
+
+            # Habilitar symbol no Market Watch (necessário para tick data)
+            mt5.symbol_select(name, True)
+
             # Pegar preço da opção
             opt_tick = mt5.symbol_info_tick(name)
-            if opt_tick is None:
-                continue
+            bid = opt_tick.bid if opt_tick and opt_tick.bid > 0 else 0
+            ask = opt_tick.ask if opt_tick and opt_tick.ask > 0 else 0
+            last = opt_tick.last if opt_tick and opt_tick.last > 0 else 0
 
-            bid = opt_tick.bid if opt_tick.bid > 0 else 0
-            ask = opt_tick.ask if opt_tick.ask > 0 else 0
+            # Fallback: se tick vazio, forçar carga de ticks históricos
+            if bid <= 0 and ask <= 0 and last <= 0:
+                now_utc = datetime.now(timezone.utc)
+                ticks = mt5.copy_ticks_range(
+                    name, now_utc - timedelta(hours=12), now_utc,
+                    mt5.COPY_TICKS_ALL
+                )
+                if ticks is not None and len(ticks) > 0:
+                    t = ticks[-1]
+                    bid = float(t["bid"]) if t["bid"] > 0 else 0
+                    ask = float(t["ask"]) if t["ask"] > 0 else 0
+                    last = float(t["last"]) if t["last"] > 0 else 0
 
-            # Pular opções sem preço
-            if bid <= 0 and ask <= 0:
-                continue
-
-            mid = (bid + ask) / 2 if ask > 0 and bid > 0 else max(bid, ask)
+            # Determinar mid price: bid/ask preferido, last como fallback
+            if bid > 0 and ask > 0:
+                mid = (bid + ask) / 2
+            elif last > 0:
+                mid = last
+            else:
+                continue  # sem preço algum
 
             candidates.append({
                 "symbol": name,
@@ -153,17 +188,19 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
                 "mid_price": mid,
                 "bid": bid,
                 "ask": ask,
+                "last": last,
                 "distance": abs(strike - spot),
                 "series_letter": series_letter,
             })
 
         if not candidates:
+            log.debug(f"Serie {series_letter}: 0 candidates com preco no range ATM")
             continue
 
-        # 5. Selecionar ATM (menor distância do spot)
+        # 6. Selecionar ATM (menor distância do spot)
         atm = min(candidates, key=lambda x: x["distance"])
 
-        # 6. Calcular dias até vencimento (3ª sexta-feira do mês)
+        # 7. Calcular dias até vencimento (3ª sexta-feira do mês)
         expiry_month = current_month if series_letter == current_letter else next_month
         expiry_year = today.year if expiry_month >= current_month else today.year + 1
         days = _days_to_expiry(today, expiry_year, expiry_month)
@@ -171,6 +208,10 @@ def find_atm_option(mt5_module, underlying="BOVA11"):
         if days <= 0:
             # Expiração já passou, pular para próximo mês
             continue
+
+        log.info(f"ATM encontrada: {atm['symbol']} K={atm['strike']:.0f} "
+                 f"spot={spot:.2f} mid={atm['mid_price']:.2f} "
+                 f"({len(candidates)} candidates)")
 
         return {
             "symbol": atm["symbol"],
