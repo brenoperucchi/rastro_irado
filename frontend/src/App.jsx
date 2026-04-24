@@ -429,12 +429,12 @@ export default function App() {
                   <CartesianGrid stroke="#1E293B" vertical={false} />
                   <XAxis dataKey="time" tick={false} stroke="#1E293B" />
                   <YAxis
-                    yAxisId="win" orientation="left"
+                    yAxisId="win" orientation="left" width={45}
                     tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
                     stroke="#1E293B" tickFormatter={v => `${Number(v).toFixed(1)}%`}
                   />
                   <YAxis
-                    yAxisId="pup" orientation="right" domain={[0, 100]}
+                    yAxisId="pup" orientation="right" width={35} domain={[0, 100]}
                     ticks={[0, 25, 50, 75, 100]}
                     tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
                     stroke="#1E293B" tickFormatter={v => `${v}%`}
@@ -484,23 +484,25 @@ export default function App() {
                       stroke="#1E293B" interval={11}
                     />
                     <YAxis
+                      yAxisId="delta" orientation="left" width={45}
                       tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
                       stroke="#1E293B"
                       tickFormatter={v => `${(v / 1000).toFixed(0)}k`}
                     />
-                    <ReferenceLine y={0} stroke="#475569" strokeWidth={1} strokeDasharray="4 4" />
+                    <YAxis yAxisId="spacer" orientation="right" width={35} tick={false} stroke="transparent" />
+                    <ReferenceLine yAxisId="delta" y={0} stroke="#475569" strokeWidth={1} strokeDasharray="4 4" />
                     <Tooltip
                       formatter={(v) => [`${(v / 1000).toFixed(1)}k`, 'Delta']}
                       contentStyle={{ background: '#0F172A', border: '1px solid #1E293B', borderRadius: 4, fontFamily: 'JetBrains Mono', fontSize: 11 }}
                       labelStyle={{ color: '#94A3B8' }}
                     />
                     <Area
-                      type="monotone" dataKey="cum_delta" stroke="none"
+                      yAxisId="delta" type="monotone" dataKey="cum_delta" stroke="none"
                       fill="url(#deltaPos)" isAnimationActive={false}
                       baseValue={0}
                     />
                     <Line
-                      type="monotone" dataKey="cum_delta" dot={false}
+                      yAxisId="delta" type="monotone" dataKey="cum_delta" dot={false}
                       stroke={now.cum_delta >= 0 ? '#4ADE80' : '#F87171'}
                       strokeWidth={1.5} isAnimationActive={false}
                     />
