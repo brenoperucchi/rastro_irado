@@ -1,9 +1,9 @@
 # SPEC — IRAI (Intraday Risk Appetite Index)
 
-**Versão:** 0.1 (MVP)
-**Status:** Draft
+**Versão:** 1.0 (Produção)
+**Status:** Operacional
 **Complementa:** PRD.md
-**Última atualização:** 2026-04-23
+**Última atualização:** 2026-04-24
 
 ---
 
@@ -13,50 +13,49 @@
 
 ```
 ┌────────────────────────┐         ┌────────────────────────┐
-│  MT5 Terminal BR       │         │  MT5 Terminal INTL     │
-│  (broker nacional)     │         │  (broker offshore)     │
-│  símbolos: IBOV, WIN   │         │  símbolos: VIX, DXY,   │
-│                        │         │           EWZ, US10Y   │
+│  MT5 Terminal BR (XP)  │         │  MT5 Terminal Tickmill  │
+│  símbolos: WIN$N,      │         │  símbolos: DXY, BRENT,  │
+│           DOL$N, DI1$N│         │  CHINA50, USDMXN        │
 └───────────┬────────────┘         └───────────┬────────────┘
             │                                  │
-            │ mt5.initialize(path=...)         │ mt5.initialize(path=...)
-            │                                  │
-┌───────────▼────────────┐         ┌───────────▼────────────┐
-│  worker_br.py          │         │  worker_intl.py        │
-│  APScheduler 5min      │         │  APScheduler 5min      │
-│  reconnect + backoff   │         │  reconnect + backoff   │
-└───────────┬────────────┘         └───────────┬────────────┘
-            │                                  │
-            │   INSERT OR IGNORE INTO market_bars
+            │   mt5.initialize(path=...)       │ (sequencial)
             │                                  │
             └──────────────┬───────────────────┘
                            ▼
-                  ┌─────────────────┐
-                  │  SQLite         │
-                  │  irai.db        │
-                  │  WAL mode       │
-                  └────────┬────────┘
-                           │
-                           │ SELECT
-                           ▼
-                  ┌─────────────────┐
-                  │  FastAPI        │
-                  │  irai_api.py    │
-                  │  port 8000      │
-                  └────────┬────────┘
-                           │
-                           │ REST (+ WS em V2)
-                           ▼
-                  ┌─────────────────┐
-                  │  React Dashboard│
-                  │  Vite port 5173 │
-                  └─────────────────┘
+              ┌────────────────────┐
+              │  collector.py          │
+              │  loop 30s, sequencial  │
+              │  (BR → Tickmill)       │
+              └──────────┬─────────┘
+                         │
+                         │  INSERT OR IGNORE INTO market_bars
+                         ▼
+                ┌─────────────────┐
+                │  SQLite         │
+                │  irai.db        │
+                │  WAL mode       │
+                └────────┬────────┘
+                         │
+                         │ SELECT (sob demanda)
+                         ▼
+                ┌─────────────────┐
+                │  FastAPI        │
+                │  main.py        │
+                │  port 8888      │
+                └────────┬────────┘
+                         │
+                         │ REST (polling 30s)
+                         ▼
+                ┌─────────────────┐
+                │  React Dashboard│
+                │  Vite port 5175 │
+                └─────────────────┘
 
-                  ┌─────────────────┐
-                  │  calibrate.py   │──── roda offline, semanal
-                  │  atualiza       │
-                  │  model_params   │
-                  └─────────────────┘
+                ┌─────────────────┐
+                │ calibrate_m5.py │──── roda offline, semanal
+                │ atualiza        │
+                │ model_params    │
+                └─────────────────┘
 ```
 
 ### 1.2 Princípios de design
@@ -71,13 +70,13 @@
 
 ## 2. Componentes
 
-### 2.1 `worker_br.py`
+### 2.1 `collector.py`
 
-**Responsabilidade:** conectar ao MT5 BR, coletar barras de 5 min dos símbolos nacionais, gravar em SQLite.
+**Responsabilidade:** conectar sequencialmente aos 2 terminais MT5 (XP e Tickmill), coletar barras M5 dos 7 símbolos, gravar em SQLite.
 
-**Símbolos (configuráveis em `.env`):**
-- `SYMBOL_IBOV_BR` — nome do índice IBOV à vista (varia por broker; ex: `IBOV`, `IBOVESPA`).
-- `SYMBOL_WIN_BR` — mini contrato de IBOV (ex: `WIN$N`, `WINFUT`).
+**Símbolos:**
+- **XP:** `WIN$N`, `DOL$N`, `DI1$N` (target + 2 fatores locais)
+- **Tickmill:** `DXY`, `BRENT`, `CHINA50`, `USDMXN` (4 fatores internacionais)
 
 **Ciclo de vida:**
 1. No startup: `mt5.initialize(path=MT5_BR_PATH, login=..., password=..., server=...)`.
@@ -185,15 +184,20 @@ Exemplo de estado inicial em `model_params`:
 
 | param_name      | value   | effective_from       |
 |-----------------|---------|----------------------|
-| w_ewz           | +0.45   | 2026-04-23T00:00:00Z |
-| w_vix           | −0.30   | 2026-04-23T00:00:00Z |
-| w_dxy           | −0.25   | 2026-04-23T00:00:00Z |
-| w_us10y         | +0.10   | 2026-04-23T00:00:00Z |
-| alpha           | 1.20    | 2026-04-23T00:00:00Z |
-| sigma_ewz_daily | 0.018   | 2026-04-23T00:00:00Z |
-| sigma_vix_daily | 0.050   | 2026-04-23T00:00:00Z |
-| sigma_dxy_daily | 0.004   | 2026-04-23T00:00:00Z |
-| sigma_us10y_daily | 0.020 | 2026-04-23T00:00:00Z |
+| w_dol           | −0.414  | 2026-04-24T00:00:00Z |
+| w_di            | −0.293  | 2026-04-24T00:00:00Z |
+| w_china         | +0.141  | 2026-04-24T00:00:00Z |
+| w_mxn           | −0.041  | 2026-04-24T00:00:00Z |
+| w_dxy           | +0.029  | 2026-04-24T00:00:00Z |
+| w_brent         | +0.019  | 2026-04-24T00:00:00Z |
+| alpha           | 1.3065  | 2026-04-24T00:00:00Z |
+| intercept       | 0.1580  | 2026-04-24T00:00:00Z |
+| sigma_dol       | 0.00559 | 2026-04-24T00:00:00Z |
+| sigma_di        | 0.00631 | 2026-04-24T00:00:00Z |
+| sigma_dxy       | 0.00281 | 2026-04-24T00:00:00Z |
+| sigma_brent     | 0.01767 | 2026-04-24T00:00:00Z |
+| sigma_china     | 0.00311 | 2026-04-24T00:00:00Z |
+| sigma_mxn       | 0.00373 | 2026-04-24T00:00:00Z |
 
 Consulta pra pegar parâmetros vigentes em uma data:
 
