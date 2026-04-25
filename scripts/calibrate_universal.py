@@ -199,22 +199,15 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
 def save_to_db(conn, target, slug, result):
     """Salva pesos no model_params e atualiza asset_models."""
     effective = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    prefix = f"{slug}_" if slug not in ("win",) else ""
-    # WIN usa prefixo vazio, WDO usa "wdo_", resto usa slug
-    if slug == "wdo":
-        prefix = "wdo_"
-    elif slug == "win":
-        prefix = ""
-    else:
-        prefix = f"{slug}_"
+    prefix = f"{slug}_"
 
     params = []
     for label, w in result["weights"].items():
         params.append((f"{prefix}w_{label}", w, effective))
     for label, s in result["sigmas"].items():
         params.append((f"{prefix}sigma_{label}", s, effective))
-    params.append((f"{prefix}alpha" if prefix else "alpha", result["alpha"], effective))
-    params.append((f"{prefix}intercept" if prefix else "intercept", result["intercept"], effective))
+    params.append((f"{prefix}alpha", result["alpha"], effective))
+    params.append((f"{prefix}intercept", result["intercept"], effective))
 
     conn.executemany(
         "INSERT OR REPLACE INTO model_params (param_name, value, effective_from) VALUES (?, ?, ?)",

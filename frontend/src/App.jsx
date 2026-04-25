@@ -449,25 +449,17 @@ export default function App() {
               }} />
               <span>{wsConnected ? 'LIVE' : `${nextRefresh}s`}</span>
             </div>
-            {/* Target selector tabs */}
-            <div style={{
-              display: 'flex', gap: 0, border: '1px solid #334155', borderRadius: 4,
-              overflow: 'hidden',
-            }}>
-              {targetsMeta.map((t, i) => (
-                <button key={t.target}
-                  onClick={() => setSelectedTarget(t.target)}
-                  style={{
-                    background: selectedTarget === t.target ? '#334155' : '#1E293B',
-                    color: selectedTarget === t.target ? '#E2E8F0' : '#64748B',
-                    border: 'none', padding: '5px 14px', cursor: 'pointer',
-                    fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                    transition: 'all 0.2s ease',
-                    borderRight: i !== targetsMeta.length - 1 ? '1px solid #334155' : 'none',
-                  }}
-                >{t.icon} {t.display_name}</button>
+            {/* Target selector dropdown */}
+            <select
+              value={selectedTarget}
+              onChange={e => setSelectedTarget(e.target.value)}
+            >
+              {targetsMeta.map(t => (
+                <option key={t.target} value={t.target}>
+                  {t.icon} {t.display_name}
+                </option>
               ))}
-            </div>
+            </select>
             <select value={selectedDate || ''} onChange={e => setSelectedDate(e.target.value)}>
               {dates.map(d => <option key={d} value={d}>{d}</option>)}
             </select>

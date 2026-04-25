@@ -127,25 +127,15 @@ class IRAIEngine:
             })
 
             # Determinar prefixo dos params
-            prefix = f"{slug}_" if slug != "win" else ""
+            prefix = f"{slug}_"
 
             # 2) Carregar model_params para este slug
-            if prefix:
-                params_cursor = conn.execute("""
-                    SELECT param_name, value FROM model_params
-                    WHERE param_name LIKE ? AND effective_from = (
-                        SELECT MAX(effective_from) FROM model_params WHERE param_name LIKE ?
-                    )
-                """, (f"{prefix}%", f"{prefix}%"))
-            else:
-                params_cursor = conn.execute("""
-                    SELECT param_name, value FROM model_params
-                    WHERE param_name NOT LIKE '%\\_%\\_%' ESCAPE '\\'
-                      AND effective_from = (
-                          SELECT MAX(effective_from) FROM model_params
-                          WHERE param_name NOT LIKE '%\\_%\\_%' ESCAPE '\\'
-                      )
-                """)
+            params_cursor = conn.execute("""
+                SELECT param_name, value FROM model_params
+                WHERE param_name LIKE ? AND effective_from = (
+                    SELECT MAX(effective_from) FROM model_params WHERE param_name LIKE ?
+                )
+            """, (f"{prefix}%", f"{prefix}%"))
 
             weights, sigmas = {}, {}
             alpha, intercept = 1.0, 0.0
