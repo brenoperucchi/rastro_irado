@@ -137,7 +137,18 @@ async def irai_overview(
 ):
     """Snapshot atual de TODOS os targets calibrados."""
     if session_date is None:
-        session_date = date.today().isoformat()
+        # Usar último dia útil com dados completos
+        conn = get_connection()
+        row = conn.execute("""
+            SELECT DISTINCT substr(timestamp_utc, 1, 10) as d
+            FROM market_bars WHERE timeframe='M5' AND symbol='WIN$N'
+            ORDER BY d DESC LIMIT 1
+        """).fetchone()
+        conn.close()
+        if row:
+            session_date = row["d"]
+        else:
+            session_date = date.today().isoformat()
 
     results = []
     for t in engine.registered_targets:

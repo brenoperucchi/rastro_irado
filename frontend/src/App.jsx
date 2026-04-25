@@ -4,6 +4,7 @@ import {
   ReferenceArea, ReferenceLine, Area, ComposedChart,
   ResponsiveContainer
 } from 'recharts'
+import Overview from './Overview'
 
 const API = 'http://localhost:8888'
 const WS_URL = 'ws://localhost:8888/ws/irai'
@@ -235,6 +236,7 @@ function CustomTooltip({ active, payload, label }) {
 const REFRESH_INTERVAL = 30_000 // 30 seconds (fallback polling)
 
 export default function App() {
+  const [page, setPage] = useState('overview')
   const [dates, setDates] = useState([])
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedTarget, setSelectedTarget] = useState('WIN$N')
@@ -387,7 +389,12 @@ export default function App() {
                  border-radius: 4px; cursor: pointer; }
         select:hover { border-color: #475569; }
       `}</style>
-
+      {page === 'overview' ? (
+        <Overview onSelectTarget={(target) => {
+          setSelectedTarget(target)
+          setPage('detail')
+        }} />
+      ) : (
       <div style={{
         minHeight: '100vh', background: '#0F172A', color: '#E2E8F0',
         fontFamily: 'var(--font-sans)', padding: '24px 32px',
@@ -398,7 +405,18 @@ export default function App() {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           marginBottom: 24,
         }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <button
+              onClick={() => setPage('overview')}
+              style={{
+                background: 'none', border: '1px solid #334155',
+                borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+                fontFamily: 'var(--font-mono)', fontSize: 10, color: '#94A3B8',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#64748B'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#334155'}
+            >← PAINEL</button>
             <h1 style={{
               fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 400,
               margin: 0, color: '#F1F5F9',
@@ -685,6 +703,7 @@ export default function App() {
           </>
         )}
       </div>
+      )}
     </>
   )
 }
