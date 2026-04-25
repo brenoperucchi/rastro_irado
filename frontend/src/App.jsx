@@ -42,7 +42,7 @@ function barToTime(barIdx) {
 }
 
 /* ── Big Gauge ────────────────────────────────────── */
-function SignalGauge({ pUp, verdict, score, winReturn, flowConfirms, cumDeltaNorm }) {
+function SignalGauge({ pUp, verdict, score, winReturn, flowConfirms, cumDeltaNorm, targetLabel }) {
   const isBuy = pUp >= 60
   const isSell = pUp <= 40
 
@@ -101,12 +101,12 @@ function SignalGauge({ pUp, verdict, score, winReturn, flowConfirms, cumDeltaNor
         </div>
       </div>
 
-      {/* WIN return + flow */}
+      {/* Target return + flow */}
       <div style={{ textAlign: 'right', minWidth: 140 }}>
         <div style={{
           fontSize: 9, fontFamily: 'var(--font-mono)', letterSpacing: '0.12em',
           color: '#64748B', textTransform: 'uppercase', marginBottom: 3,
-        }}>WIN agora</div>
+        }}>{targetLabel || 'WIN'} agora</div>
         <div style={{
           fontFamily: 'var(--font-serif)', fontSize: 28, lineHeight: 1,
           color: winReturn >= 0 ? '#4ADE80' : '#F87171',
@@ -470,6 +470,7 @@ export default function App() {
               winReturn={now.win_return}
               flowConfirms={now.flow_confirms}
               cumDeltaNorm={now.cum_delta_norm}
+              targetLabel={TARGETS.find(t => t.key === selectedTarget)?.label}
             />
 
             {/* ── STACKED CHARTS: same X axis ── */}
@@ -492,7 +493,7 @@ export default function App() {
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <div style={{ width: 12, height: 2, background: '#E2E8F0' }} />
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>WIN</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>{TARGETS.find(t => t.key === selectedTarget)?.label || 'WIN'}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <div style={{ width: 12, height: 2, background: '#D4A84C', borderTop: '1px dashed #D4A84C' }} />
@@ -672,7 +673,10 @@ export default function App() {
               fontFamily: 'var(--font-mono)', fontSize: 10, color: '#334155',
               display: 'flex', justifyContent: 'space-between',
             }}>
-              <span>R²=0.46 · α=1.31 · 71.0% acurácia direcional · 6 fatores cross-asset</span>
+              <span>{selectedTarget === 'WDO$N'
+                ? 'R²=0.40 · α=2.45 · 70.7% acurácia direcional · 6 fatores cross-asset'
+                : 'R²=0.38 · α=1.31 · 71.0% acurácia direcional · 6 fatores cross-asset'
+              }</span>
               <span>
                 sessão {selectedDate} ·
                 {TARGETS.find(t => t.key === selectedTarget)?.label || 'WIN'} {now.win_open?.toFixed(0)} → {now.win_current?.toFixed(0)}
