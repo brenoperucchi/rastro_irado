@@ -1,7 +1,7 @@
 """
 Calibra modelo WDO: DI1$N + WIN$N + BTCUSD + CHINA50 + VIX + DXY
 Salva pesos no model_params com prefixo wdo_ (separado do modelo WIN).
-Usa DOL$N como proxy (cotacao identica ao WDO$N).
+Usa WDO$N (agora com historico proprio copiado do DOL$N).
 """
 import sqlite3, os, sys
 import pandas as pd
@@ -15,7 +15,7 @@ from backend.db import get_connection, DB_PATH
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 # Config WDO model
-TARGET = "DOL$N"  # proxy para WDO$N
+TARGET = "WDO$N"  # agora com historico proprio no banco
 FACTORS = ["DI1$N", "WIN$N", "BTCUSD", "CHINA50", "VIX", "DXY"]
 FACTOR_LABELS = {
     "DI1$N": "di", "WIN$N": "win", "BTCUSD": "btc",

@@ -21,14 +21,15 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 # Todos os possíveis fatores
 ALL_FACTORS = [
-    "WIN$N", "DOL$N", "DI1$N",
+    "WIN$N", "WDO$N", "DI1$N",
     "DXY", "BRENT", "CHINA50", "USDMXN", "VIX", "BTCUSD",
     "US500", "US30", "USTEC", "XAUUSD",
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
 ]
 
 # Alias: target lógico → símbolo nos dados
-ALIASES = {"WDO$N": "DOL$N"}
+# WDO$N e DOL$N rastreiam o mesmo preço — WDO é o contrato mini oficial
+ALIASES = {}  # sem aliases: usar WDO$N diretamente
 
 
 def load_daily_returns(conn, session_start_h, session_end_h):
@@ -84,7 +85,7 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     exclude = {target, data_sym}
     
     # Regras de negócio
-    br_assets = {"WIN$N", "DOL$N", "DI1$N", "WDO$N"}
+    br_assets = {"WIN$N", "WDO$N", "DI1$N"}
     us_indices = {"US500", "US30", "USTEC"}
     
     if target in us_indices:

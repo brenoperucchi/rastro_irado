@@ -22,16 +22,16 @@ from backend.db import get_connection, DB_PATH
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 # ── Fatores ────────────────────────────────────────────────
-FACTORS = ["DOL$N", "DI1$N", "VIX", "DXY", "BRENT", "US500", "BTCUSD"]
+FACTORS = ["WDO$N", "DI1$N", "VIX", "DXY", "BRENT", "US500", "BTCUSD"]
 FACTOR_LABELS = {
-    "DOL$N": "dol", "DI1$N": "di", "VIX": "vix", "DXY": "dxy",
+    "WDO$N": "wdo", "DI1$N": "di", "VIX": "vix", "DXY": "dxy",
     "BRENT": "brent", "US500": "us500", "BTCUSD": "btcusd",
 }
 TARGET = "WIN$N"
 
 # Sinais esperados (para sanity check)
 EXPECTED_SIGNS = {
-    "dol": -1,     # Dólar sobe = IBOV cai
+    "wdo": -1,     # WDO sobe = IBOV cai
     "di": -1,      # Juros sobe = IBOV cai
     "vix": -1,     # VIX sobe = IBOV cai
     "dxy": -1,     # Dólar global forte = IBOV cai

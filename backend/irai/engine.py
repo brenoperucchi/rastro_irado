@@ -17,7 +17,7 @@ from backend.db import get_connection, DB_PATH
 
 
 # ── Alias de símbolos ─────────────────────────────────────
-SYMBOL_ALIASES = {"WDO$N": "DOL$N"}
+SYMBOL_ALIASES = {}  # WDO$N agora tem barras próprias no banco
 
 def resolve_symbol(sym: str) -> str:
     """Resolve alias para o símbolo real no banco."""
@@ -208,7 +208,7 @@ class IRAIEngine:
         """Define preços de abertura da sessão."""
         self.session_opens = opens
         for label, state in self.factor_states.items():
-            # Resolver alias: se o símbolo lógico é WDO$N, procurar DOL$N nos opens
+            # Resolver alias de símbolos (atualmente vazio — WDO$N tem barras próprias)
             db_sym = resolve_symbol(state.symbol)
             if db_sym in opens and opens[db_sym] > 0:
                 state.open_price = opens[db_sym]
@@ -321,7 +321,7 @@ class IRAIEngine:
         
         Args:
             session_date: Data YYYY-MM-DD
-            target: Símbolo alvo (WIN$N, WDO$N, DOL$N). Default: WIN$N
+            target: Símbolo alvo (WIN$N, WDO$N). Default: WIN$N
         """
         session_date = session_date or date.today().isoformat()
         target = target or TARGET

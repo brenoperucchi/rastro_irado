@@ -3,7 +3,7 @@ IRAI — FastAPI Backend.
 
 Endpoints:
   GET  /api/irai/current       → snapshot corrente (live ou última sessão)
-  GET  /api/irai/series        → série completa de uma sessão (target=WIN$N|DOL$N)
+  GET  /api/irai/series        → série completa de uma sessão (target=WIN$N|WDO$N)
   GET  /api/irai/dates         → datas disponíveis
   GET  /api/model/params       → parâmetros do modelo
   GET  /api/health             → status do sistema
@@ -179,9 +179,8 @@ async def irai_overview(
                 target_sigmas = m.get("sigmas", {})
                 # Tentar sigma de "wdo" para WIN, "win" para WDO, etc.
                 proxy_sigma = (
-                    target_sigmas.get(slug) or          # ex: wdo_sigma_win → "win" para WDO
-                    target_sigmas.get("wdo") or         # wdo é proxy do WIN/DOL
-                    target_sigmas.get("dol") or
+                    target_sigmas.get(slug) or          # ex: win_sigma_wdo
+                    target_sigmas.get("wdo") or         # WDO é o principal fator do WIN
                     0.005  # fallback 0.5% session sigma
                 )
                 if proxy_sigma > 0 and last.t_frac > 0:
@@ -241,7 +240,7 @@ async def irai_dates():
 @app.get("/api/irai/series")
 async def irai_series(
     session_date: str = Query(None, description="Data YYYY-MM-DD (default: hoje)"),
-    target: str = Query("WIN$N", description="Target: WIN$N ou DOL$N"),
+    target: str = Query("WIN$N", description="Target: WIN$N ou WDO$N"),
 ):
     """Série IRAI completa para uma sessão. Suporta multi-target."""
     if session_date is None:

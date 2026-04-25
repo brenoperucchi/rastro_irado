@@ -188,12 +188,13 @@ Problemas concretos:
 
 ### 9.2 V2 (próximos passos)
 
+- ✅ Painel Central Multi-Ativo com Divergência de Preço e Confirmação de Fluxo.
 - [ ] Integração IRAI × Regime Supervisor (ajuste de exposição dos EAs por P_up).
 - [ ] Walk-forward validation automática na calibração.
 - [ ] Backtester de estratégias baseadas em thresholds de P_up.
 - [ ] WebSocket push em vez de polling.
 - [ ] Alertas desktop/som ao cruzar thresholds.
-- [ ] Multi-target: WDO, small caps, BRL.
+- ✅ Multi-target: expansão para 13 ativos globais e BR.
 
 ### 9.3 Fora de escopo
 

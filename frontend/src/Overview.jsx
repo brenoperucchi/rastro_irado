@@ -240,7 +240,7 @@ function AssetCard({ card, onClick }) {
         </div>
       </div>
 
-      {/* P_up + Return */}
+      {/* P_up + Flow/Divergence Indicators */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'baseline', marginTop: 12,
@@ -257,17 +257,44 @@ function AssetCard({ card, onClick }) {
             color: '#475569', marginTop: 2,
           }}>P(↑)</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 16,
-            color: retColor, fontWeight: 600, lineHeight: 1,
-          }}>
-            {ret >= 0 ? '+' : ''}{(ret * 100).toFixed(2)}%
-          </div>
-          <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 8,
-            color: '#475569', marginTop: 2,
-          }}>retorno</div>
+        
+        {/* Indicators Column */}
+        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+          {/* Price Divergence */}
+          {card.price_diverges ? (
+            <div style={{
+              background: 'rgba(248,113,113,0.1)', color: '#F87171',
+              padding: '2px 6px', borderRadius: 4, fontSize: 9,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', border: '1px solid rgba(248,113,113,0.2)'
+            }}>⚠️ PREÇO DIVERGE</div>
+          ) : (
+            <div style={{
+              background: 'rgba(74,222,128,0.1)', color: '#4ADE80',
+              padding: '2px 6px', borderRadius: 4, fontSize: 9,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', border: '1px solid rgba(74,222,128,0.2)'
+            }}>✓ PREÇO ALINHADO</div>
+          )}
+          
+          {/* Flow Confirmation */}
+          {card.flow_confirms === true ? (
+            <div style={{
+              background: 'rgba(74,222,128,0.1)', color: '#4ADE80',
+              padding: '2px 6px', borderRadius: 4, fontSize: 9,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', border: '1px solid rgba(74,222,128,0.2)'
+            }}>💧 FLUXO APOIA</div>
+          ) : card.flow_confirms === false ? (
+            <div style={{
+              background: 'rgba(248,113,113,0.1)', color: '#F87171',
+              padding: '2px 6px', borderRadius: 4, fontSize: 9,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', border: '1px solid rgba(248,113,113,0.2)'
+            }}>🛑 FLUXO CONTRA</div>
+          ) : (
+             <div style={{
+              background: 'rgba(71,85,105,0.1)', color: '#64748B',
+              padding: '2px 6px', borderRadius: 4, fontSize: 9,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.02em', border: '1px solid rgba(71,85,105,0.2)'
+            }}>FLUXO AUSENTE</div>
+          )}
         </div>
       </div>
 

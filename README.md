@@ -166,3 +166,7 @@ Projeto pessoal, uso interno. **IRAI é ferramenta de suporte à decisão, não 
 **Autor:** Miqueias
 **Início:** 2026-04-23
 **Última atualização:** 2026-04-24
+
+
+## Arquitetura Multi-Ativo (V2)
+O sistema evoluiu para cobrir 13 ativos globais. Para entender a relação de fatores e pesos de cada modelo (WIN, WDO, S&P500, Forex, Cripto), consulte o [FACTOR_MAP.md](FACTOR_MAP.md).

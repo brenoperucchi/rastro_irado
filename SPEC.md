@@ -68,6 +68,15 @@
 
 ---
 
+
+### 1.3 Princípios de Calibração (V2 - Multi-Asset)
+
+1. **Isolamento Geográfico:** Ativos internacionais (ex: EURUSD, US500) jamais podem usar fatores do Brasil (WIN, WDO, DI1) para evitar ruído.
+2. **Anti-Contaminação de Índices:** Índices americanos (US500, US30, USTEC) não podem usar uns aos outros como fatores, forçando o modelo a ancorar na macroeconomia base (VIX, DXY, Ouro).
+3. **Score Misto (70% ACC / 30% R²):** A calibração (brute-force) prioriza modelos que tenham alta acurácia direcional (ACC) mas que mantenham forte aderência estrutural (R²). Isso garante que o WDO, por exemplo, não perca o DI1 de sua fórmula apenas por "azar" estatístico de uma pequena % direcional.
+4. **Alinhamento de Sessões:** Sinais só são gerados dentro do horário líquido válido de cada ativo (BR: 09h às 18h | INTL: 03h às 22h).
+
+
 ## 2. Componentes
 
 ### 2.1 `collector.py`

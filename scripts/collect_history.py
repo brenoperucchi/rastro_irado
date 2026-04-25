@@ -28,7 +28,7 @@ TERMINALS = [
         "name": "BR (XP)",
         "path": r"C:\Program Files\MetaTrader 5 Terminal\terminal64.exe",
         "source": "br",
-        "symbols": ["WIN$N", "DOL$N", "DI1$N"],
+        "symbols": ["WIN$N", "WDO$N", "DI1$N"],
     },
     {
         "name": "Tickmill",
