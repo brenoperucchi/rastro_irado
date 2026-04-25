@@ -391,17 +391,15 @@ class IRAIEngine:
             return []
 
         if session_end == 24 and session_start == 0:
-            # 24h asset — sem filtro de sessão
+            # Ativo 24h — sem filtro de sessão
             pass
         else:
-            # Detectar se timestamps são BRT ou UTC
-            if target_hours.index.min() < 13:
-                # BRT timestamps: ajustar para horários locais
-                brt_start = max(session_start - 3, 9)  # UTC→BRT approx
-                brt_end = min(session_end - 3, 18)
-                session_mask = (df["hour"] >= brt_start) & (df["hour"] < brt_end)
-            else:
-                session_mask = (df["hour"] >= session_start) & (df["hour"] < session_end)
+            # Os timestamps no banco refletem a hora do servidor de cada corretora:
+            #   - BR (XP):      armazena em BRT  → session_start/end em BRT  (ex: 9-18)
+            #   - Tickmill:     armazena em EET  → session_start/end em EET
+            # Os valores em asset_models.session_start/end_h já correspondem
+            # às horas como aparecem no banco — usar diretamente, sem conversão.
+            session_mask = (df["hour"] >= session_start) & (df["hour"] <= session_end)
             df = df[session_mask]
 
         # Opens = primeira barra de cada símbolo
