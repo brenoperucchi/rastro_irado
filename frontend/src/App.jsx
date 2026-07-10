@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceArea, ReferenceLine, Area, ComposedChart,
-  ResponsiveContainer, Bar, Cell, Brush
+  ResponsiveContainer, Cell, Brush
 } from 'recharts'
 import { useSwipeable } from 'react-swipeable'
 import Overview from './Overview'
 import TVPairwiseZScoreChart from './charts/TVPairwiseZScoreChart'
 import TVProbabilityChart from './charts/TVProbabilityChart'
+import TVPriceDivergeZScoreChart from './charts/TVPriceDivergeZScoreChart'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
 // window.location.hostname (não 'localhost' fixo) para funcionar tanto local
@@ -711,13 +712,8 @@ export default function App() {
   const seriesWithNWE = useMemo(() => {
     const rawNwe = computeNWE(series, seriesInfo?.history_closes || []);
     return rawNwe.map(entry => {
-      let z_compra = 0, z_venda = 0, z_neutro = entry.price_diverge_z || 0;
-      if (entry.price_diverges) {
-        if (entry.p_up > 55) { z_compra = entry.price_diverge_z; z_neutro = 0; }
-        else if (entry.p_up < 45) { z_venda = entry.price_diverge_z; z_neutro = 0; }
-      }
-      const mappedEntry = { ...entry, z_compra, z_venda, z_neutro };
-      
+      const mappedEntry = { ...entry };
+
       // Flatten weights for Recharts
       const factors = entry.factors;
       if (factors) {
@@ -1130,31 +1126,7 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <ResponsiveContainer width="100%" height={120}>
-                    <ComposedChart data={seriesWithNWE} syncId="irai" margin={{ top: 4, right: 80, left: 5, bottom: 0 }}>
-                      <CartesianGrid stroke="var(--grid)" vertical={false} />
-                      <XAxis dataKey="time" xAxisId="utc" tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }} stroke="#1E293B" interval={11} />
-                      {seriesInfo.tz_offset && <XAxis dataKey="time_local" xAxisId="brt" tick={{ fill: '#C9A227', fontSize: 7, fontFamily: 'JetBrains Mono' }} stroke="#1E293B" interval={11} />}
-                      <YAxis yAxisId="z" orientation="left" width={45} domain={[-2.5, 2.5]} tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }} stroke="#1E293B" />
-                      <ReferenceLine yAxisId="z" y={0} stroke="#475569" strokeWidth={1} strokeDasharray="4 4" />
-                      <ReferenceLine yAxisId="z" y={0.5} stroke="#F8717133" strokeWidth={1} strokeDasharray="2 2" />
-                      <ReferenceLine yAxisId="z" y={-0.5} stroke="#F8717133" strokeWidth={1} strokeDasharray="2 2" />
-                      <Tooltip
-                        formatter={(v, name, props) => {
-                           let div = "✓ Alinhado";
-                           if (props.payload.price_diverges) {
-                               div = props.payload.p_up > 55 ? "Compra" : "Venda";
-                           }
-                           return [`${Number(v).toFixed(2)} (${div})`, 'Z-Score']
-                        }}
-                        contentStyle={{ background: '#0E0E11', border: '1px solid #1C1C22', borderRadius: 4, fontFamily: 'JetBrains Mono', fontSize: 11 }}
-                        labelStyle={{ color: '#6A6A7A' }}
-                      />
-                      <Bar yAxisId="z" dataKey="z_neutro" stackId="z" fill="#334155" isAnimationActive={false} />
-                      <Bar yAxisId="z" dataKey="z_compra" stackId="z" fill="#4ADE80" isAnimationActive={false} />
-                      <Bar yAxisId="z" dataKey="z_venda" stackId="z" fill="#F87171" isAnimationActive={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <TVPriceDivergeZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
                 </div>
                 
                 {/* BOTTOM: Dynamic Weights (Kalman) */}
