@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceArea, Area, ComposedChart,
-  ResponsiveContainer, Cell, Brush
-} from 'recharts'
 import { useSwipeable } from 'react-swipeable'
 import Overview from './Overview'
 import TVPairwiseZScoreChart from './charts/TVPairwiseZScoreChart'
 import TVProbabilityChart from './charts/TVProbabilityChart'
 import TVPriceDivergeZScoreChart from './charts/TVPriceDivergeZScoreChart'
 import TVKalmanWeightsChart from './charts/TVKalmanWeightsChart'
+import TVNweChart from './charts/TVNweChart'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
 // window.location.hostname (não 'localhost' fixo) para funcionar tanto local
@@ -389,6 +385,8 @@ function computeNWE(data, history_closes = []) {
 
   // Initialize carry-forward NWE values from history (if any)
   let lastNweCenter = null, lastNweUpper = null, lastNweLower = null, lastNweSlope = 0;
+  // Idem em espaço de preço absoluto (consumido pelo TVNweChart lightweight-charts).
+  let lastNweCenterPrice = null, lastNweUpperPrice = null, lastNweLowerPrice = null;
 
   // 3) Build enriched data with per-bar slope coloring
   let validIdx = 0;
@@ -403,6 +401,9 @@ function computeNWE(data, history_closes = []) {
         lastNweCenter = ((center[historyPrices.length - 1] / open) - 1) * 100;
         lastNweUpper = ((center[historyPrices.length - 1] + envWidth[historyPrices.length - 1]) / open - 1) * 100;
         lastNweLower = ((center[historyPrices.length - 1] - envWidth[historyPrices.length - 1]) / open - 1) * 100;
+        lastNweCenterPrice = center[historyPrices.length - 1];
+        lastNweUpperPrice = center[historyPrices.length - 1] + envWidth[historyPrices.length - 1];
+        lastNweLowerPrice = center[historyPrices.length - 1] - envWidth[historyPrices.length - 1];
         const prevHistoricalCenter = historyPrices.length > 1 ? center[historyPrices.length - 2] : center[historyPrices.length - 1];
         lastNweSlope = center[historyPrices.length - 1] - prevHistoricalCenter;
     }
@@ -414,6 +415,9 @@ function computeNWE(data, history_closes = []) {
         nwe_center: lastNweCenter !== null ? lastNweCenter : (((d.win_current / open) - 1) * 100),
         nwe_upper: lastNweUpper !== null ? lastNweUpper : (((d.win_current / open) - 1) * 100),
         nwe_lower: lastNweLower !== null ? lastNweLower : (((d.win_current / open) - 1) * 100),
+        nwe_center_price: lastNweCenterPrice !== null ? lastNweCenterPrice : d.win_current,
+        nwe_upper_price: lastNweUpperPrice !== null ? lastNweUpperPrice : d.win_current,
+        nwe_lower_price: lastNweLowerPrice !== null ? lastNweLowerPrice : d.win_current,
         nwe_slope: lastNweSlope >= 0,
         nwe_is_transition: false,
         nwe_was_transition: false
@@ -427,7 +431,11 @@ function computeNWE(data, history_closes = []) {
     const nwe_center = ((currentCenter[i] / open) - 1) * 100;
     const nwe_upper = ((currentCenter[i] + currentEnvWidth[i]) / open - 1) * 100;
     const nwe_lower = ((currentCenter[i] - currentEnvWidth[i]) / open - 1) * 100;
-    
+    // Mesmos valores em preço absoluto (sem normalizar por open) p/ o TVNweChart.
+    const nwe_center_price = currentCenter[i];
+    const nwe_upper_price = currentCenter[i] + currentEnvWidth[i];
+    const nwe_lower_price = currentCenter[i] - currentEnvWidth[i];
+
     const prevCenter = i > 0 ? currentCenter[i - 1] : (historyPrices.length > 0 ? center[historyPrices.length - 1] : currentCenter[0]);
     const nwe_slope_price = currentCenter[i] - prevCenter;
     const isUp = nwe_slope_price >= 0;
@@ -445,6 +453,9 @@ function computeNWE(data, history_closes = []) {
     lastNweCenter = nwe_center;
     lastNweUpper = nwe_upper;
     lastNweLower = nwe_lower;
+    lastNweCenterPrice = nwe_center_price;
+    lastNweUpperPrice = nwe_upper_price;
+    lastNweLowerPrice = nwe_lower_price;
     lastNweSlope = nwe_slope_price;
 
     return {
@@ -452,6 +463,9 @@ function computeNWE(data, history_closes = []) {
       nwe_center,
       nwe_upper,
       nwe_lower,
+      nwe_center_price,
+      nwe_upper_price,
+      nwe_lower_price,
       nwe_slope: nwe_slope_price,
       // Both series get the value at transition points for continuity
       nwe_up: (isUp || isTransition || wasTransition) ? nwe_center : null,
@@ -1016,60 +1030,7 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <ComposedChart data={seriesWithNWE} syncId="irai" margin={{ top: 4, right: 45, left: 5, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--grid)" vertical={false} />
-                    <XAxis
-                      dataKey="time" xAxisId="utc"
-                      tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
-                      stroke="#1E293B" interval={11}
-                    />
-                    {seriesInfo.tz_offset && <XAxis
-                      dataKey="time_local" xAxisId="brt"
-                      tick={{ fill: '#C9A227', fontSize: 7, fontFamily: 'JetBrains Mono' }}
-                      stroke="#1E293B" interval={11}
-                      label={{ value: seriesInfo.tz_label || 'BRT', position: 'insideRight', fill: '#C9A227', fontSize: 8, fontFamily: 'JetBrains Mono', offset: -5 }}
-                    />}
-                    <YAxis
-                      yAxisId="nwe" orientation="left" width={45}
-                      domain={([dataMin, dataMax]) => { const max = Math.max(Math.abs(dataMin), Math.abs(dataMax), 0.01); return [-max, max]; }}
-                      allowDataOverflow={true}
-                      tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
-                      stroke="#1E293B"
-                      tickFormatter={v => `${Number(v).toFixed(2)}%`}
-                    />
-                    <YAxis yAxisId="spacer" orientation="right" width={35} tick={false} stroke="transparent" />
-                    <Tooltip
-                      formatter={(v, name) => {
-                        if (v === null || v === undefined) return [null, null];
-                        const labels = { nwe_upper: 'Banda ↑', nwe_lower: 'Banda ↓', nwe_up: 'NWE ↑', nwe_down: 'NWE ↓', win_return: 'Preço' };
-                        return [`${Number(v).toFixed(3)}%`, labels[name] || name]
-                      }}
-                      contentStyle={{ background: '#0E0E11', border: '1px solid #1C1C22', borderRadius: 4, fontFamily: 'JetBrains Mono', fontSize: 11 }}
-                      labelStyle={{ color: '#6A6A7A' }}
-                    />
-                    {/* Envelope bands (dashed) */}
-                    <Line yAxisId="nwe" type="monotone" dataKey="nwe_upper" dot={false}
-                      stroke="#F87171" strokeWidth={1} strokeDasharray="4 3" isAnimationActive={false}
-                    />
-                    <Line yAxisId="nwe" type="monotone" dataKey="nwe_lower" dot={false}
-                      stroke="#4ADE80" strokeWidth={1} strokeDasharray="4 3" isAnimationActive={false}
-                    />
-                    {/* NWE center line — split into up (green) and down (red) segments */}
-                    <Line yAxisId="nwe" type="monotone" dataKey="nwe_up" dot={false}
-                      stroke="#4ADE80" strokeWidth={1.5} isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                    <Line yAxisId="nwe" type="monotone" dataKey="nwe_down" dot={false}
-                      stroke="#F87171" strokeWidth={1.5} isAnimationActive={false}
-                      connectNulls={false}
-                    />
-                    {/* Price line */}
-                    <Line yAxisId="nwe" type="monotone" dataKey="win_return" dot={false}
-                      stroke="#E2E8F0" strokeWidth={1.5} isAnimationActive={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                <TVNweChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
               </div>
 
               {/* BOTTOM: Divergence Z-Score */}
