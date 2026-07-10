@@ -166,7 +166,10 @@ const TVNweChart = forwardRef(function TVNweChart(
     nweUpperSeries.setData(sortDedupe(upperRows))
     nweLowerSeries.setData(sortDedupe(lowerRows))
     nweCenterSeries.setData(sortDedupe(centerRows))
-    if (markersApi) markersApi.setMarkers(sortDedupe(markers))
+    // Markers só precisam estar ordenados por tempo; tempos duplicados são
+    // permitidos (empilham) — NÃO deduplicar, senão um sinal par + z no mesmo
+    // bar perderia o segundo marker. Igual à produção (sort sem dedupe).
+    if (markersApi) markersApi.setMarkers(markers.slice().sort((a, b) => a.time - b.time))
   }, [history, effectiveDate, chartType])
 
   // Walls (GEX) via createPriceLine. Recria as linhas quando walls/toggles mudam;
