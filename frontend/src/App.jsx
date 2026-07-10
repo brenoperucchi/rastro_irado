@@ -7,6 +7,7 @@ import {
 import { useSwipeable } from 'react-swipeable'
 import Overview from './Overview'
 import TVPairwiseZScoreChart from './charts/TVPairwiseZScoreChart'
+import TVProbabilityChart from './charts/TVProbabilityChart'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
 // window.location.hostname (não 'localhost' fixo) para funcionar tanto local
@@ -337,45 +338,6 @@ function FactorSignal({ fkey, data }) {
           <span>{ret >= 0 ? '+' : ''}{ret.toFixed(2)}%</span>
         </div>
       </div>
-    </div>
-  )
-}
-
-/* ── Custom tooltip ──────────────────────────────── */
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload || !payload.length) return null
-  const d = payload[0].payload;
-  const pUp = d.p_up_v1 != null ? d.p_up_v1 : d.p_up;
-  const pUpV2 = d.p_up_v2;
-  const winRet = d.win_return;
-  const isBuy = pUp >= 60
-  const isSell = pUp <= 40
-  
-  return (
-    <div style={{
-      background: '#0F172A', border: '1px solid #1E293B', borderRadius: 4,
-      padding: '10px 14px', fontFamily: 'var(--font-mono)', fontSize: 11,
-    }}>
-      <div style={{ color: '#94A3B8', marginBottom: 6 }}>{label}</div>
-      <div style={{ color: isBuy ? '#4ADE80' : isSell ? '#F87171' : '#CBD5E1', fontWeight: 600 }}>
-        V1: {pUp?.toFixed(1)}%
-        <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400 }}>
-          {isBuy ? '▲ COMPRA' : isSell ? '▼ VENDA' : '— NEUTRO'}
-        </span>
-      </div>
-      {pUpV2 !== undefined && (
-        <div style={{ color: pUpV2 >= 60 ? '#4ADE80' : pUpV2 <= 40 ? '#F87171' : '#CBD5E1', fontWeight: 600, marginTop: 2 }}>
-          V2: {pUpV2?.toFixed(1)}%
-          <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400 }}>
-            {pUpV2 >= 60 ? '▲ COMPRA' : pUpV2 <= 40 ? '▼ VENDA' : '— NEUTRO'}
-          </span>
-        </div>
-      )}
-      {winRet != null && (
-        <div style={{ color: winRet >= 0 ? '#4ADE80' : '#F87171', marginTop: 2 }}>
-          Retorno: {winRet >= 0 ? '+' : ''}{winRet.toFixed(3)}%
-        </div>
-      )}
     </div>
   )
 }
@@ -1006,96 +968,43 @@ export default function App() {
 
             {/* ── STACKED CHARTS: same X axis ── */}
             <div className="chart-container">
-              {/* TOP: WIN vs IRAI */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div>
+              {/* TOP: identificação do ativo + PAR ATIVO */}
+              <div style={{ marginBottom: 4 }}>
+                <div style={{
+                  fontFamily: 'var(--font-serif)', fontSize: 18, color: '#D0D0DC',
+                }}>
+                  {seriesInfo.display_name || selectedTarget} <span style={{ fontStyle: 'italic', color: '#3A3A4A' }}>vs</span> IRAI
+                </div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--amber-dim)', marginTop: 2,
+                  letterSpacing: '0.1em', textTransform: 'uppercase',
+                }}>rastro macro · fatores externos</div>
+                {/* PAR ATIVO: fator de maior |β| no Kalman naquele bar + z-score do resíduo */}
+                {now.pair_factor && (
                   <div style={{
-                    fontFamily: 'var(--font-serif)', fontSize: 18, color: '#D0D0DC',
+                    display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6,
+                    padding: '2px 8px', borderRadius: 4, background: '#0E0E11', border: '1px solid #1E293B',
                   }}>
-                    {seriesInfo.display_name || selectedTarget} <span style={{ fontStyle: 'italic', color: '#3A3A4A' }}>vs</span> IRAI
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>PAR ATIVO:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#C9A227', fontWeight: 600 }}>
+                      {getFactorMeta(now.pair_factor).label}
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>β:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_beta > 0 ? '#4ADE80' : '#F87171' }}>
+                      {now.pair_beta > 0 ? '+' : ''}{now.pair_beta?.toFixed(3)}
+                    </span>
+                    {now.pair_z != null && (
+                      <>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B', marginLeft: 2 }}>Z:</span>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_z >= 0 ? '#4ADE80' : '#F87171' }}>
+                          {now.pair_z >= 0 ? '+' : ''}{now.pair_z.toFixed(2)}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <div style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--amber-dim)', marginTop: 2,
-                    letterSpacing: '0.1em', textTransform: 'uppercase',
-                  }}>rastro macro · fatores externos</div>
-                  {/* PAR ATIVO: fator de maior |β| no Kalman naquele bar + z-score do resíduo */}
-                  {now.pair_factor && (
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6,
-                      padding: '2px 8px', borderRadius: 4, background: '#0E0E11', border: '1px solid #1E293B',
-                    }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>PAR ATIVO:</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#C9A227', fontWeight: 600 }}>
-                        {getFactorMeta(now.pair_factor).label}
-                      </span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>β:</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_beta > 0 ? '#4ADE80' : '#F87171' }}>
-                        {now.pair_beta > 0 ? '+' : ''}{now.pair_beta?.toFixed(3)}
-                      </span>
-                      {now.pair_z != null && (
-                        <>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B', marginLeft: 2 }}>Z:</span>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_z >= 0 ? '#4ADE80' : '#F87171' }}>
-                            {now.pair_z >= 0 ? '+' : ''}{now.pair_z.toFixed(2)}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <div style={{ width: 12, height: 2, background: '#E2E8F0' }} />
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>{seriesInfo.display_name || selectedTarget}</span>
-                  </div>
-                  <div style={{ display: 'flex', border: '1px solid #1E293B', borderRadius: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        background: 'rgba(96,165,250,0.1)',
-                        border: 'none', padding: '4px 8px',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}
-                    >
-                      <div style={{ width: 12, height: 2, background: '#60A5FA', borderTop: '1px dashed #60A5FA' }} />
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#60A5FA' }}>P(↑) Dinâmico</span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
-              <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart data={seriesWithNWE} syncId="irai" margin={{ top: 10, right: 45, left: 5, bottom: 0 }}>
-                  <CartesianGrid stroke="var(--grid)" vertical={false} />
-                  <XAxis dataKey="time" tick={false} stroke="#1E293B" xAxisId="utc" />
-                  {seriesInfo.tz_offset && <XAxis dataKey="time_local" xAxisId="brt" tick={false} stroke="#1E293B" />}
-                  <YAxis
-                    yAxisId="win" orientation="left" width={45}
-                    domain={([dataMin, dataMax]) => { const max = Math.max(Math.abs(dataMin), Math.abs(dataMax), 0.01); return [-max, max]; }}
-                    allowDataOverflow={true}
-                    tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
-                    stroke="#1E293B" tickFormatter={v => `${Number(v).toFixed(1)}%`}
-                  />
-                  <YAxis
-                    yAxisId="pup" orientation="right" width={35} domain={[0, 100]}
-                    ticks={[0, 25, 50, 75, 100]}
-                    tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }}
-                    stroke="#1E293B" tickFormatter={v => `${v}%`}
-                  />
-                  {/* Limiares do modelo — cruzar estas linhas ativa/desativa divergência */}
-                  <ReferenceLine yAxisId="pup" y={60}
-                    stroke="#4ADE80" strokeWidth={1} strokeDasharray="3 4"
-                    label={{ value: 'compra', position: 'insideRight', fontSize: 7, fontFamily: 'JetBrains Mono', fill: '#4ADE8099', dy: -6 }}
-                  />
-                  <ReferenceLine yAxisId="pup" y={40}
-                    stroke="#F87171" strokeWidth={1} strokeDasharray="3 4"
-                    label={{ value: 'venda', position: 'insideRight', fontSize: 7, fontFamily: 'JetBrains Mono', fill: '#F8717199', dy: 8 }}
-                  />
-                  <ReferenceLine yAxisId="pup" y={50} stroke="#1E293B" strokeDasharray="2 6" />
-                  <ReferenceLine yAxisId="win" y={0} stroke="#334155" strokeDasharray="2 2" />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line yAxisId="win" type="monotone" dataKey="win_return" stroke="#E2E8F0" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  <Line yAxisId="pup" type="monotone" dataKey="p_up" stroke="#60A5FA" strokeWidth={2} dot={false} strokeDasharray="6 3" isAnimationActive={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              <TVProbabilityChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={true} />
 
               {/* MOVIMENTO DO ÍNDICE — NWE (Nadaraya-Watson Envelope) */}
               <div style={{ marginTop: 2, borderTop: '1px solid var(--border-dim)' }}>
