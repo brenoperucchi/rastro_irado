@@ -40,13 +40,26 @@ PAIR_SIGMA_WINDOW = 20    # janela do σ rolling do resíduo (observações)
 PAIR_MIN_BETA = 0.1       # |β| mínimo para o par ser considerado válido
 
 
-def select_active_pair(betas, labels, min_beta: float = PAIR_MIN_BETA):
+def select_active_pair(betas, labels, min_beta: float = PAIR_MIN_BETA,
+                       sigmas=None, min_sigma_frac: float = 0.25):
     """Escolhe o fator de maior |β| (o "par ativo") entre ``betas[1:]``.
 
     ``betas[0]`` é o intercepto; ``betas[1:]`` alinham 1-a-1 com ``labels``
     (mesma ordem de active_factors no engine). Retorna
     ``{"label", "beta", "index"}`` ou ``None`` se nenhum |β| ≥ ``min_beta``.
+
+    ``sigmas`` (opcional, alinhado a ``labels``): exclui da eleição fatores de
+    volatilidade quase-nula — cujo σ < ``min_sigma_frac`` × mediana das σ da
+    cesta. Um fator de σ ~0 (ex: bond ETF de curta duração) tem retorno ~0, o
+    resíduo do par vira ~o retorno do próprio target e o z-score degenera
+    (valores absurdos). Sem ``sigmas``, o comportamento é o legado (só |β|).
     """
+    sigma_floor = 0.0
+    if sigmas:
+        pos = sorted(s for s in sigmas if s and s > 0)
+        if pos:
+            sigma_floor = min_sigma_frac * pos[len(pos) // 2]  # frac da mediana
+
     best = None
     for i, label in enumerate(labels):
         if i + 1 >= len(betas):
@@ -54,6 +67,8 @@ def select_active_pair(betas, labels, min_beta: float = PAIR_MIN_BETA):
         b = betas[i + 1]
         if abs(b) < min_beta:
             continue
+        if sigmas and i < len(sigmas) and sigmas[i] and sigmas[i] < sigma_floor:
+            continue  # fator de vol quase-nula — par degenerado, pula
         if best is None or abs(b) > abs(best["beta"]):
             best = {"label": label, "beta": b, "index": i}
     return best

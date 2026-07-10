@@ -720,7 +720,9 @@ class IRAIEngine:
                 # retorno do target − β·retorno_do_par; z normalizado por √t com
                 # σ rolling do resíduo. obs_matrix[idx+1] é o retorno do fator.
                 pair_labels = [active_labels.get(f, f) for f in active_factors]
-                pair = select_active_pair(current_betas, pair_labels, pair_min_beta)
+                pair_sigmas = [local_factor_states[lbl].sigma for lbl in pair_labels]
+                pair = select_active_pair(current_betas, pair_labels, pair_min_beta,
+                                          sigmas=pair_sigmas)
                 if pair is not None and not is_pre_market:
                     ret_pair_factor = obs_matrix[pair["index"] + 1]
                     residual = pairwise_residual(win_ret, pair["beta"], ret_pair_factor)
