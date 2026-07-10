@@ -135,6 +135,25 @@ def migrate_delta(db_path=None):
     conn.close()
 
 
+def migrate_divergence_config(db_path=None):
+    """Adiciona a coluna divergence_config em asset_models se não existir.
+
+    engine.py, api/main.py e calc_sigmas.py leem/escrevem essa coluna, mas o
+    SCHEMA original nunca a criou — sem esta migração, calc_sigmas.py falha
+    com "no such column" em qualquer banco criado do zero.
+    """
+    conn = get_connection(db_path)
+    cursor = conn.execute("PRAGMA table_info(asset_models)")
+    cols = {row["name"] for row in cursor}
+
+    if "divergence_config" not in cols:
+        conn.execute("ALTER TABLE asset_models ADD COLUMN divergence_config TEXT")
+        print("  + coluna divergence_config adicionada")
+
+    conn.commit()
+    conn.close()
+
+
 def migrate_kalman_state(db_path=None):
     """Adiciona a tabela kalman_state se não existir (migração Fase 6)."""
     conn = get_connection(db_path)
@@ -199,3 +218,4 @@ if __name__ == "__main__":
     init_db()
     migrate_delta()
     migrate_kalman_state()
+    migrate_divergence_config()
