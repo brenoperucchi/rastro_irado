@@ -632,6 +632,7 @@ class IRAIEngine:
         pair_sigma_window = int(div_cfg.get("pair_sigma_window", PAIR_SIGMA_WINDOW))
         pair_min_beta = float(div_cfg.get("pair_min_beta", PAIR_MIN_BETA))
         pair_residual_history = []
+        prev_pair_label = None  # p/ resetar o histórico quando o par ativo muda
 
         # Set de timestamps reais do target para detecção precisa de ghost bars
         target_ts_set = set(r["timestamp"] for r in target_bars)
@@ -716,14 +717,21 @@ class IRAIEngine:
                     local_factor_states[label].weight = current_betas[i+1]
 
                 # --- Pair z-score (sinal pairwise dinâmico) ---
-                # Par ativo = fator de maior |β| no Kalman deste bar; resíduo =
-                # retorno do target − β·retorno_do_par; z normalizado por √t com
-                # σ rolling do resíduo. obs_matrix[idx+1] é o retorno do fator.
+                # Par ativo = fator de maior |β| no Kalman deste bar (excluindo σ
+                # quase-nula); resíduo = retorno do target − β·retorno_do_par; z de
+                # reversão à média (centrado, sem √t) sobre a janela do resíduo.
+                # obs_matrix[idx+1] é o retorno do fator.
                 pair_labels = [active_labels.get(f, f) for f in active_factors]
                 pair_sigmas = [local_factor_states[lbl].sigma for lbl in pair_labels]
                 pair = select_active_pair(current_betas, pair_labels, pair_min_beta,
                                           sigmas=pair_sigmas)
                 if pair is not None and not is_pre_market:
+                    # Se o par ativo mudou, zera o histórico: média/σ do z não podem
+                    # misturar resíduos de spreads diferentes (senão a troca de par
+                    # gera um falso deslocamento).
+                    if pair["label"] != prev_pair_label:
+                        pair_residual_history = []
+                        prev_pair_label = pair["label"]
                     ret_pair_factor = obs_matrix[pair["index"] + 1]
                     residual = pairwise_residual(win_ret, pair["beta"], ret_pair_factor)
                     pair_residual_history.append(residual)

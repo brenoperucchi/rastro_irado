@@ -1,8 +1,9 @@
 """Primitivas de z-score do IRAI — puras, sem dependências pesadas.
 
 Isoladas em módulo próprio para poderem ser testadas sem importar o engine
-inteiro (que puxa numpy/pandas/pykalman). Reutilizadas pelo z-score
-multivariate atual e pelo sinal pair z-score (mesma normalização √t).
+inteiro (que puxa numpy/pandas/pykalman). O z de fator/divergência usa a
+normalização √t (normalized_zscore); o z do par usa reversão à média centrada
+sem √t (pair_zscore).
 """
 
 # Piso de sigma: um fator sem σ calibrado (ausente) ou com σ degenerado
@@ -67,8 +68,8 @@ def select_active_pair(betas, labels, min_beta: float = PAIR_MIN_BETA,
         b = betas[i + 1]
         if abs(b) < min_beta:
             continue
-        if sigmas and i < len(sigmas) and sigmas[i] and sigmas[i] < sigma_floor:
-            continue  # fator de vol quase-nula — par degenerado, pula
+        if sigmas and i < len(sigmas) and sigmas[i] is not None and sigmas[i] < sigma_floor:
+            continue  # fator de vol quase-nula (inclui σ=0) — par degenerado, pula
         if best is None or abs(b) > abs(best["beta"]):
             best = {"label": label, "beta": b, "index": i}
     return best
