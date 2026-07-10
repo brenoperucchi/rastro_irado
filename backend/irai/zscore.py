@@ -95,6 +95,26 @@ def rolling_sigma(residuals, window: int = PAIR_SIGMA_WINDOW) -> float:
     return var ** 0.5
 
 
+def pair_zscore(residuals, window: int = PAIR_SIGMA_WINDOW) -> float:
+    """Z de reversão à média do resíduo do par: (r_t − μ_janela)/σ_janela.
+
+    Sem √t: σ já é a dispersão dos NÍVEIS de resíduo na janela (não vol-por-barra).
+    Centrado na média rolling → limitado a ~√3 para resíduo em tendência suave (em
+    vez de explodir); dispara só em deslocamento genuíno do equilíbrio. Com <2
+    amostras ou σ≈0 retorna 0.0 (sem sinal) — NÃO usa o piso DEFAULT_SIGMA: no par,
+    σ degenerado deve ZERAR o sinal, não inflá-lo (oposto do z de fator).
+    """
+    recent = residuals[-window:] if window and window > 0 else list(residuals)
+    n = len(recent)
+    if n < 2:
+        return 0.0
+    mean = sum(recent) / n
+    sigma = (sum((x - mean) ** 2 for x in recent) / n) ** 0.5
+    if sigma <= 0:
+        return 0.0
+    return (recent[-1] - mean) / sigma
+
+
 def pair_signal(z_pair: float, beta: float, threshold: float = PAIR_THRESHOLD) -> str:
     """Sinal de compra/venda do par por reversão do resíduo.
 

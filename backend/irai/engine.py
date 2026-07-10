@@ -21,7 +21,7 @@ from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
 from backend.irai.zscore import (
     DEFAULT_SIGMA, normalized_zscore,
-    select_active_pair, pairwise_residual, rolling_sigma, pair_signal,
+    select_active_pair, pairwise_residual, pair_zscore, pair_signal,
     PAIR_THRESHOLD, PAIR_SIGMA_WINDOW, PAIR_MIN_BETA,
 )
 
@@ -727,9 +727,9 @@ class IRAIEngine:
                     ret_pair_factor = obs_matrix[pair["index"] + 1]
                     residual = pairwise_residual(win_ret, pair["beta"], ret_pair_factor)
                     pair_residual_history.append(residual)
-                    sigma_resid = rolling_sigma(pair_residual_history, pair_sigma_window)
-                    t_frac_pair = min((bar_idx + 1) / target_bars_per_session, 1.0)
-                    z_pair = normalized_zscore(residual, sigma_resid, t_frac_pair ** 0.5)
+                    # z de reversão à média do resíduo (centrado, sem √t) — evita o
+                    # z degenerado quando o par é um hedge ruim (resíduo em tendência).
+                    z_pair = pair_zscore(pair_residual_history, pair_sigma_window)
                     pending_pair = (
                         z_pair, pair["label"], pair["beta"],
                         pair_signal(z_pair, pair["beta"], pair_threshold),
