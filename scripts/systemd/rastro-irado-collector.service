@@ -1,0 +1,17 @@
+[Unit]
+Description=IRAI Collector (WSL, escopo WIN$N/WDO$N)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/brenoperucchi/Devs/rastro_irado
+ExecStart=/home/brenoperucchi/Devs/rastro_irado/scripts/systemd/collector-wsl.sh
+Restart=on-failure
+RestartSec=5
+Environment=IRAI_PYTHON=/mnt/c/Users/brenoperucchi/AppData/Local/Microsoft/WindowsApps/py.exe
+Environment=IRAI_PYTHON_VERSION_FLAG=-3.12
+Environment=IRAI_COLLECTOR_INTERVAL=60
+
+[Install]
+WantedBy=default.target
