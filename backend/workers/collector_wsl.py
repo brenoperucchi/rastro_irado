@@ -74,6 +74,14 @@ TERMINALS = [
             # iShares de bond — nome idêntico ao canônico
             ("iSharesTreasury1-3+", "iSharesTreasury1-3+", "axi"),
             ("iSharesCurrencyBond+", "iSharesCurrencyBond+", "axi"),
+            # Fatores da cesta de produção do WIN ainda ausentes localmente
+            # (nome canônico = symbol do feed de produção → slug = lower()).
+            # Necessários p/ recalibrar o WIN com a cesta que a produção usa.
+            ("BRENT.fs", "BRENT", "tickmill"),
+            ("BTCUSD.sa", "BTCUSD", "tickmill"),
+            ("CADCHF.sa", "CADCHF", "tickmill"),
+            ("US30.sa", "US30", "tickmill"),
+            ("USDMXN.sa", "USDMXN", "tickmill"),
         ],
     },
 ]
