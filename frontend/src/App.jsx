@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { useSwipeable } from 'react-swipeable'
 import Overview from './Overview'
+import TVPairwiseZScoreChart from './charts/TVPairwiseZScoreChart'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
 // window.location.hostname (não 'localhost' fixo) para funcionar tanto local
@@ -1017,6 +1018,30 @@ export default function App() {
                     fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--amber-dim)', marginTop: 2,
                     letterSpacing: '0.1em', textTransform: 'uppercase',
                   }}>rastro macro · fatores externos</div>
+                  {/* PAR ATIVO: fator de maior |β| no Kalman naquele bar + z-score do resíduo */}
+                  {now.pair_factor && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6,
+                      padding: '2px 8px', borderRadius: 4, background: '#0E0E11', border: '1px solid #1E293B',
+                    }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>PAR ATIVO:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: '#C9A227', fontWeight: 600 }}>
+                        {getFactorMeta(now.pair_factor).label}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B' }}>β:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_beta > 0 ? '#4ADE80' : '#F87171' }}>
+                        {now.pair_beta > 0 ? '+' : ''}{now.pair_beta?.toFixed(3)}
+                      </span>
+                      {now.pair_z != null && (
+                        <>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#64748B', marginLeft: 2 }}>Z:</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: now.pair_z >= 0 ? '#4ADE80' : '#F87171' }}>
+                            {now.pair_z >= 0 ? '+' : ''}{now.pair_z.toFixed(2)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1149,6 +1174,35 @@ export default function App() {
 
               {/* BOTTOM: Divergence Z-Score */}
               <div style={{ marginTop: 2, borderTop: '1px solid var(--border-dim)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Z-SCORE DINÂMICO (PAIR SPREAD) — primeiro chart migrado p/ lightweight-charts */}
+                {seriesWithNWE.some(b => b.pair_z != null) && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 4px' }}>
+                      <div style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--amber-dim)',
+                        letterSpacing: '0.1em', textTransform: 'uppercase',
+                      }}>
+                        z-score dinâmico (pair spread)
+                      </div>
+                      {now.pair_z != null && (
+                        <div style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+                          color: Math.abs(now.pair_z) < 1.5 ? '#64748B' : (now.pair_z <= -1.5 ? (now.pair_beta < 0 ? '#4ADE80' : '#F87171') : (now.pair_beta < 0 ? '#F87171' : '#4ADE80')),
+                        }}>
+                          {Math.abs(now.pair_z) < 1.5
+                            ? '✓ NEUTRO'
+                            : (now.pair_z <= -1.5
+                                ? (now.pair_beta < 0 ? '🟢 COMPRA' : '🔴 VENDA')
+                                : (now.pair_beta < 0 ? '🔴 VENDA' : '🟢 COMPRA'))}
+                          <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
+                            z={now.pair_z >= 0 ? '+' : ''}{now.pair_z.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <TVPairwiseZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
+                  </div>
+                )}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 4px' }}>
                     <div style={{
