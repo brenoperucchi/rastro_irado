@@ -19,7 +19,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.db import get_connection, DB_PATH, load_kalman_state, save_kalman_state
 from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
-from backend.irai.zscore import DEFAULT_SIGMA, normalized_zscore
+from backend.irai.zscore import (
+    DEFAULT_SIGMA, normalized_zscore,
+    select_active_pair, pairwise_residual, rolling_sigma, pair_signal,
+    PAIR_THRESHOLD, PAIR_SIGMA_WINDOW, PAIR_MIN_BETA,
+)
 
 
 # ── Alias de símbolos ─────────────────────────────────────
@@ -77,6 +81,11 @@ class IRAISnapshot:
     is_preview: bool = False  # True = preview pré-abertura (sem dados do target)
     johansen_p_value: float = 1.0
     is_cointegrated: bool = True
+    # Pair z-score (sinal pairwise dinâmico, só v2/Kalman)
+    pair_z: float = 0.0
+    pair_factor: Optional[str] = None   # label do par ativo (maior |β|)
+    pair_beta: float = 0.0
+    pair_signal: str = "neutral"        # "buy" | "sell" | "neutral"
 
 
 def sigmoid(x: float) -> float:
@@ -616,6 +625,14 @@ class IRAIEngine:
         target_div_sigma = div_cfg.get("sigma", 0.005)
         target_div_threshold = div_cfg.get("threshold", 0.5)
 
+        # Pair z-score (params via divergence_config; ver backend/irai/zscore.py).
+        # Só computado no v2 (precisa dos betas do Kalman). Buffer de resíduos
+        # acumula ao longo da sessão para o σ rolling.
+        pair_threshold = float(div_cfg.get("pair_threshold", PAIR_THRESHOLD))
+        pair_sigma_window = int(div_cfg.get("pair_sigma_window", PAIR_SIGMA_WINDOW))
+        pair_min_beta = float(div_cfg.get("pair_min_beta", PAIR_MIN_BETA))
+        pair_residual_history = []
+
         # Set de timestamps reais do target para detecção precisa de ghost bars
         target_ts_set = set(r["timestamp"] for r in target_bars)
 
@@ -656,6 +673,7 @@ class IRAIEngine:
 
             is_coint = True
             p_val = 0.01
+            pending_pair = None  # (z_pair, label, beta, signal) — só preenchido no v2
 
             if version == "v2":
                 # Preparar dados para Johansen (Preços)
@@ -696,6 +714,24 @@ class IRAIEngine:
                 for i, factor in enumerate(active_factors):
                     label = active_labels.get(factor, factor)
                     local_factor_states[label].weight = current_betas[i+1]
+
+                # --- Pair z-score (sinal pairwise dinâmico) ---
+                # Par ativo = fator de maior |β| no Kalman deste bar; resíduo =
+                # retorno do target − β·retorno_do_par; z normalizado por √t com
+                # σ rolling do resíduo. obs_matrix[idx+1] é o retorno do fator.
+                pair_labels = [active_labels.get(f, f) for f in active_factors]
+                pair = select_active_pair(current_betas, pair_labels, pair_min_beta)
+                if pair is not None and not is_pre_market:
+                    ret_pair_factor = obs_matrix[pair["index"] + 1]
+                    residual = pairwise_residual(win_ret, pair["beta"], ret_pair_factor)
+                    pair_residual_history.append(residual)
+                    sigma_resid = rolling_sigma(pair_residual_history, pair_sigma_window)
+                    t_frac_pair = min((bar_idx + 1) / target_bars_per_session, 1.0)
+                    z_pair = normalized_zscore(residual, sigma_resid, t_frac_pair ** 0.5)
+                    pending_pair = (
+                        z_pair, pair["label"], pair["beta"],
+                        pair_signal(z_pair, pair["beta"], pair_threshold),
+                    )
             else:
                 # V1: Garantir que os pesos sejam os estáticos (default setup at the start)
                 pass
@@ -714,7 +750,10 @@ class IRAIEngine:
             )
             snap.timestamp = ts.isoformat()
             snap.is_ghost = is_ghost_bar
-            
+
+            if pending_pair is not None:
+                snap.pair_z, snap.pair_factor, snap.pair_beta, snap.pair_signal = pending_pair
+
             if is_pre_market:
                 snap.win_return = 0.0
 

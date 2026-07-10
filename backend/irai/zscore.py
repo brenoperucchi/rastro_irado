@@ -2,7 +2,7 @@
 
 Isoladas em módulo próprio para poderem ser testadas sem importar o engine
 inteiro (que puxa numpy/pandas/pykalman). Reutilizadas pelo z-score
-multivariate atual e pelo futuro sinal pair z-score (mesma normalização √t).
+multivariate atual e pelo sinal pair z-score (mesma normalização √t).
 """
 
 # Piso de sigma: um fator sem σ calibrado (ausente) ou com σ degenerado
@@ -24,3 +24,73 @@ def normalized_zscore(ret: float, sigma: float, sqrt_t: float) -> float:
         return 0.0
     eff_sigma = sigma if sigma > 0 else DEFAULT_SIGMA
     return ret / (eff_sigma * sqrt_t)
+
+
+# ── Pair z-score (sinal pairwise dinâmico) ────────────────────────────────
+# Design: .planning/notes/pair-zscore-signal.md
+# TODO:   .planning/todos/pending/implementar-pair-zscore-dots.md
+#
+# O "par ativo" é o fator de maior |β| no estado do Kalman naquele bar. O sinal
+# vem da reversão do resíduo (retorno do target vs. o explicado pelo par).
+# Tudo aqui é puro/testável; o engine v2 apenas alimenta betas/retornos e
+# persiste os campos resultantes no IRAISnapshot.
+
+PAIR_THRESHOLD = 1.5      # z_pair de disparo (≈1.5σ), default do design
+PAIR_SIGMA_WINDOW = 20    # janela do σ rolling do resíduo (observações)
+PAIR_MIN_BETA = 0.1       # |β| mínimo para o par ser considerado válido
+
+
+def select_active_pair(betas, labels, min_beta: float = PAIR_MIN_BETA):
+    """Escolhe o fator de maior |β| (o "par ativo") entre ``betas[1:]``.
+
+    ``betas[0]`` é o intercepto; ``betas[1:]`` alinham 1-a-1 com ``labels``
+    (mesma ordem de active_factors no engine). Retorna
+    ``{"label", "beta", "index"}`` ou ``None`` se nenhum |β| ≥ ``min_beta``.
+    """
+    best = None
+    for i, label in enumerate(labels):
+        if i + 1 >= len(betas):
+            break
+        b = betas[i + 1]
+        if abs(b) < min_beta:
+            continue
+        if best is None or abs(b) > abs(best["beta"]):
+            best = {"label": label, "beta": b, "index": i}
+    return best
+
+
+def pairwise_residual(ret_target: float, beta: float, ret_factor: float) -> float:
+    """Resíduo do par: retorno do target menos o retorno explicado pelo fator."""
+    return ret_target - beta * ret_factor
+
+
+def rolling_sigma(residuals, window: int = PAIR_SIGMA_WINDOW) -> float:
+    """Desvio-padrão populacional dos últimos ``window`` resíduos.
+
+    Retorna 0.0 com menos de 2 amostras — nesse caso ``normalized_zscore``
+    aplica o piso ``DEFAULT_SIGMA``, evitando z_pair explosivo no começo da
+    janela (antes de acumular resíduos suficientes).
+    """
+    recent = residuals[-window:] if window and window > 0 else list(residuals)
+    n = len(recent)
+    if n < 2:
+        return 0.0
+    mean = sum(recent) / n
+    var = sum((x - mean) ** 2 for x in recent) / n
+    return var ** 0.5
+
+
+def pair_signal(z_pair: float, beta: float, threshold: float = PAIR_THRESHOLD) -> str:
+    """Sinal de compra/venda do par por reversão do resíduo.
+
+    Tabela (.planning/notes/pair-zscore-signal.md):
+      |z_pair| < threshold                    -> "neutral"
+      β < 0 (inverso):  z ≤ -thr -> "buy" ,  z ≥ +thr -> "sell"
+      β > 0 (direto) :  z ≤ -thr -> "sell",  z ≥ +thr -> "buy"
+    """
+    if beta == 0 or abs(z_pair) < threshold:
+        return "neutral"
+    below = z_pair <= -threshold
+    if beta < 0:                      # relação inversa
+        return "buy" if below else "sell"
+    return "sell" if below else "buy"  # relação direta

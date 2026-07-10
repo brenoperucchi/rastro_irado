@@ -265,6 +265,11 @@ async def irai_overview(
                 "price_diverges": price_diverges,
                 "price_diverge_z": price_diverge_z,
                 "nwe_slope": nwe_slope,
+                # Pair z-score do último bar (gauge "Par: X | β=…" + badge Pr)
+                "pair_z": round(getattr(last, "pair_z", 0.0), 2),
+                "pair_factor": getattr(last, "pair_factor", None),
+                "pair_beta": round(getattr(last, "pair_beta", 0.0), 4),
+                "pair_signal": getattr(last, "pair_signal", "neutral"),
                 "is_preview": getattr(last, "is_preview", False),
             }
 
@@ -437,6 +442,11 @@ def _snap_to_dict(snap) -> dict:
         "flow_confirms": snap.flow_confirms,
         "price_diverges": snap.price_diverges,
         "price_diverge_z": snap.price_diverge_z,
+        # Pair z-score (sinal pairwise; só populado no v2, senão defaults)
+        "pair_z": getattr(snap, "pair_z", 0.0),
+        "pair_factor": getattr(snap, "pair_factor", None),
+        "pair_beta": getattr(snap, "pair_beta", 0.0),
+        "pair_signal": getattr(snap, "pair_signal", "neutral"),
         "is_preview": getattr(snap, "is_preview", False),
         "is_ghost": getattr(snap, "is_ghost", False),
     }
