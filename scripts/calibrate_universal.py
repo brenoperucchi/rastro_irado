@@ -72,8 +72,8 @@ def load_daily_returns(conn, session_start_h, session_end_h):
     return daily
 
 
-def calibrate_target(conn, target, session_start_h=0, session_end_h=24, 
-                     data_proxy=None, min_factors=4, max_factors=8):
+def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
+                     data_proxy=None, min_factors=4, max_factors=8, forced_factors=None):
     """
     Brute-force: testa todas combinações de fatores para o target.
     Retorna: best_factors, best_labels, weights, sigmas, alpha, intercept, r2, accuracy
@@ -157,6 +157,18 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         print(f"  [regra] {target} exclui iSharesBrazil+ (proxy da mesma bolsa)")
 
     available_factors = [f for f in ALL_FACTORS if f in daily and f not in exclude]
+
+    # --factors: força a cesta exata (bypassa brute-force e regras de exclusão,
+    # avalia só esse combo). Usado p/ convergir com a produção em vez de
+    # re-otimizar na nossa janela. Exige que todos os fatores tenham dados.
+    if forced_factors:
+        missing = [f for f in forced_factors if f not in daily]
+        if missing:
+            print(f"  [FAIL] Fatores forçados sem dados no DB: {missing}")
+            return None
+        available_factors = list(forced_factors)
+        min_factors = max_factors = len(available_factors)
+        print(f"  [FORÇADO] cesta fixa ({len(available_factors)}): {available_factors}")
 
     print(f"  Fatores disponíveis: {len(available_factors)}")
     print(f"  Sessões target: {len(target_ret)}")
@@ -349,7 +361,13 @@ def main():
     parser.add_argument("--force", action="store_true", help="Recalibrar mesmo já calibrados")
     parser.add_argument("--min-factors", type=int, default=6)
     parser.add_argument("--max-factors", type=int, default=8)
+    parser.add_argument("--factors", type=str, default=None,
+                        help="Força cesta exata (CSV de símbolos, ex: WDO$N,DI1$N,BRENT). Pula o brute-force.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Não grava no DB (só imprime cesta/métricas) — diagnóstico.")
     args = parser.parse_args()
+
+    forced = [f.strip() for f in args.factors.split(",")] if args.factors else None
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -380,9 +398,13 @@ def main():
         result = calibrate_target(
             conn, target, s_start, s_end, proxy,
             args.min_factors, args.max_factors,
+            forced_factors=forced,
         )
         if result:
-            save_to_db(conn, target, slug, result)
+            if args.dry_run:
+                print(f"  [DRY-RUN] cesta={result['factors']} acc={result['accuracy']:.1f}% r2={result['r2']:.4f} — NÃO gravado")
+            else:
+                save_to_db(conn, target, slug, result)
             results_summary.append((target, result["accuracy"], result["r2"], result["logistic_acc"], len(result["factors"])))
         else:
             results_summary.append((target, None, None, None, 0))
