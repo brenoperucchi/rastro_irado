@@ -28,7 +28,7 @@ for row in conn.execute("SELECT * FROM asset_models WHERE active = 1"):
     for f in factors:
         label = factor_labels.get(f, f)
         w = params.get(f"{slug}_w_{label}", 0.0)
-        s = params.get(f"sigma_{label}_daily", 0.0)
+        s = params.get(f"{slug}_sigma_{label}", 0.0)
         direction = "↑ COMPRA" if w > 0 else "↓ VENDA"
         weights.append((f, w, s, direction))
         

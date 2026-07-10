@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.db import get_connection, DB_PATH, load_kalman_state, save_kalman_state
 from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
+from backend.irai.zscore import DEFAULT_SIGMA, normalized_zscore
 
 
 # ── Alias de símbolos ─────────────────────────────────────
@@ -32,6 +33,8 @@ def resolve_symbol(sym: str) -> str:
 TARGET = "WIN$N"
 FACTOR_LABELS = {}  # carregado do DB
 BARS_PER_SESSION = 108
+# DEFAULT_SIGMA e normalized_zscore vivem em backend/irai/zscore.py (primitiva
+# pura, testável sem numpy/pykalman) e são importados no topo deste módulo.
 
 
 @dataclass
@@ -309,11 +312,8 @@ class IRAIEngine:
                 state.ret = 0.0
                 state.stale = True
 
-            # Z-score normalizado por tempo
-            if state.sigma > 0:
-                state.z_score = state.ret / (state.sigma * sqrt_t)
-            else:
-                state.z_score = 0.0
+            # Z-score normalizado por tempo (σ≤0 usa piso, não zera o sinal)
+            state.z_score = normalized_zscore(state.ret, state.sigma, sqrt_t)
 
             # Contribuição
             state.contribution = state.weight * state.z_score
@@ -403,7 +403,7 @@ class IRAIEngine:
                 symbol=symbol,
                 label=label,
                 weight=t_weights.get(f"w_{label}", 0.0),
-                sigma=t_sigmas.get(label, 0.01),
+                sigma=t_sigmas.get(label, DEFAULT_SIGMA),
             )
         
         local_alpha = t_alpha
