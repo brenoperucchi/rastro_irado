@@ -37,7 +37,9 @@ const OVERVIEW_STYLES = `
   }
 `
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
-const API = FIREBASE_URL ? null : 'http://localhost:8888'
+// window.location.hostname (não 'localhost' fixo) para funcionar tanto local
+// quanto acessado remotamente via IP da LAN (ex: dashboard aberto de outra máquina).
+const API = FIREBASE_URL ? null : `http://${window.location.hostname}:8888`
 
 function Sparkline({ dataV1, dataV2, width = '100%', height = 24 }) {
   const allData = [...(dataV1 || []), ...(dataV2 || [])]

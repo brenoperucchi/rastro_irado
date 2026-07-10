@@ -8,8 +8,10 @@ import { useSwipeable } from 'react-swipeable'
 import Overview from './Overview'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
-const API = FIREBASE_URL ? null : 'http://localhost:8888'
-const WS_URL = FIREBASE_URL ? null : 'ws://localhost:8888/ws/irai'
+// window.location.hostname (não 'localhost' fixo) para funcionar tanto local
+// quanto acessado remotamente via IP da LAN (ex: dashboard aberto de outra máquina).
+const API = FIREBASE_URL ? null : `http://${window.location.hostname}:8888`
+const WS_URL = FIREBASE_URL ? null : `ws://${window.location.hostname}:8888/ws/irai`
 
 // Mapa cosmético de labels para fatores conhecidos
 const FACTOR_DISPLAY = {
