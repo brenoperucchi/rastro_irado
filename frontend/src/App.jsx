@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceArea, ReferenceLine, Area, ComposedChart,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ReferenceArea, Area, ComposedChart,
   ResponsiveContainer, Cell, Brush
 } from 'recharts'
 import { useSwipeable } from 'react-swipeable'
@@ -9,6 +9,7 @@ import Overview from './Overview'
 import TVPairwiseZScoreChart from './charts/TVPairwiseZScoreChart'
 import TVProbabilityChart from './charts/TVProbabilityChart'
 import TVPriceDivergeZScoreChart from './charts/TVPriceDivergeZScoreChart'
+import TVKalmanWeightsChart from './charts/TVKalmanWeightsChart'
 
 const FIREBASE_URL = import.meta.env.VITE_FIREBASE_URL
 // window.location.hostname (não 'localhost' fixo) para funcionar tanto local
@@ -39,12 +40,6 @@ function getFactorMeta(fkey) {
   if (known) return { label: known.label, icon: known.icon, desc: known.label }
   return { label: fkey.toUpperCase(), icon: '📊', desc: fkey }
 }
-
-const FACTOR_COLORS = [
-  '#4ADE80', '#60A5FA', '#FBBF24', '#C084FC',
-  '#F87171', '#2DD4BF', '#F472B6', '#A3E635',
-  '#FCD34D', '#A78BFA', '#34D399', '#FB923C'
-];
 
 /* ── Big Gauge ────────────────────────────────────── */
 function SignalGauge({ title, pUp = 50, verdict, score = 0, winReturn, flowConfirms, cumDeltaNorm, targetLabel, hasFlow = true, accuracy = 80, recentPUp = [], priceDiverges, nweUp, nweUpper, nweLower, isPreview }) {
@@ -1114,7 +1109,7 @@ export default function App() {
                       fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--amber-dim)',
                       letterSpacing: '0.1em', textTransform: 'uppercase',
                     }}>
-                      z-score · dinâmico (kalman)
+                      z-score dinâmico (divergência preço)
                     </div>
                     <div style={{
                       fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
@@ -1140,34 +1135,12 @@ export default function App() {
                         pesos dinâmicos (kalman filter)
                       </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={140}>
-                      <LineChart data={seriesWithNWE} syncId="irai" margin={{ top: 4, right: 80, left: 5, bottom: 0 }}>
-                        <CartesianGrid stroke="var(--grid)" vertical={false} />
-                        <XAxis dataKey="time" tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }} stroke="#1E293B" interval={11} />
-                        <YAxis orientation="left" width={45} tick={{ fill: '#475569', fontSize: 8, fontFamily: 'JetBrains Mono' }} stroke="#1E293B" />
-                        <ReferenceLine y={0} stroke="#475569" strokeWidth={1} strokeDasharray="4 4" />
-                        <Tooltip
-                          formatter={(v, name) => {
-                             const realName = name.replace('weight_', '');
-                             const meta = getFactorMeta(realName);
-                             return [Number(v).toFixed(4), meta.label];
-                          }}
-                          contentStyle={{ background: '#0E0E11', border: '1px solid #1C1C22', borderRadius: 4, fontFamily: 'JetBrains Mono', fontSize: 11 }}
-                          labelStyle={{ color: '#6A6A7A' }}
-                        />
-                        {Object.keys(now.factors_v2 || now.factors).map((label, idx) => (
-                          <Line 
-                            key={label}
-                            type="monotone" 
-                            dataKey={`weight_${label}`} 
-                            stroke={FACTOR_COLORS[idx % FACTOR_COLORS.length]} 
-                            strokeWidth={1.5} 
-                            dot={false} 
-                            isAnimationActive={false} 
-                          />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <TVKalmanWeightsChart
+                      history={seriesWithNWE}
+                      factorKeys={Object.keys(now.factors_v2 || now.factors || {})}
+                      effectiveDate={effectiveDate}
+                      hideXAxis={false}
+                    />
                   </div>
                 )}
               </div>
