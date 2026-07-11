@@ -723,7 +723,7 @@ export default function App() {
     return rawNwe.map(entry => {
       const mappedEntry = { ...entry };
 
-      // Flatten weights for Recharts
+      // Achata os pesos em weight_<fator> (consumido pelo TVKalmanWeightsChart)
       const factors = entry.factors;
       if (factors) {
         Object.keys(factors).forEach(label => {
