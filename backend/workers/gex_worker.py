@@ -130,7 +130,14 @@ def fetch_mt5_data(oi_rows: list[dict], session_date: str) -> dict:
             continue
         exp_ts = getattr(info, "expiration_time", 0)
         exp = datetime.fromtimestamp(exp_ts, tz=timezone.utc).date() if exp_ts else None
-        prem = d1_close(mt5, tk, ref)
+        # Prêmio EOD: session_close do symbol_info (fechamento da sessão
+        # anterior, instantâneo). copy_rates_from_pos força o terminal a
+        # baixar o histórico do símbolo (~15s/série × 780 = horas) — só
+        # usamos como fallback nos strikes ATM, os únicos que alimentam a
+        # inversão de IV (|K−spot| ≤ MONEYNESS_IV).
+        prem = float(getattr(info, "session_close", 0) or 0) or None
+        if prem is None and spot and abs(float(info.option_strike) - spot) / spot <= MONEYNESS_IV:
+            prem = d1_close(mt5, tk, ref)
         options.append({
             "ticker": tk, "oi": row["oi"],
             "strike": float(info.option_strike),
