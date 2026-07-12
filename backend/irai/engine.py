@@ -115,30 +115,6 @@ class IRAIEngine:
         self.intercept: float = 0.0
         self._load_params()
 
-    def compute_from_db(self, target: str, version: str = "v1", is_preview_mode: bool = False, **kwargs):
-        # Em modo v2, salva o último estado no db se aplicável
-        if version == "v2" and len(snapshots) > 0 and kf is not None and not is_preview_mode:
-            last_snap_dt = datetime.fromisoformat(snapshots[-1].timestamp)
-            current_dt = datetime.utcnow()
-            
-            last_snap_utc = last_snap_dt.astimezone(timezone.utc).replace(tzinfo=None)
-            
-            # Save only if it's recent enough to not overwrite a potentially newer state
-            # and if we have a valid Kalman filter running.
-            current_state_mean, current_state_cov = kf.get_state()
-            try:
-                conn3 = get_connection(self.db_path)
-                save_kalman_state(
-                    conn3,
-                    slug,
-                    current_state_mean,
-                    current_state_cov,
-                    last_snap_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-                )
-                conn3.close()
-            except Exception as e:
-                print(f"Warning: Failed to save kalman state: {e}")
-
     def _load_params(self):
         """Carrega configs de asset_models + params de model_params."""
         conn = get_connection(self.db_path)
@@ -389,7 +365,12 @@ class IRAIEngine:
             stale_factors=stale_factors,
         )
 
-    def compute_from_db(self, session_date: str = None, target: str = None, version: str = "v1") -> list[IRAISnapshot]:
+    def compute_from_db(self, session_date: str = None, target: str = None, version: str = "v1",
+                        persist_state: bool = True) -> list[IRAISnapshot]:
+        """persist_state=False para replay histórico/backtest: não grava o estado
+        do Kalman. O `save_kalman_state` já é monotônico (db.py) e rejeitaria o
+        write antigo, mas o replay não deve sequer tentar — quem manda no estado
+        vivo é a sessão viva. Ver Fase 4 do plano e tests/test_kalman_state.py."""
         """Computa série IRAI completa para uma sessão a partir do banco.
         
         Args:
@@ -806,7 +787,7 @@ class IRAIEngine:
             snapshots.append(snap)
             
         # Salvar o último estado do Kalman no banco
-        if snapshots and version == "v2" and kf is not None:
+        if snapshots and version == "v2" and kf is not None and persist_state:
             last_ts = snapshots[-1].timestamp
             last_p = snapshots[-1].johansen_p_value
             last_coint = snapshots[-1].is_cointegrated

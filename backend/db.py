@@ -183,10 +183,24 @@ def save_kalman_state(conn, slug: str, state_mean, state_covariance, p_value: fl
     if isinstance(state_covariance, np.ndarray):
         state_covariance = state_covariance.tolist()
         
+    # Upsert MONOTÔNICO: um write com timestamp mais antigo que o já gravado é
+    # ignorado. O estado é o prior causal da sessão seguinte (engine.py:614) —
+    # sem este guard, computar uma sessão antiga em v2 (date-picker do frontend,
+    # fallback do /api/irai/current) gravava o estado daquela sessão por cima do
+    # estado vivo, e no dia seguinte ele virava prior com betas de outro regime.
+    # timestamp_utc é ISO-8601 com offset fixo (+00:00) → ordem lexicográfica ==
+    # ordem cronológica. Ver tests/test_kalman_state.py.
     conn.execute("""
-        INSERT OR REPLACE INTO kalman_state 
+        INSERT INTO kalman_state
         (slug, state_mean, state_covariance, johansen_p_value, is_cointegrated, timestamp_utc)
         VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(slug) DO UPDATE SET
+            state_mean       = excluded.state_mean,
+            state_covariance = excluded.state_covariance,
+            johansen_p_value = excluded.johansen_p_value,
+            is_cointegrated  = excluded.is_cointegrated,
+            timestamp_utc    = excluded.timestamp_utc
+        WHERE excluded.timestamp_utc >= kalman_state.timestamp_utc
     """, (slug, json.dumps(state_mean), json.dumps(state_covariance), p_value, int(is_cointegrated), timestamp_utc))
     conn.commit()
 
