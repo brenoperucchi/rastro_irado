@@ -117,35 +117,35 @@ def fetch_mt5_data(oi_rows: list[dict], session_date: str, trust_session_close: 
     win = d1_close(mt5, "WIN$N", ref)
     log(f"  MT5: spot IBOV={spot} WIN settle={win}")
 
+    # symbols_get em LOTE: uma chamada devolve o symbol_info completo (strike,
+    # call/put, vencimento, session_close) de todas as séries IBOV* — sem
+    # symbol_select por série (que sincroniza o símbolo no terminal e levou
+    # 1h35–3h37 nas primeiras execuções).
+    infos = {s_.name: s_ for s_ in (mt5.symbols_get("IBOV*") or [])}
+    log(f"  MT5: symbols_get('IBOV*') -> {len(infos)} símbolos")
     options, miss = [], 0
     for row in oi_rows:
-        tk = row["ticker"]
-        if not mt5.symbol_select(tk, True):
-            miss += 1
-            continue
-        info = mt5.symbol_info(tk)
+        info = infos.get(row["ticker"])
         if not info or not getattr(info, "option_strike", 0):
             miss += 1
-            mt5.symbol_select(tk, False)
             continue
         exp_ts = getattr(info, "expiration_time", 0)
         exp = datetime.fromtimestamp(exp_ts, tz=timezone.utc).date() if exp_ts else None
-        # Prêmio EOD: session_close do symbol_info (fechamento da sessão
-        # anterior, instantâneo). copy_rates_from_pos força o terminal a
-        # baixar o histórico do símbolo (~15s/série × 780 = horas) — só
-        # usamos como fallback nos strikes ATM, os únicos que alimentam a
-        # inversão de IV (|K−spot| ≤ MONEYNESS_IV).
+        # Prêmio EOD: session_close (fechamento da sessão anterior). Fallback
+        # p/ barras D1 datadas só nos strikes ATM (os únicos que alimentam a
+        # inversão de IV) e em reprocessamento histórico (--date).
         prem = float(getattr(info, "session_close", 0) or 0) or None if trust_session_close else None
         if prem is None and spot and abs(float(info.option_strike) - spot) / spot <= MONEYNESS_IV:
-            prem = d1_close(mt5, tk, ref)
+            mt5.symbol_select(row["ticker"], True)
+            prem = d1_close(mt5, row["ticker"], ref)
+            mt5.symbol_select(row["ticker"], False)
         options.append({
-            "ticker": tk, "oi": row["oi"],
+            "ticker": row["ticker"], "oi": row["oi"],
             "strike": float(info.option_strike),
             "is_call": getattr(info, "option_right", 0) == 0,
             "expiry": exp.isoformat() if exp else None,
             "premium": prem,
         })
-        mt5.symbol_select(tk, False)  # não polui o Market Watch
     mt5.shutdown()
     log(f"  MT5: {len(options)} séries enriquecidas ({miss} sem metadados)")
     return {"spot": spot, "win_settle": win, "options": options}
