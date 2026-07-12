@@ -495,6 +495,12 @@ def _snap_to_dict(snap) -> dict:
         "pair_factor": getattr(snap, "pair_factor", None),
         "pair_beta": getattr(snap, "pair_beta", 0.0),
         "pair_signal": getattr(snap, "pair_signal", "neutral"),
+        # Eventos discretos -> markers do chart de preço (TVNweChart). None em
+        # toda barra que não é a transição do sinal, e em toda barra sintética.
+        "pair_compra": getattr(snap, "pair_compra", None),
+        "pair_venda": getattr(snap, "pair_venda", None),
+        "z_compra_val": getattr(snap, "z_compra_val", None),
+        "z_venda_val": getattr(snap, "z_venda_val", None),
         "is_preview": getattr(snap, "is_preview", False),
         "is_ghost": getattr(snap, "is_ghost", False),
     }

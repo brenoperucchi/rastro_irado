@@ -87,6 +87,15 @@ class IRAISnapshot:
     pair_beta: float = 0.0
     pair_signal: str = "neutral"        # "buy" | "sell" | "neutral"
 
+    # Eventos DISCRETOS p/ os markers do chart de preço. Preenchidos com o preço
+    # do target APENAS na barra em que o sinal DISPARA (transição), nunca em toda
+    # barra em que a condição segue válida — senão viraria spam de marcadores
+    # (um por barra durante todo o tempo em que |z| > threshold).
+    pair_compra: Optional[float] = None   # transição -> "buy"
+    pair_venda: Optional[float] = None    # transição -> "sell"
+    z_compra_val: Optional[float] = None  # borda de subida da divergência altista
+    z_venda_val: Optional[float] = None   # borda de subida da divergência baixista
+
 
 def sigmoid(x: float) -> float:
     """Logistic sigmoid, numericamente estável."""
@@ -631,6 +640,9 @@ class IRAIEngine:
         pair_min_beta = float(div_cfg.get("pair_min_beta", PAIR_MIN_BETA))
         pair_residual_history = []
         prev_pair_label = None  # p/ resetar o histórico quando o par ativo muda
+        # Estado p/ EVENTOS discretos: só emite marker na TRANSIÇÃO do sinal.
+        prev_pair_sig = "neutral"
+        prev_div_dir = None       # None | "buy" | "sell"
 
         # Set de timestamps reais do target para detecção precisa de ghost bars
         target_ts_set = set(r["timestamp"] for r in target_bars)
@@ -807,15 +819,36 @@ class IRAIEngine:
             else:
                 snap.flow_confirms = None
 
-            # Price Divergence
+            # Price Divergence. O bool `price_diverges` colapsa dois casos OPOSTOS
+            # (modelo altista com preço atrasado vs. modelo baixista com preço
+            # adiantado), então guardamos a direção p/ poder emitir o marker certo.
+            div_dir = None
             if target_div_sigma > 0 and snap.t_frac > 0:
                 ret_frac = snap.win_return / 100.0
                 ret_z = ret_frac / (target_div_sigma * math.sqrt(snap.t_frac))
                 snap.price_diverge_z = round(ret_z, 2)
                 if snap.p_up > 55 and ret_z < -target_div_threshold:
                     snap.price_diverges = True
+                    div_dir = "buy"    # modelo compra, preço não acompanhou
                 elif snap.p_up < 45 and ret_z > target_div_threshold:
                     snap.price_diverges = True
+                    div_dir = "sell"   # modelo vende, preço não acompanhou
+
+            # ── EVENTOS discretos (markers) ──────────────────────────────
+            # Só em barra REAL: um marker sobre barra sintética/forward-fill seria
+            # um sinal fantasma (o target não negociou ali). Ver Fase 3.
+            if not is_pre_market and not is_ghost_bar:
+                px = float(row["close"])
+                if snap.pair_signal == "buy" and prev_pair_sig != "buy":
+                    snap.pair_compra = px
+                elif snap.pair_signal == "sell" and prev_pair_sig != "sell":
+                    snap.pair_venda = px
+                if div_dir == "buy" and prev_div_dir != "buy":
+                    snap.z_compra_val = px
+                elif div_dir == "sell" and prev_div_dir != "sell":
+                    snap.z_venda_val = px
+                prev_pair_sig = snap.pair_signal
+                prev_div_dir = div_dir
 
             snapshots.append(snap)
             

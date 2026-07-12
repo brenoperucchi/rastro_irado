@@ -405,6 +405,46 @@ def test_replay_historico_nao_persiste_estado():
         eng_mod.KalmanFilterWrapper = orig
 
 
+# ── 10. INTEGRAÇÃO: markers nunca caem em barra sintética (engine real) ──
+def test_engine_nao_emite_marker_em_barra_sintetica():
+    """test_markers.py trava a SEMÂNTICA da máquina de transição isoladamente;
+    este aqui dirige o ENGINE DE VERDADE e garante que nenhum evento (pair/z)
+    é emitido sobre barra sem print do target — o que seria um sinal fantasma."""
+    import backend.irai.engine as eng_mod
+
+    class SpyKalman:
+        """Betas fixos e não-triviais, p/ o par ativo existir."""
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] + [1.5] * (n_dim_state - 1)
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    orig = eng_mod.KalmanFilterWrapper
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    try:
+        snaps = eng_mod.IRAIEngine(db_path=db).compute_from_db(
+            SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig
+
+    ghosts = [s for s in snaps if s.is_ghost]
+    assert ghosts, "fixture inválida: sem barras sintéticas"
+    for s in ghosts:
+        for campo in ("pair_compra", "pair_venda", "z_compra_val", "z_venda_val"):
+            assert getattr(s, campo, None) is None, (
+                f"marker fantasma ({campo}) em barra sintética {s.timestamp}")
+
+    # e compra/venda nunca coexistem na mesma barra
+    for s in snaps:
+        assert not (s.pair_compra is not None and s.pair_venda is not None)
+        assert not (s.z_compra_val is not None and s.z_venda_val is not None)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):
