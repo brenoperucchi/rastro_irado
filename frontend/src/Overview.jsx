@@ -378,7 +378,7 @@ function AssetCard({ card, onClick }) {
           <div style={{ display: 'flex', gap: 12 }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: convColor, marginTop: 4, fontWeight: 600 }}>
-                v1 conv. {convictionV1}%
+                {card.version || 'v2'} conv. {convictionV1}%
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: '#2A2A36', marginTop: 2 }}>
                 P(↑) {pUpV1.toFixed(0)}%

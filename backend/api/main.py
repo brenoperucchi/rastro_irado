@@ -322,6 +322,7 @@ async def irai_overview(
 
             res_obj.update({
                 "p_up": round(last.p_up, 1),
+                "version": version,   # qual motor gerou este p_up (v1 estático | v2 Kalman)
                 "score": round(last.score, 4),
                 "verdict": last.verdict,
                 "sparkline": sparkline,
