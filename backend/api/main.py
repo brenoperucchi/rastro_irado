@@ -512,14 +512,14 @@ def _bar_time(bar_idx: int) -> str:
 async def websocket_irai(ws: WebSocket):
     """WebSocket push: envia série IRAI atualizada baseada no target."""
     await ws.accept()
-    ws_clients[ws] = {"target": "WIN$N", "version": "both"} # Default
+    ws_clients[ws] = {"target": "WIN$N", "version": "v2"}  # v2 = Kalman (antes: "both", que o engine resolve como V1 estático)
     print(f"WS client connected ({len(ws_clients)} total)")
     
     # Enviar o estado atual imediatamente na conexão
     try:
         today = date.today().isoformat()
-        ov = await irai_overview(today, "both")
-        se = await irai_series(today, "WIN$N", "both")
+        ov = await irai_overview(today, "v2")
+        se = await irai_series(today, "WIN$N", "v2")
         if isinstance(se, JSONResponse): se = {"error": "Sem dados"}
         await ws.send_text(json.dumps({"type": "update", "overview": ov, "series": se}))
     except Exception as e:

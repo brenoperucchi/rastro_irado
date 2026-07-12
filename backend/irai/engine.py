@@ -429,7 +429,20 @@ class IRAIEngine:
         # Load previous Kalman state if valid
         slug = cfg.get("slug", self.target_slugs.get(target, "win"))
         saved_state = load_kalman_state(conn, slug)
-        
+
+        # A sessão VIVA é a última que o target tem no banco. Só ela pode gravar
+        # o estado do Kalman — replay histórico (date-picker, fallback do
+        # /api/irai/current, scripts) é read-only. O guard monotônico do
+        # save_kalman_state é a segunda linha de defesa, mas ele só protege
+        # quando JÁ existe estado mais novo; num banco recém-resetado um replay
+        # antigo semearia o prior vivo. Comparar contra as sessões do próprio
+        # target evita misturar fusos (B3=BRT vs Tickmill=EEST).
+        latest_row = conn.execute(
+            "SELECT MAX(substr(timestamp_utc, 1, 10)) AS d FROM market_bars "
+            "WHERE symbol = ? AND timeframe = 'M5'", (data_target,)).fetchone()
+        latest_session = latest_row["d"] if latest_row else None
+        is_live_session = (latest_session is not None and session_date >= latest_session)
+
         conn.close()
 
         if not rows_raw:
@@ -663,8 +676,15 @@ class IRAIEngine:
             pending_pair = None  # (z_pair, label, beta, signal) — só preenchido no v2
 
             if version == "v2":
+                # `sem_print` = o target não imprimiu neste timestamp: pré-mercado
+                # (antes da 1ª barra) ou gap intra-sessão (leilão/halt/feed). Nos
+                # dois casos NÃO há observação nova do target — o preço é
+                # sintético/forward-filled. Alimentar o Kalman ou o Johansen com
+                # isso fabrica informação. Ver Fase 3 + review Codex.
+                sem_print = is_pre_market or is_ghost_bar
+
                 # Preparar dados para Johansen (Preços)
-                if use_johansen and not is_pre_market:
+                if use_johansen and not sem_print:
                     basket_prices = {"target": float(row["close"])}
                     for factor in active_factors:
                         label = active_labels.get(factor, factor)
@@ -698,7 +718,7 @@ class IRAIEngine:
                 # prior: a memória efetiva do filtro é sqrt(R/Q)=10 barras contra
                 # ~180 barras de pré-mercado (=18 memórias). A difusão deixa o
                 # filtro corretamente mais receptivo à 1ª barra real após o gap.
-                if is_pre_market:
+                if sem_print:
                     kf.predict(np.array([obs_matrix]))
                 else:
                     kf.update(observation=win_ret, observation_matrix=np.array([obs_matrix]))
@@ -800,7 +820,7 @@ class IRAIEngine:
             snapshots.append(snap)
             
         # Salvar o último estado do Kalman no banco
-        if snapshots and version == "v2" and kf is not None and persist_state:
+        if snapshots and version == "v2" and kf is not None and persist_state and is_live_session:
             last_ts = snapshots[-1].timestamp
             last_p = snapshots[-1].johansen_p_value
             last_coint = snapshots[-1].is_cointegrated

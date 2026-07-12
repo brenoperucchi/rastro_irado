@@ -292,6 +292,119 @@ def test_johansen_nao_acumula_pre_mercado():
             "(coluna constante -> descartada por variância ~0 -> teste sem o target)")
 
 
+# ── 8. Gap INTRA-SESSÃO = mesma classe do pré-mercado (review Codex) ──
+def test_ghost_intra_sessao_nao_alimenta_o_kalman():
+    """Leilão/halt/falha de feed: o target não imprime num slot, mas os fatores
+    sim. O preço é forward-filled (stale) — não é observação nova. Alimentar o
+    Kalman com ele super-pondera um dado que não existe."""
+    import backend.irai.engine as eng_mod
+
+    calls = []
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] * n_dim_state
+        def update(self, observation, observation_matrix):
+            calls.append("update"); return self.mean, None
+        def predict(self, observation_matrix=None):
+            calls.append("predict"); return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    # abre um GAP no meio da sessão do target (remove 3 barras), mantendo o fator
+    c = sqlite3.connect(db)
+    gap = [f"{SESSION}T09:5{i}:00Z" for i in (0, 5)] + [f"{SESSION}T10:00:00Z"]
+    for ts in gap:
+        c.execute("DELETE FROM market_bars WHERE symbol=? AND timestamp_utc=?", (TARGET, ts))
+    n_gap = c.total_changes
+    c.commit(); c.close()
+    assert n_gap > 0, "fixture inválida: nenhuma barra removida"
+
+    orig = eng_mod.KalmanFilterWrapper
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    try:
+        snaps = eng_mod.IRAIEngine(db_path=db).compute_from_db(
+            SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig
+
+    # A invariante: UMA correção do Kalman por barra realmente IMPRESSA pelo
+    # target. Tudo que é forward-fill (pré-mercado, gap intra-sessão, e também
+    # os slots após o fechamento, em que o fator segue imprimindo) é observação
+    # ausente -> predict.
+    c = sqlite3.connect(db)
+    n_impressas = c.execute(
+        "SELECT COUNT(*) FROM market_bars WHERE symbol=? AND timeframe='M5' "
+        "AND substr(timestamp_utc,1,10)=?", (TARGET, SESSION)).fetchone()[0]
+    c.close()
+    ghosts = [s for s in snaps if s.is_ghost]
+    n_updates = calls.count("update")
+    assert n_updates == n_impressas, (
+        f"{n_updates} correções do Kalman para {n_impressas} barras impressas "
+        f"({len(ghosts)} ghosts) — forward-fill virou observação")
+    assert calls.count("predict") == len(ghosts), "todo ghost deve ser predict-only"
+
+
+# ── 9. Replay histórico NÃO persiste o estado do Kalman ────────
+def test_replay_historico_nao_persiste_estado():
+    """O guard monotônico do save_kalman_state só protege quando JÁ existe estado
+    mais novo. Num banco recém-resetado, um replay antigo semearia o prior vivo.
+    Só a SESSÃO VIVA (a última do target no banco) pode gravar."""
+    import backend.irai.engine as eng_mod
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] * n_dim_state
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)   # sessão 2026-07-10 (a última do target)
+
+    # cria uma sessão ANTERIOR do target (o "replay histórico")
+    antiga = "2026-07-08"
+    c = sqlite3.connect(db)
+    base = datetime.fromisoformat(f"{antiga}T09:00:00")
+    for i in range(30):
+        ts = (base + timedelta(minutes=5 * i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        px = 99_000.0 + i
+        c.execute("""INSERT INTO market_bars
+                     (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume, real_volume, delta)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                  (TARGET, "br", "M5", ts, px, px, px, px, 10, 10, 0))
+        c.execute("""INSERT INTO market_bars
+                     (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume, real_volume, delta)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                  (FACTOR, "tickmill", "M5", ts, 5000.0, 5000.0, 5000.0, 5000.0, 10, 10, 0))
+    c.commit(); c.close()
+
+    orig = eng_mod.KalmanFilterWrapper
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    try:
+        eng = eng_mod.IRAIEngine(db_path=db)
+        # replay da sessão ANTIGA, com persist_state=True (o default dos endpoints)
+        eng.compute_from_db(antiga, target=TARGET, version="v2", persist_state=True)
+        c = sqlite3.connect(db)
+        n = c.execute("SELECT COUNT(*) FROM kalman_state").fetchone()[0]
+        c.close()
+        assert n == 0, "replay histórico semeou o estado do Kalman (prior vivo contaminado)"
+
+        # a sessão VIVA (a última) deve persistir normalmente
+        eng.compute_from_db(SESSION, target=TARGET, version="v2", persist_state=True)
+        c = sqlite3.connect(db)
+        n = c.execute("SELECT COUNT(*) FROM kalman_state").fetchone()[0]
+        c.close()
+        assert n == 1, "sessão viva não persistiu o estado (v2 congelaria)"
+    finally:
+        eng_mod.KalmanFilterWrapper = orig
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):
