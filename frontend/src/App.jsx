@@ -1101,15 +1101,15 @@ export default function App() {
                         z-score dinâmico (pair spread)
                       </div>
                       {now.pair_z != null && (
+                        /* Consome `pair_signal` do backend (uma fonte da verdade).
+                           Antes esta regra era re-derivada aqui de pair_z+pair_beta,
+                           com o mesmo bug de inversão em β>0 e o threshold 1.5
+                           hardcoded — que ignorava o pair_threshold do divergence_config. */
                         <div style={{
                           fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                          color: Math.abs(now.pair_z) < 1.5 ? '#64748B' : (now.pair_z <= -1.5 ? (now.pair_beta < 0 ? '#4ADE80' : '#F87171') : (now.pair_beta < 0 ? '#F87171' : '#4ADE80')),
+                          color: now.pair_signal === 'buy' ? '#4ADE80' : now.pair_signal === 'sell' ? '#F87171' : '#64748B',
                         }}>
-                          {Math.abs(now.pair_z) < 1.5
-                            ? '✓ NEUTRO'
-                            : (now.pair_z <= -1.5
-                                ? (now.pair_beta < 0 ? '🟢 COMPRA' : '🔴 VENDA')
-                                : (now.pair_beta < 0 ? '🔴 VENDA' : '🟢 COMPRA'))}
+                          {now.pair_signal === 'buy' ? '🟢 COMPRA' : now.pair_signal === 'sell' ? '🔴 VENDA' : '✓ NEUTRO'}
                           <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
                             z={now.pair_z >= 0 ? '+' : ''}{now.pair_z.toFixed(2)}
                           </span>

@@ -39,7 +39,9 @@ o sinal muda pro VIX automaticamente.
 1. β = peso Kalman do par ativo (já disponível no engine v2)
 2. retorno_esperado = β × retorno_par_ativo(t)
 3. resíduo = retorno_target(t) − retorno_esperado
-4. σ_resíduo = std rolling do resíduo (janela 20 sessões)
+4. σ_resíduo = std rolling do resíduo (janela de 20 BARRAS intra-sessão)
+   ⚠️ z = (r − μ_janela)/σ_janela — CENTRADO na média e SEM √t (mudou em 65321f7;
+      a fórmula `z = r/(σ·√t)` citada abaixo nesta nota está obsoleta)
 5. z_pair = resíduo / (σ_resíduo × √t)
 ```
 
@@ -50,11 +52,32 @@ um resíduo de 0.3% às 10:15 é muito mais significativo que às 16:00.
 
 | Condição | Sinal | Significado |
 |----------|-------|-------------|
-| `z_pair < -threshold` e `β < 0` (inverso) | 🟢 Compra | Par subiu, target caiu — deve reverter pra cima |
-| `z_pair > +threshold` e `β < 0` (inverso) | 🔴 Venda | Par caiu, target subiu — deve reverter pra baixo |
-| `z_pair < -threshold` e `β > 0` (direto) | 🔴 Venda | Par caiu, target caiu mais — deve reverter |
-| `z_pair > +threshold` e `β > 0` (direto) | 🟢 Compra | Par subiu, target subiu mais — deve reverter |
+| `z_pair < -threshold` (qualquer β ≠ 0) | 🟢 Compra | Target BARATO vs. seu hedge — o resíduo deve reverter pra cima |
+| `z_pair > +threshold` (qualquer β ≠ 0) | 🔴 Venda | Target CARO vs. seu hedge — o resíduo deve reverter pra baixo |
 | `|z_pair| < threshold` | Neutro | Spread dentro do normal |
+
+> ⚠️ **CORRIGIDO em 2026-07-12.** A versão original desta tabela tinha 4 linhas e
+> fazia a direção depender do **sinal de β** (β>0 invertia compra/venda). Estava
+> **errada**, e o código a implementou fielmente por 2 meses.
+>
+> **Por quê:** o resíduo é `ret_target − β·ret_fator`. O β multiplica **apenas a
+> perna do fator**, logo `∂resíduo/∂ret_target = +1` para **todo** β, e o z é afim
+> crescente no resíduo. Resíduo abaixo da média ⇒ o target precisa **subir** para
+> reverter ⇒ **compra**, qualquer que seja o β. Usar `sign(β)` na direção **conta o
+> β duas vezes** — ele já foi liquidado dentro do resíduo.
+>
+> **Como o erro nasceu:** a tabela antiga era a ação correta da **perna errada**.
+> "Long do spread" = comprar 1 target e **vender β do fator**; a perna do *fator* é
+> sell se β>0 / buy se β<0. Isso coincide com a ação do *target* só quando β<0 — e
+> o par-carro-chefe do projeto (WIN↔WDO, β<0) caía justamente no ramo que estava
+> certo por acidente, mascarando o bug. No **WDO$N**, cujo par ativo é o DI1 com
+> **β>0 em 100% das barras**, todos os sinais saíam invertidos.
+>
+> O backtest do próprio projeto (`scripts/optimize_zscore.py`) sempre foi
+> β-agnóstico — o ramo β só existiu no caminho de display, que nunca foi medido.
+>
+> Invariante travada em `tests/test_pair_zscore.py`
+> (`test_sinal_independe_do_sinal_de_beta`, `test_mesmo_residuo_mesmo_sinal_qualquer_beta`).
 
 O threshold padrão sugerido: **1.5σ** (pode ser otimizado por backtest).
 

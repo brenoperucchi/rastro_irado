@@ -59,9 +59,33 @@ def test_sinal_inverso_beta_negativo():
     assert pair_signal(+2.0, beta=-0.7, threshold=1.5) == "sell"
 
 
-def test_sinal_direto_beta_positivo():
-    assert pair_signal(-2.0, beta=+0.7, threshold=1.5) == "sell"
-    assert pair_signal(+2.0, beta=+0.7, threshold=1.5) == "buy"
+def test_sinal_independe_do_sinal_de_beta():
+    """INVARIANTE (regressão). O resíduo é ``ret_target − β·ret_fator``: o β
+    multiplica APENAS a perna do fator, logo ∂resíduo/∂ret_target = +1 para todo
+    β, e z é afim crescente no resíduo. Portanto a DIREÇÃO do sinal não pode
+    depender de sign(β) — β é gate de validade, nunca piloto de direção.
+
+    Até 2026-07-12 havia um ramo β>0 que invertia o sinal (era a ação correta da
+    perna do FATOR, não do target). Afetava 100% dos sinais do WDO$N.
+    """
+    for beta in (-2.0, -0.7, -0.1, 0.1, 0.7, 2.0):
+        assert pair_signal(-2.0, beta, 1.5) == "buy", f"z=-2 com β={beta} deveria ser buy"
+        assert pair_signal(+2.0, beta, 1.5) == "sell", f"z=+2 com β={beta} deveria ser sell"
+
+
+def test_mesmo_residuo_mesmo_sinal_qualquer_beta():
+    """O teste que teria pego o bug original: deriva a expectativa da CONSTRUÇÃO
+    do resíduo, não de uma tabela. Dois cenários com β de sinais opostos que
+    produzem o MESMO resíduo (target barato vs. hedge) devem dar o MESMO sinal.
+    """
+    for beta, ret_target in ((+0.9, 0.0025), (-0.9, -0.0155)):
+        r = pairwise_residual(ret_target, beta, 0.010)   # ambos -> r = -0.0065
+        assert abs(r - (-0.0065)) < 1e-12, f"fixture: r={r} com β={beta}"
+        assert r < 0                                     # target barato vs. hedge
+        z = pair_zscore([0.0] * 19 + [r], window=20)
+        assert z < -1.5, f"z={z} com β={beta}"
+        assert pair_signal(z, beta, 1.5) == "buy", (
+            f"mesmo resíduo ({r}) deu sinal diferente com β={beta}")
 
 
 def test_sinal_neutro_dentro_da_banda():

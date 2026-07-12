@@ -117,16 +117,28 @@ def pair_zscore(residuals, window: int = PAIR_SIGMA_WINDOW) -> float:
 
 
 def pair_signal(z_pair: float, beta: float, threshold: float = PAIR_THRESHOLD) -> str:
-    """Sinal de compra/venda do par por reversão do resíduo.
+    """Sinal de compra/venda do par por reversão do resíduo do spread hedgeado.
 
-    Tabela (.planning/notes/pair-zscore-signal.md):
-      |z_pair| < threshold                    -> "neutral"
-      β < 0 (inverso):  z ≤ -thr -> "buy" ,  z ≥ +thr -> "sell"
-      β > 0 (direto) :  z ≤ -thr -> "sell",  z ≥ +thr -> "buy"
+      |z_pair| < threshold  -> "neutral"
+      z ≤ -threshold        -> "buy"     (target BARATO vs. seu hedge)
+      z ≥ +threshold        -> "sell"    (target CARO vs. seu hedge)
+
+    A direção NÃO depende do sinal de β — e não pode. O resíduo é
+    ``ret_target - β·ret_fator``: o β multiplica APENAS a perna do fator, logo
+    ``∂resíduo/∂ret_target = +1`` para todo β, e z é afim crescente no resíduo.
+    Resíduo abaixo da média => o target precisa SUBIR para reverter => compra,
+    qualquer que seja o β. Usar sign(β) na direção conta o β duas vezes (ele já
+    foi liquidado dentro do resíduo).
+
+    HISTÓRICO: até 2026-07-12 havia um ramo ``β > 0`` que invertia o sinal. Era a
+    ação correta da PERNA ERRADA — "long spread" = comprar 1 target e VENDER β do
+    fator, e a perna do fator é sell se β>0 / buy se β<0. Coincide com a ação do
+    target só quando β<0 (o par WIN↔WDO, que mascarou o bug), e é o oposto quando
+    β>0 (100% dos sinais do WDO$N, cujo par ativo é o DI1). O backtest do próprio
+    projeto (scripts/optimize_zscore.py) sempre foi β-agnóstico. β permanece só
+    como GATE de validade (β==0 -> neutral; PAIR_MIN_BETA em select_active_pair),
+    nunca como piloto de direção.
     """
     if beta == 0 or abs(z_pair) < threshold:
         return "neutral"
-    below = z_pair <= -threshold
-    if beta < 0:                      # relação inversa
-        return "buy" if below else "sell"
-    return "sell" if below else "buy"  # relação direta
+    return "buy" if z_pair <= -threshold else "sell"
