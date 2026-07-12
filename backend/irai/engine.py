@@ -566,7 +566,11 @@ class IRAIEngine:
         snapshots = []
         cum_delta = 0.0
         cum_real_vol = 0.0
-        target_cursor = 0
+        # -1 = sentinela de PRÉ-MERCADO ("o target ainda não negociou hoje").
+        # Os fatores globais negociam 24h e all_timestamps é a UNIÃO, então há
+        # ~180 barras M5 antes da 1ª barra do target B3. Ver Fase 3 do plano e
+        # tests/test_premarket.py.
+        target_cursor = -1
         
         # --- Kalman Filter Setup ---
         kf = None
@@ -635,7 +639,8 @@ class IRAIEngine:
                 
             is_pre_market = (target_cursor < 0)
             
-            if target_cursor < len(target_bars) and target_bars[target_cursor]["timestamp"] <= ts and not is_pre_market:
+            if not is_pre_market and target_cursor < len(target_bars) \
+                    and target_bars[target_cursor]["timestamp"] <= ts:
                 row = target_bars[target_cursor]
                 is_ghost_bar = (ts not in target_ts_set)
             else:
@@ -659,7 +664,7 @@ class IRAIEngine:
 
             if version == "v2":
                 # Preparar dados para Johansen (Preços)
-                if use_johansen:
+                if use_johansen and not is_pre_market:
                     basket_prices = {"target": float(row["close"])}
                     for factor in active_factors:
                         label = active_labels.get(factor, factor)
@@ -687,8 +692,16 @@ class IRAIEngine:
                         f_ret = (state.current_price - state.open_price) / state.open_price
                     obs_matrix.append(f_ret)
                     
-                # Update Kalman
-                kf.update(observation=win_ret, observation_matrix=np.array([obs_matrix]))
+                # Kalman: no pré-mercado NÃO há observação do target — roda só o
+                # time update (média intocada sob F=I, covariância difunde em Q).
+                # Alimentar observação (a falsa de antes, ou zero) apagaria o
+                # prior: a memória efetiva do filtro é sqrt(R/Q)=10 barras contra
+                # ~180 barras de pré-mercado (=18 memórias). A difusão deixa o
+                # filtro corretamente mais receptivo à 1ª barra real após o gap.
+                if is_pre_market:
+                    kf.predict(np.array([obs_matrix]))
+                else:
+                    kf.update(observation=win_ret, observation_matrix=np.array([obs_matrix]))
                 current_betas, _ = kf.get_state()
                 
                 # Update local weights based on Kalman
@@ -730,7 +743,7 @@ class IRAIEngine:
             snap = self.compute(
                 bar_idx=bar_idx,
                 win_current=float(row["close"]),
-                win_open=opens[data_target],
+                win_open=pre_market_open if is_pre_market else opens[data_target],
                 session_date=session_date,
                 bars_per_session=target_bars_per_session,
                 factor_states=local_factor_states,

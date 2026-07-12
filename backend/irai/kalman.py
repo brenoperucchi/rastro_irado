@@ -85,7 +85,32 @@ class KalmanFilterWrapper:
         )
         
         return self.state_mean, self.state_covariance
-    
+
+    def predict(self, observation_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Time update SEM correção — para quando não há observação do target.
+
+        É o tratamento canônico de observação faltante: o pykalman mascara a
+        observação (`observation=None`) e o ganho de Kalman vai a zero, então a
+        média fica intocada (transição é identidade) e a covariância cresce em Q.
+        Semântica: "o tempo passou, mas nada do target foi observado ainda".
+
+        Usado no pré-mercado da B3 (~180 barras M5 em que os fatores globais
+        negociam e o target não). Alimentar `update()` com uma observação
+        fabricada — a falsa de antes ou um zero — apagaria o prior: a memória
+        efetiva do filtro é sqrt(R/Q) = sqrt(1e-3/1e-5) = 10 barras.
+
+        Nota: não dá pra reusar `update(observation=None)` — o `np.asarray(None)`
+        de lá viraria `array(None, dtype=object)` e quebraria o ramo mascarado
+        do pykalman. Daí o método separado.
+        """
+        self.state_mean, self.state_covariance = self.kf.filter_update(
+            filtered_state_mean=self.state_mean,
+            filtered_state_covariance=self.state_covariance,
+            observation=None,                                   # -> ganho = 0
+            observation_matrix=np.asarray(observation_matrix),  # shape ainda exigido
+        )
+        return self.state_mean, self.state_covariance
+
     def get_state(self) -> Tuple[np.ndarray, np.ndarray]:
         """Retorna o estado atual."""
         return self.state_mean, self.state_covariance
