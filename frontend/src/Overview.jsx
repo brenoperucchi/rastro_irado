@@ -105,7 +105,7 @@ export default function Overview({ onSelectTarget }) {
         } else {
           const [tRes, oRes] = await Promise.all([
             fetch(`${API}/api/irai/targets`),
-            fetch(`${API}/api/irai/overview?version=both`),
+            fetch(`${API}/api/irai/overview?version=v2`),
           ])
           const tData = await tRes.json()
           const oData = await oRes.json()
@@ -141,7 +141,7 @@ export default function Overview({ onSelectTarget }) {
         if (!mounted) return
         try {
           const [oRes] = await Promise.all([
-            fetch(`${API}/api/irai/overview?version=both`),
+            fetch(`${API}/api/irai/overview?version=v2`),
           ])
           const oData = await oRes.json()
           setOverview(oData.targets || [])

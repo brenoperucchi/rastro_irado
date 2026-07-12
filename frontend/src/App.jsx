@@ -638,14 +638,14 @@ export default function App() {
           setSeries(padSeriesToFullDay(processed))
           setSummary(sum)
           const history_closes = data?.history?.[safeTarget] || []
-          setSeriesInfo({ display_name: tMeta.display_name, icon: tMeta.icon, history_closes })
+          setSeriesInfo({ display_name: tMeta.display_name, icon: tMeta.icon, history_closes, accuracy: sum.accuracy })
           setLoading(false)
           setLastUpdate(new Date(data?.last_update ? data.last_update * 1000 : Date.now()))
           setError(null)
         })
         .catch(e => { setError(e.message); setLoading(false) })
     } else {
-      fetch(`${API}/api/irai/series?session_date=${date}&target=${encodeURIComponent(target)}&version=both`)
+      fetch(`${API}/api/irai/series?session_date=${date}&target=${encodeURIComponent(target)}&version=v2`)   // v2 = engine dinâmico (Kalman); antes pedia `both`, que o engine resolvia como V1 estático
         .then(r => r.json())
         .then(data => {
           if (data.error) { setError(data.error); setLoading(false); return }
@@ -665,7 +665,7 @@ export default function App() {
           })
           setSeries(padSeriesToFullDay(processed, isB3))
           setSummary(data.summary)
-          setSeriesInfo({ display_name: data.display_name, icon: data.icon, history_closes: data.history_closes || [], tz_offset: isB3 ? -3 : 0, tz_label: 'BRT' })
+          setSeriesInfo({ display_name: data.display_name, icon: data.icon, history_closes: data.history_closes || [], tz_offset: isB3 ? -3 : 0, tz_label: 'BRT', accuracy: data.summary?.accuracy })
           setLoading(false)
           setLastUpdate(new Date())
           setError(null)
