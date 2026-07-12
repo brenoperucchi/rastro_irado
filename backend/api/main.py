@@ -129,6 +129,45 @@ async def notify_update():
     return {"status": "ok"}
 
 
+@app.get("/api/irai/gex")
+async def get_gex(target: str = Query("WIN$N")):
+    """Últimos níveis de GEX (gamma walls) do target, gerados pelo gex_worker.
+
+    `active` = dado válido E fresco (≤4 dias corridos cobre fim de semana +
+    feriado). O frontend só desenha as walls quando active=True — nunca plota
+    GEX envelhecido como se fosse do dia.
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM gex_levels WHERE target=? ORDER BY session_date DESC LIMIT 1",
+            (target,),
+        ).fetchone()
+    except Exception:
+        row = None  # tabela ainda não existe (worker nunca rodou)
+    conn.close()
+    if not row:
+        return {"active": False, "reason": "sem dados de GEX"}
+    d = dict(row)
+    try:
+        age = (date.today() - date.fromisoformat(d["session_date"])).days
+    except Exception:
+        age = 999
+    fresh = age <= 4
+    return {
+        "active": bool(d.get("valid")) and fresh,
+        "as_of": d["session_date"],
+        "age_days": age,
+        "valid": bool(d.get("valid")),
+        "gamma_max": d.get("gamma_max"),
+        "gamma_flip": d.get("gamma_flip"),
+        "gamma_min": d.get("gamma_min"),
+        "spot": d.get("spot"),
+        "conv_factor": d.get("conv_factor"),
+        "walls": json.loads(d.get("walls") or "[]"),
+    }
+
+
 @app.get("/api/health")
 async def health():
     """Status do sistema."""

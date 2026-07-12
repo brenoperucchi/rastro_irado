@@ -1,0 +1,10 @@
+[Unit]
+Description=IRAI GEX worker — diário antes da abertura B3 (OI EOD D-1 sai de madrugada)
+
+[Timer]
+OnCalendar=Mon..Fri 07:30
+Persistent=true
+Unit=rastro-irado-gex.service
+
+[Install]
+WantedBy=timers.target

@@ -183,11 +183,12 @@ const TVNweChart = forwardRef(function TVNweChart(
       walls.forEach(w => {
         if (w.type === 'mid_wall' && !showMidWalls) return
         const style = w.style === 'dashed' ? LineStyle.Dashed : LineStyle.Solid
-        const isWallColor = w.type === 'wall' || w.type === 'mid_wall'
+        // Cor vem do gerador de walls (verde/vermelho vs flip, especiais
+        // max/flip/min); branco é só fallback p/ walls sem cor.
         created.push(winSeries.createPriceLine({
-          price: w.price, color: isWallColor ? '#FFFFFF' : w.color,
+          price: w.price, color: w.color || '#FFFFFF',
           lineWidth: w.type === 'mid_wall' ? 1 : 2, lineStyle: style,
-          axisLabelVisible: false, title: '',
+          axisLabelVisible: w.type?.startsWith('gex_') || false, title: '',
         }))
       })
     }

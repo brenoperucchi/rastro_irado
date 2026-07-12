@@ -525,6 +525,8 @@ export default function App() {
   const [selectedTarget, setSelectedTarget] = useState('WIN$N')
   const [targetsMeta, setTargetsMeta] = useState([]) // From /api/irai/targets
   const [seriesInfo, setSeriesInfo] = useState({}) // display_name, icon from series response
+  const [gex, setGex] = useState(null)       // níveis de gamma walls (gex_worker, EOD D-1)
+  const [showGex, setShowGex] = useState(false) // default OFF: opt-in do operador
   const [series, setSeries] = useState([])
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -670,6 +672,18 @@ export default function App() {
         .catch(e => { setError(e.message); setLoading(false) })
     }
   }, [])
+
+  // GEX (gamma walls) do target — EOD D-1, gerado pelo gex_worker. Só no modo
+  // local (o payload Firebase ainda não carrega GEX).
+  useEffect(() => {
+    if (!API) return  // modo Firebase: gex permanece null (estado inicial)
+    let mounted = true
+    fetch(`${API}/api/irai/gex?target=${encodeURIComponent(selectedTarget)}`)
+      .then(r => r.json())
+      .then(d => { if (mounted) setGex(d && d.walls && d.walls.length ? d : null) })
+      .catch(() => { if (mounted) setGex(null) })
+    return () => { mounted = false }
+  }, [selectedTarget])
 
   // Initial load on date/target/liveMode change + polling
   useEffect(() => {
@@ -1017,8 +1031,27 @@ export default function App() {
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--amber-dim)',
                     letterSpacing: '0.1em', textTransform: 'uppercase',
+                    display: 'flex', alignItems: 'center', gap: 8,
                   }}>
                     movimento {seriesInfo.display_name || selectedTarget}
+                    {/* Toggle GEX: só aparece quando há walls; `active` = válido e
+                        fresco (D-1). Envelhecido fica desabilitado com o as-of. */}
+                    {gex && (
+                      <button
+                        onClick={() => gex.active && setShowGex(v => !v)}
+                        title={gex.active
+                          ? `gamma walls do fechamento de ${gex.as_of}`
+                          : `GEX de ${gex.as_of} (envelhecido/inválido — não plotável)`}
+                        style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.08em',
+                          padding: '1px 7px', borderRadius: 4, cursor: gex.active ? 'pointer' : 'not-allowed',
+                          background: showGex && gex.active ? '#EAB30822' : '#0E0E11',
+                          border: `1px solid ${showGex && gex.active ? '#EAB308' : '#1E293B'}`,
+                          color: gex.active ? (showGex ? '#EAB308' : '#64748B') : '#3A4553',
+                        }}>
+                        GEX {gex.as_of?.slice(5)}
+                      </button>
+                    )}
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
@@ -1030,7 +1063,14 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-                <TVNweChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
+                <TVNweChart
+                  history={seriesWithNWE}
+                  effectiveDate={effectiveDate}
+                  hideXAxis={false}
+                  walls={gex?.walls || []}
+                  showGex={showGex && !!gex?.active}
+                  showMidWalls={showGex && !!gex?.active}
+                />
               </div>
 
               {/* BOTTOM: Divergence Z-Score */}
