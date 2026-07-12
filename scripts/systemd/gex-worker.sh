@@ -15,11 +15,12 @@ export PYTHONPATH="${PROJECT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
 
+# Religa o collector em QUALQUER saída (inclusive SIGTERM/cancelamento do
+# serviço) — senão a coleta ficaria parada até intervenção manual.
+trap 'systemctl --user start rastro-irado-collector || true' EXIT
+
 systemctl --user stop rastro-irado-collector || true
 sleep 2
 
 "${PYTHON_BIN}" ${PYTHON_VERSION_FLAG} -X utf8 backend/workers/gex_worker.py "$@"
-rc=$?
-
-systemctl --user start rastro-irado-collector || true
-exit $rc
+exit $?

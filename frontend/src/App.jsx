@@ -680,7 +680,7 @@ export default function App() {
     let mounted = true
     fetch(`${API}/api/irai/gex?target=${encodeURIComponent(selectedTarget)}`)
       .then(r => r.json())
-      .then(d => { if (mounted) setGex(d && d.walls && d.walls.length ? d : null) })
+      .then(d => { if (mounted) setGex(d && d.walls && d.walls.length ? d : null) })  // d.target vem do endpoint
       .catch(() => { if (mounted) setGex(null) })
     return () => { mounted = false }
   }, [selectedTarget])
@@ -1036,7 +1036,7 @@ export default function App() {
                     movimento {seriesInfo.display_name || selectedTarget}
                     {/* Toggle GEX: só aparece quando há walls; `active` = válido e
                         fresco (D-1). Envelhecido fica desabilitado com o as-of. */}
-                    {gex && (
+                    {gex && gex.target === selectedTarget && (
                       <button
                         onClick={() => gex.active && setShowGex(v => !v)}
                         title={gex.active
@@ -1067,9 +1067,9 @@ export default function App() {
                   history={seriesWithNWE}
                   effectiveDate={effectiveDate}
                   hideXAxis={false}
-                  walls={gex?.walls || []}
-                  showGex={showGex && !!gex?.active}
-                  showMidWalls={showGex && !!gex?.active}
+                  walls={(gex?.target === selectedTarget && gex?.walls) || []}
+                  showGex={showGex && !!gex?.active && gex?.target === selectedTarget}
+                  showMidWalls={showGex && !!gex?.active && gex?.target === selectedTarget}
                 />
               </div>
 

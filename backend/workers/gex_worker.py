@@ -109,7 +109,7 @@ def d1_close(mt5, symbol: str, ref: date):
     return None
 
 
-def fetch_mt5_data(oi_rows: list[dict], session_date: str) -> dict:
+def fetch_mt5_data(oi_rows: list[dict], session_date: str, trust_session_close: bool = True) -> dict:
     """Enriquece as séries com strike/CP/venc/prêmio; pega spot IBOV e WIN."""
     mt5 = load_mt5_terminal()
     ref = date(*map(int, session_date.split("-")))
@@ -135,7 +135,7 @@ def fetch_mt5_data(oi_rows: list[dict], session_date: str) -> dict:
         # baixar o histórico do símbolo (~15s/série × 780 = horas) — só
         # usamos como fallback nos strikes ATM, os únicos que alimentam a
         # inversão de IV (|K−spot| ≤ MONEYNESS_IV).
-        prem = float(getattr(info, "session_close", 0) or 0) or None
+        prem = float(getattr(info, "session_close", 0) or 0) or None if trust_session_close else None
         if prem is None and spot and abs(float(info.option_strike) - spot) / spot <= MONEYNESS_IV:
             prem = d1_close(mt5, tk, ref)
         options.append({
@@ -248,6 +248,10 @@ def compute_gex(spot, win_settle, options, session_date):
 
     def refine(idx):
         if idx <= 0 or idx >= len(Ks) - 1:
+            return Ks[idx]
+        # fórmula do vértice vale p/ amostras equidistantes; com lacuna
+        # de strike nos vizinhos, devolve o strike do pico sem refinar
+        if abs((Ks[idx] - Ks[idx - 1]) - (Ks[idx + 1] - Ks[idx])) > 1e-6:
             return Ks[idx]
         y0, y1, y2 = vals[idx - 1], vals[idx], vals[idx + 1]
         den = y0 - 2 * y1 + y2
@@ -366,7 +370,10 @@ def main():
             return 1
     log(f"pregão de referência: {session_date}")
 
-    data = fetch_mt5_data(oi_rows, session_date)
+    # session_close = "fechamento da sessão anterior" do terminal — só bate com
+    # o pregão do OI no fluxo automático (timer pré-abertura). Com --date
+    # explícito (reprocessamento histórico), usa as barras D1 datadas.
+    data = fetch_mt5_data(oi_rows, session_date, trust_session_close=not args.date)
     if not data["spot"] or not data["win_settle"]:
         log("FALHA: sem spot IBOV ou settle WIN no MT5 p/ a data")
         return 1
@@ -376,9 +383,10 @@ def main():
         log("FALHA: netGEX insuficiente")
         return 1
 
-    log(f"  GammaMax  = {result['gamma_max_ibov']:,.0f} IBOV -> {result['gamma_max']:,.0f} WIN")
-    log(f"  GammaFlip = {result['gamma_flip_ibov']:,.0f} IBOV -> {result['gamma_flip']:,.0f} WIN")
-    log(f"  GammaMin  = {result['gamma_min_ibov']:,.0f} IBOV -> {result['gamma_min']:,.0f} WIN")
+    fmt = lambda v: f"{v:,.0f}" if v is not None else "N/A"
+    log(f"  GammaMax  = {fmt(result['gamma_max_ibov'])} IBOV -> {fmt(result['gamma_max'])} WIN")
+    log(f"  GammaFlip = {fmt(result['gamma_flip_ibov'])} IBOV -> {fmt(result['gamma_flip'])} WIN")
+    log(f"  GammaMin  = {fmt(result['gamma_min_ibov'])} IBOV -> {fmt(result['gamma_min'])} WIN")
     log(f"  válido={result['valid']} strikes={result['n_strikes']} f={result['conv_factor']:.6f}")
 
     if args.dry_run:

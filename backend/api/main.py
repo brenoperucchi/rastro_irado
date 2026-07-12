@@ -137,13 +137,16 @@ async def get_gex(target: str = Query("WIN$N")):
     feriado). O frontend só desenha as walls quando active=True — nunca plota
     GEX envelhecido como se fosse do dia.
     """
+    import sqlite3 as _sq
     conn = get_connection()
     try:
         row = conn.execute(
             "SELECT * FROM gex_levels WHERE target=? ORDER BY session_date DESC LIMIT 1",
             (target,),
         ).fetchone()
-    except Exception:
+    except _sq.OperationalError as e:
+        if "no such table" not in str(e):
+            raise  # erro real de banco não pode virar "sem dados" silencioso
         row = None  # tabela ainda não existe (worker nunca rodou)
     conn.close()
     if not row:
@@ -153,9 +156,14 @@ async def get_gex(target: str = Query("WIN$N")):
         age = (date.today() - date.fromisoformat(d["session_date"])).days
     except Exception:
         age = 999
-    fresh = age <= 4
+    fresh = 0 <= age <= 4  # idade negativa = data futura corrompida -> não fresco
+    try:
+        walls = json.loads(d.get("walls") or "[]")
+    except Exception:
+        walls = []
     return {
-        "active": bool(d.get("valid")) and fresh,
+        "active": bool(d.get("valid")) and fresh and bool(walls),
+        "target": target,
         "as_of": d["session_date"],
         "age_days": age,
         "valid": bool(d.get("valid")),
@@ -164,7 +172,7 @@ async def get_gex(target: str = Query("WIN$N")):
         "gamma_min": d.get("gamma_min"),
         "spot": d.get("spot"),
         "conv_factor": d.get("conv_factor"),
-        "walls": json.loads(d.get("walls") or "[]"),
+        "walls": walls,
     }
 
 
