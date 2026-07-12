@@ -527,6 +527,7 @@ export default function App() {
   const [seriesInfo, setSeriesInfo] = useState({}) // display_name, icon from series response
   const [gex, setGex] = useState(null)       // níveis de gamma walls (gex_worker, EOD D-1)
   const [showGex, setShowGex] = useState(false) // default OFF: opt-in do operador
+  const [showMid, setShowMid] = useState(false) // midwalls: toggle separado (GEX/MID)
   const [series, setSeries] = useState([])
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1052,6 +1053,20 @@ export default function App() {
                         GEX {gex.as_of?.slice(5)}
                       </button>
                     )}
+                    {gex && gex.target === selectedTarget && gex.active && showGex && (
+                      <button
+                        onClick={() => setShowMid(v => !v)}
+                        title="mid-walls (pontos médios entre strikes)"
+                        style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.08em',
+                          padding: '1px 7px', borderRadius: 4, cursor: 'pointer',
+                          background: showMid ? '#9CA3AF22' : '#0E0E11',
+                          border: `1px solid ${showMid ? '#9CA3AF' : '#1E293B'}`,
+                          color: showMid ? '#9CA3AF' : '#64748B',
+                        }}>
+                        MID
+                      </button>
+                    )}
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
@@ -1069,7 +1084,7 @@ export default function App() {
                   hideXAxis={false}
                   walls={(gex?.target === selectedTarget && gex?.walls) || []}
                   showGex={showGex && !!gex?.active && gex?.target === selectedTarget}
-                  showMidWalls={showGex && !!gex?.active && gex?.target === selectedTarget}
+                  showMidWalls={showGex && showMid && !!gex?.active && gex?.target === selectedTarget}
                 />
               </div>
 

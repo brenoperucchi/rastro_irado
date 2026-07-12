@@ -273,18 +273,21 @@ def compute_gex(spot, win_settle, options, session_date):
     walls = []
     if flip is not None:
         walls = [
-            {"type": "gex_max", "price": round(gmax * f), "color": "#22C55E", "style": "solid"},
-            {"type": "gex_flip", "price": round(flip * f), "color": "#EAB308", "style": "solid"},
-            {"type": "gex_min", "price": round(gmin * f), "color": "#EF4444", "style": "solid"},
+            {"type": "gex_max", "price": round(gmax * f), "color": "#22C55E", "style": "solid", "width": 3},
+            {"type": "gex_flip", "price": round(flip * f), "color": "#EAB308", "style": "solid", "width": 2},
+            {"type": "gex_min", "price": round(gmin * f), "color": "#EF4444", "style": "solid", "width": 3},
         ]
         centro = round(flip * f / (GRID_STEP * f)) * GRID_STEP
         for k in range(-8, 9):
             p = (centro + k * GRID_STEP) * f
-            walls.append({"type": "wall", "price": round(p), "style": "solid",
+            # espessura por distância do centro (padrão do indicador NTSL de
+            # referência): forte no ATM, média nas intermediárias, fraca longe
+            w = 3 if abs(k) <= 1 else (2 if abs(k) <= 3 else 1)
+            walls.append({"type": "wall", "price": round(p), "style": "solid", "width": w,
                           "color": "#84CC16" if p > flip * f else "#EF4444"})
         for k in range(-8, 8):
             p = (centro + (k + 0.5) * GRID_STEP) * f
-            walls.append({"type": "mid_wall", "price": round(p), "style": "dashed",
+            walls.append({"type": "mid_wall", "price": round(p), "style": "dashed", "width": 1,
                           "color": "#9CA3AF" if p > flip * f else "#6B7280"})
 
     return {

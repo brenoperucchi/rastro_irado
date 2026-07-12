@@ -187,7 +187,7 @@ const TVNweChart = forwardRef(function TVNweChart(
         // max/flip/min); branco é só fallback p/ walls sem cor.
         created.push(winSeries.createPriceLine({
           price: w.price, color: w.color || '#FFFFFF',
-          lineWidth: w.type === 'mid_wall' ? 1 : 2, lineStyle: style,
+          lineWidth: w.width || (w.type === 'mid_wall' ? 1 : 2), lineStyle: style,
           axisLabelVisible: w.type?.startsWith('gex_') || false, title: '',
         }))
       })
