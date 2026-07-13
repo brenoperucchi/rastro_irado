@@ -274,14 +274,35 @@ evita planejar uma calibração de WDO que não pode ser aprovada.
 
 **Etapa 0 — Emendar os planos-fonte** *(as emendas do §3 viram edição nos dois docs)*
 
-**Etapa 0.5 — FRENTE 0: causalidade do eixo temporal** ⚠️ **NOVA — vem antes de tudo**
-1. Snapshot do `irai.db` de produção para o Linux (D3).
-2. **Corrigir `engine.py:471-473` de uma vez:** shift por **origem do símbolo** (D1) **e**
-   **date-aware** por tabela de offsets derivada do dado (A6).
-3. Regressões: (a) target B3 com fator B3 consome a barra do mesmo instante de parede;
-   (b) uma data de inverno e uma de verão.
-4. Recalcular a acurácia de WIN/WDO **depois** do conserto — os 69,0% e 73,9% atuais estão
-   inflados por D1 e não devem ser usados como baseline.
+**Etapa 0.5 — FRENTE 0: causalidade do eixo temporal** ✅ **CONCLUÍDA** (commit `16d4661`)
+1. ~~Snapshot do `irai.db` de produção~~ — dispensado: usei o banco de produção via SSH.
+2. ✅ **`engine.py` corrigido:** shift por **origem do símbolo** (`source == 'br'`, mata o D1)
+   **e** offset **date-aware** via `backend/irai/timezones.py` (mata o A6).
+3. ✅ Regressões em `tests/test_engine_timezone.py` (14): fator B3 alinhado ao mesmo instante
+   de parede; target global intocado; sessão de **inverno** no nível do engine (sem ela, um
+   `timedelta(hours=6)` literal reintroduzido passaria despercebido — no verão os dois
+   comportamentos são idênticos). Suíte: 95 passed, 8 skipped.
+   Implementação: `codex` · Revisão: `fable-reasoner` (merge liberado).
+
+**Itens abertos que a Frente 0 deixou** (nasceram da revisão, com prazo):
+4. ⚠️ **Recalcular a acurácia de WIN/WDO — mas NÃO pelo calibrador.** O plano anterior
+   mandava rodar `calibrate_universal.py`; **isso não mediria nada.** O calibrador **não
+   compartilha o caminho do shift** (agrega retornos diários com filtro de hora bruto,
+   `calibrate_universal.py:47-72`) — rodá-lo produziria números idênticos pré/pós. A medição
+   tem de vir das **métricas de replay do engine** (`optimize_zscore*`). Os 69,0% e 73,9%
+   atuais estão inflados por D1 e não servem de baseline.
+5. ⚠️ **Frontend: eixo BRT com `-6h` fixo — prazo 01/11/2026.** O JSON **muda** em datas de
+   inverno (barras B3 saem em 14:00, não 15:00), então o eixo âmbar vai rotular a abertura
+   como "08:00" a partir da próxima virada. Valores de sinal corretos; só os rótulos erram.
+   Expor o offset no payload e consumi-lo em `App.jsx:514,668` no lugar do `-6`. **O app
+   mobile via Firebase provavelmente tem o mesmo hardcode.**
+6. ⚠️ **O relógio do servidor Axi nunca foi medido.** Os iShares estão em cestas vivas; se o
+   Axi estiver em outro fuso, é a **mesma classe de bug do D1, ainda aberta**. Medir com o
+   mesmo método (correlação contra um símbolo de fuso conhecido).
+7. **Follow-up (pré-existente, não urgente):** barras B3 ≥18:00 BRT no verão cruzam a
+   meia-noite do eixo (+6h → 00:00 do dia seguinte), fazendo o restore do Kalman do dia
+   seguinte rejeitar o prior — warm-start sazonal. Checar se produção tem barras nesse
+   horário.
 
 **Etapa 1 — Fundação NWE causal**
 5. Regressões de causalidade **antes** da correção. 6. Módulo puro NWE/VWAP/ATR (passada única,
