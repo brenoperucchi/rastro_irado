@@ -3,9 +3,16 @@
 import json
 import sqlite3
 
+import pytest
+
 from backend.db import SCHEMA, migrate_divergence_config
 from backend.irai.engine import IRAIEngine
-from scripts.measure_d1_inflation import ShiftArm, compute_method_for_arm
+from scripts.measure_d1_inflation import (
+    ShiftArm,
+    bootstrap_accuracy_delta,
+    compute_method_for_arm,
+    forward_observations,
+)
 
 
 SESSION = "2026-07-10"
@@ -71,3 +78,45 @@ def test_braco_com_bug_reproduz_lookahead_sem_editar_engine(tmp_path):
 def test_braco_corrigido_preserva_alinhamento_causal_do_head(tmp_path):
     assert _factor_price(_engine(tmp_path), ShiftArm.FIXED) == 10.0
 
+
+class _Snapshot:
+    def __init__(self, timestamp, close, p_up, *, ghost=False):
+        self.timestamp = timestamp
+        self.win_current = close
+        self.p_up = p_up
+        self.is_ghost = ghost
+
+
+def test_horizonte_forward_conta_barras_reais_e_nao_cruza_sessao():
+    snapshots = [
+        _Snapshot("2026-07-10T12:00:00+00:00", 100, 60),
+        _Snapshot("2026-07-10T12:01:00+00:00", 999, 1, ghost=True),
+        _Snapshot("2026-07-10T12:05:00+00:00", 101, 40),
+        _Snapshot("2026-07-10T12:10:00+00:00", 99, 55),
+        _Snapshot("2026-07-10T12:15:00+00:00", 102, 45),
+    ]
+
+    observations = forward_observations(snapshots, horizon=2)
+
+    assert [(item.p_up, item.actual_up) for item in observations] == [
+        (60.0, False),
+        (40.0, True),
+    ]
+
+
+def test_bootstrap_pareado_reamostra_sessoes_e_e_reprodutivel():
+    # A vence todas as observações em uma sessão e perde todas na outra. O IC
+    # largo confirma que o N do bootstrap é 2 sessões, não 200 snapshots.
+    by_session = {
+        "s1": [(True, False)] * 100,
+        "s2": [(False, True)] * 100,
+    }
+
+    first = bootstrap_accuracy_delta(by_session, iterations=2_000, seed=7)
+    second = bootstrap_accuracy_delta(by_session, iterations=2_000, seed=7)
+
+    assert first == second
+    assert first.delta_pp == pytest.approx(0.0)
+    assert first.ci_low_pp == pytest.approx(-100.0)
+    assert first.ci_high_pp == pytest.approx(100.0)
+    assert not first.significant

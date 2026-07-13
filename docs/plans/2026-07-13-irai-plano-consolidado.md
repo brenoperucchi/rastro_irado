@@ -6,6 +6,79 @@
 `2026-07-13-nwe-causal-backend-foundation.md` (Fundação NWE) e
 `2026-07-13-irai-tactical-layer-win-wdo.md` (Tactical Layer)
 
+## Sumário executivo para a Miqs
+
+O IRAI já possui a base macro, os gráficos, o GEX e os sinais por barra. O projeto está
+saindo da fase de **corrigir e tornar confiável a fundação quantitativa** e entrando na
+fase de **centralizar o NWE no backend**. Somente depois disso começa a nova camada
+Tactical, inicialmente para `WIN$N` e, após validação, `WDO$N`.
+
+**Onde estamos agora:** a correção crítica de causalidade e horário de verão no backend
+foi concluída. Os próximos gates são corrigir o rótulo BRT do frontend, medir os efeitos
+da correção nas métricas históricas, auditar o fuso da Axi e entregar o NWE causal como
+fonte única.
+
+**Destino desta rota:** transformar o `P_up` macro em estados operacionais explicáveis —
+como `AGUARDANDO_PULLBACK`, `ARMADO`, `CONFIRMADO` e `NAO_OPERAR` — sem executar ordens.
+
+### Como ler o plano
+
+| Tipo | Significado neste projeto |
+|---|---|
+| **BUG** | O sistema atual viola um comportamento já esperado; precisa de correção. |
+| **MELHORIA** | Aumenta confiabilidade, desempenho ou manutenção sem criar uma capacidade operacional nova. |
+| **NOVA FUNCIONALIDADE** | Entrega uma capacidade que ainda não existe para o operador. |
+| **VALIDAÇÃO** | Investigação ou gate necessário; não deve ser apresentado como bug antes de existir evidência. |
+
+### Mapa executivo do escopo
+
+| ID | Tipo | Entrega | Status | Por que importa |
+|---|---|---|---|---|
+| BUG-01 | **BUG** | Alinhar fatores B3 sem lookahead de 6h | ✅ Concluído | Remove contaminação do histórico e do backtest. |
+| BUG-02 | **BUG** | Tornar o offset Tickmill/B3 sensível ao DST | ✅ Concluído | Evita desalinhamento sazonal no backend. |
+| BUG-03 | **BUG** | Remover `-6h` fixo do eixo BRT no frontend/Firebase | 🔜 Próximo | Evita rótulo incorreto a partir de 01/11/2026. |
+| BUG-04 | **BUG** | Eliminar NWE não causal e divergência browser/backend | 🔜 Próximo | Impede que barras futuras alterem sinais históricos. |
+| MEL-01 | **MELHORIA** | NWE/VWAP/ATR causal como fonte única no backend | 🔜 Próximo | Garante o mesmo número no replay, API, Firebase e UI. |
+| MEL-02 | **MELHORIA** | Bootstrap idempotente das migrações do banco | ⏳ Planejado | Permite criar e atualizar o schema tático com segurança. |
+| MEL-03 | **MELHORIA** | Threadpool, single-flight, cache e payload Firebase | ⏳ Planejado | Mantém API e mobile responsivos com os novos cálculos. |
+| NF-01 | **NOVA FUNCIONALIDADE** | Extrator e backtester tático point-in-time | ⏳ Planejado | Cria uma base auditável para testar decisões barra a barra. |
+| NF-02 | **NOVA FUNCIONALIDADE** | Modelo micro de 15 minutos com walk-forward | ⏳ Planejado | Adiciona confirmação de curto prazo ao contexto macro. |
+| NF-03 | **NOVA FUNCIONALIDADE** | Máquina de estados e eventos táticos | ⏳ Planejado | Traduz probabilidades em estados compreensíveis. |
+| NF-04 | **NOVA FUNCIONALIDADE** | API, Firebase e UI Tactical por feature flag | ⏳ Planejado | Leva o sinal validado ao operador sem ativação prematura. |
+| VAL-01 | **VALIDAÇÃO** | Recalcular métricas de WIN/WDO após BUG-01 | ⚠️ Pendente | Os baselines históricos anteriores estão inflados. |
+| VAL-02 | **VALIDAÇÃO** | Medir fuso Axi e conferir modelo macro do WDO | ⚠️ Pendente | Decide se o piloto pode avançar de WIN para WDO. |
+| VAL-03 | **VALIDAÇÃO** | Replay/live final no Windows com MT5 | ⚠️ Gate final | Linux não valida coleta nem comportamento live dos terminais. |
+
+### Escopo da primeira entrega tática
+
+**Entra na v1:** fundação causal; NWE/VWAP/ATR no backend; piloto inicial em WIN; modelo
+micro de 15 minutos; regiões causais; estados e eventos em barras fechadas; API/Firebase;
+interface sob feature flag; validação do WDO antes de ativá-lo.
+
+**Fica para depois:** `P_micro_30m`, zonas estatísticas de realização e payload tático em
+cada barra da série; expansão aos 20 ativos; polimento secundário de frontend.
+
+**Continua fora do produto:** execução automática de ordens, lote, copy trading, Volume
+Profile/book e qualquer promessa de resultado operacional.
+
+### Sequência de entrega
+
+```text
+Base temporal corrigida
+        ↓
+Pendências de fuso e métricas
+        ↓
+NWE causal no backend
+        ↓
+Migrações + validação do WDO
+        ↓
+Backtester e modelo micro 15m
+        ↓
+Estados/eventos + API/Firebase/UI desligada
+        ↓
+Gate histórico → replay/live Windows → ativação individual
+```
+
 **Método desta versão:** três revisores independentes (`deep-reasoner`, `fable-reasoner`,
 `codex`) analisaram o plano em paralelo, cegos entre si; depois **cada achado foi
 verificado contra o código e contra o banco de produção**. Todo achado abaixo carrega um
@@ -19,12 +92,12 @@ apresentava palpite não-checado com a mesma cara de fato.
 | **SOLO** | 1 revisor, ninguém contestou nem confirmou. **Não vira ação sem checar.** |
 | **REFUTADO** | Verificado e derrubado. Registrado para não voltar. |
 
-> **Leitura em 30 segundos.** A tri-review encontrou um **lookahead de 6 horas vivo no
-> modelo de produção** (D1) que nenhuma revisão anterior tinha visto — e que **reordena o
-> plano**: ele precisa ser consertado *antes* da Fundação NWE, porque contamina o `P_up`
-> que o Tactical Layer usaria como feature. O DST (A6) foi **confirmado empiricamente no
-> banco**, mas o plano errava as datas *e* o mecanismo. Dos 16 achados originais, 13
-> sobreviveram, 1 foi refutado e 2 tiveram a severidade corrigida.
+> **Leitura técnica em 30 segundos.** A tri-review encontrou um lookahead de 6 horas nos
+> fatores B3 (D1) e um shift incompatível com o DST (A6). Os dois bugs já foram corrigidos
+> no backend pelo commit `16d4661`, o que liberou a entrada na Fundação NWE. Permanecem
+> como gates imediatos o eixo BRT do frontend, a nova medição das métricas de WIN/WDO e a
+> auditoria do relógio Axi. Dos 16 achados originais, 13 sobreviveram, 1 foi refutado e 2
+> tiveram a severidade corrigida.
 
 ---
 
@@ -48,10 +121,10 @@ do Pacote B foi absorvido como pré-requisito dos planos novos. **Este documento
 
 ---
 
-## 2. As três frentes (ordem corrigida)
+## 2. As quatro frentes (ordem corrigida)
 
 ```
-  [ FRENTE 0 ]  <-- NOVA, e vem antes de tudo
+  [ FRENTE 0 ]  ✅ CONCLUÍDA
   Causalidade do eixo temporal (engine.py:471-473)
   D1 (lookahead 6h nos fatores B3) + A6 (DST) — a MESMA função
         |
@@ -61,9 +134,9 @@ do Pacote B foi absorvido como pré-requisito dos planos novos. **Este documento
   (Fases 5 + 6)               (Fase 1, cesta do WDO)        (WIN$N, WDO$N)
 ```
 
-A Frente 0 não existia na versão anterior do plano. Ela vem primeiro porque **consertar o
-NWE e deixar o `P_up` com lookahead produz exatamente a métrica inflada que o plano diz
-querer evitar** — por um caminho que o achado C1 não cobria.
+A Frente 0 não existia na versão anterior do plano e foi executada primeiro porque
+**consertar o NWE e deixar o `P_up` com lookahead produziria exatamente a métrica inflada
+que o plano diz querer evitar** — por um caminho que o achado C1 não cobria.
 
 ---
 
@@ -71,7 +144,9 @@ querer evitar** — por um caminho que o achado C1 não cobria.
 
 ### 3.0 FRENTE 0 — os dois bugs do eixo temporal (mesma função, consertar juntos)
 
-#### D1 — Lookahead de 6 horas nos fatores domésticos · **CONFIRMADO** · CRÍTICO
+#### D1 — Lookahead de 6 horas nos fatores domésticos · **CORRIGIDO** · era CRÍTICO
+
+> Diagnóstico histórico abaixo: descreve o comportamento anterior ao commit `16d4661`.
 
 **Afirmação.** `engine.py:472` aplica o shift de +6h **apenas ao símbolo do target**
 (`if is_b3 and d["symbol"] == data_target`). Um fator que também seja da B3 permanece no
@@ -106,7 +181,10 @@ gerados sobre um fator adiantado; e, se não for corrigido, o Tactical Layer tre
 Tickmill → 0), não por `== data_target`. Regressão: para target B3 com fator B3, a barra
 do fator consumida no eixo `t` tem de ter o mesmo instante de parede que a do target.
 
-#### A6 — DST: o shift fixo de +6h é cego a horário de verão · **CONFIRMADO** · CRÍTICO
+#### A6 — DST: o shift fixo de +6h era cego a horário de verão · **CORRIGIDO NO BACKEND** · era CRÍTICO
+
+> Diagnóstico histórico abaixo: o backend já usa offset sensível à data; a pendência atual
+> está no rótulo BRT do frontend/Firebase.
 
 **Confirmado empiricamente no banco de produção** (o `data/irai.db` local está **vazio** —
 0 tabelas —, o que fez dois revisores marcarem isto como "não verificável"). Método:
@@ -268,6 +346,64 @@ superfície de calibração e pode estrangular as confirmações) e `tactical` p
 conferência da cesta do WDO bloqueada por ambiente, **a v1 é de facto WIN-only** — dizer isso
 evita planejar uma calibração de WDO que não pode ser aprovada.
 
+### 3.6 VAL-01 — quanto o D1 contaminava o sinal · **MEDIDO** (`scripts/measure_d1_inflation.py`)
+
+Replay A/B das mesmas 120 sessões (jan–jul/2026) sobre o banco de produção: braço A com o
+bug restaurado por monkeypatch, braço B com o HEAD corrigido. Duas rodadas — a primeira foi
+**reprovada na revisão** (media v1, e a métrica terminal é cega ao bug por construção); a
+segunda mede v2, que é o que a produção serve.
+
+**O `P_up` que o operador via estava errado** — |P_up^A − P_up^B|, em pontos percentuais:
+
+| Alvo | Faixa | Média | p95 | Máx |
+|---|---|---|---|---|
+| WIN$N | todas as barras | 7,3 | 21,7 | 55,4 |
+| WIN$N | antes das 13h BRT | 10,1 | 26,3 | 55,4 |
+| WDO$N | todas as barras | 11,5 | 38,4 | **92,0** |
+| WDO$N | antes das 13h BRT | **17,0** | 46,4 | 92,0 |
+
+**A acurácia forward estava inflada** (bootstrap pareado por sessão; todos os IC95% acima de
+zero — significantes):
+
+| Alvo | h=3 | h=6 | h=20 |
+|---|---|---|---|
+| WIN$N | +2,94 pp | +4,17 pp | **+7,25 pp** |
+| WDO$N | +2,74 pp | +3,74 pp | **+7,16 pp** |
+
+**Rótulo honesto do que isto mede:** D1 em isolamento, no código de hoje, com v2 **sem
+memória entre sessões** (o `kalman_state` do snapshot é posterior à janela e nunca é
+restaurado), em dias completos. Por isso é provavelmente um **PISO** da contaminação real —
+no live o estado encadeia dia após dia, também contaminado.
+
+#### ⚠️ O que este resultado NÃO autoriza concluir
+
+O braço corrigido tem acurácia forward de **49–52%** — o que parece dizer que, sem o
+vazamento, o `P_up` não prevê nada. **Não conclua isso.** A revisão derrubou o salto:
+
+1. **Não é o objetivo de treino.** O `P_up` é um *nowcast* da direção da **sessão**
+   (open→close); medi-lo contra o retorno das próximas 3–20 barras é a pergunta errada.
+   ~50% é o esperado para um sinal contemporâneo.
+2. **Os pesos do braço B são da era do vazamento** — e geometricamente desalinhados com o
+   serving (o skew do D4). B é um **piso** do que um modelo recalibrado alcançaria.
+3. **As features que o Tactical realmente propõe não foram medidas** (ΔP_up, persistência,
+   divergência). Podem ter valor na cauda mesmo com o nível a 50% incondicional.
+4. **"B ≈ 50%" nem foi testado** contra a taxa-base (empates contam como baixa, então a
+   taxa-base não é 50%).
+
+**O que MORREU:** o uso ingênuo — "nível de `P_up` binarizado em 50 como viés direcional
+forward". Todo o edge aparente disso era vazamento.
+
+#### Gate obrigatório antes de calibrar o Tactical (substitui "replanejar")
+
+Não replaneje a Frente 3 ainda. Condicione-a a três medições, nesta ordem:
+1. **Recalibrar** WIN/WDO pós-fix (e corrigir o skew de relógio do D4 no calibrador).
+2. **Brier / log-loss + curva de calibração** do nowcast contra o rótulo de sessão, por hora
+   do dia, vs. um baseline trivial ("sinal do retorno de sessão até agora"). Se não bater o
+   baseline nem nisso, aí sim o macro layer está em apuros.
+3. **IC (Spearman) e análise de decis** de `(P_up−50)`, `ΔP_up(k)` e da divergência contra o
+   retorno forward, com IC clusterizado por sessão; e um **modelo aninhado** (momentum
+   próprio vs. + features de P_up). Se ΔAUC ≈ 0, **aí** o macro sai do plano.
+
 ---
 
 ## 4. Ordem de execução (reordenada pela tri-review)
@@ -285,12 +421,11 @@ evita planejar uma calibração de WDO que não pode ser aprovada.
    Implementação: `codex` · Revisão: `fable-reasoner` (merge liberado).
 
 **Itens abertos que a Frente 0 deixou** (nasceram da revisão, com prazo):
-4. ⚠️ **Recalcular a acurácia de WIN/WDO — mas NÃO pelo calibrador.** O plano anterior
-   mandava rodar `calibrate_universal.py`; **isso não mediria nada.** O calibrador **não
-   compartilha o caminho do shift** (agrega retornos diários com filtro de hora bruto,
-   `calibrate_universal.py:47-72`) — rodá-lo produziria números idênticos pré/pós. A medição
-   tem de vir das **métricas de replay do engine** (`optimize_zscore*`). Os 69,0% e 73,9%
-   atuais estão inflados por D1 e não servem de baseline.
+4. ✅ **VAL-01 — medido.** Ver §3.6 abaixo. Resumo: a contaminação era **real e grande**
+   (o `P_up` da tela errava 7–17 pp em média), mas a frase anterior deste plano — "os 69,0%
+   e 73,9% estão inflados por D1" — era **FALSA** e foi refutada: aqueles números vêm do
+   calibrador, que nunca passa pelo caminho do shift. (Continuam sem servir de baseline, por
+   outro motivo: são in-sample, diários, e têm o skew de relógio do D4.)
 5. ⚠️ **Frontend: eixo BRT com `-6h` fixo — prazo 01/11/2026.** O JSON **muda** em datas de
    inverno (barras B3 saem em 14:00, não 15:00), então o eixo âmbar vai rotular a abertura
    como "08:00" a partir da próxima virada. Valores de sinal corretos; só os rótulos erram.
@@ -305,11 +440,13 @@ evita planejar uma calibração de WDO que não pode ser aprovada.
    horário.
 
 **Etapa 1 — Fundação NWE causal**
-5. Regressões de causalidade **antes** da correção. 6. Módulo puro NWE/VWAP/ATR (passada única,
-warm-up carregado pela engine). 7. Snapshots enriquecidos; overview reutiliza o último da série.
-8. Threadpool + single-flight. 9. Propagar por API e Firebase (`schema_version`,
-`history_closes`, `is_b3`) — incluindo o caminho Firebase na regressão de paridade (F5).
-10. Migrar os charts; remover o `computeNWE` local (com a ressalva do D2).
+1. Regressões de causalidade **antes** da correção.
+2. Módulo puro NWE/VWAP/ATR em passada única, com warm-up carregado pela engine.
+3. Snapshots enriquecidos; overview reutiliza o último da série.
+4. Threadpool + single-flight.
+5. Propagar por API e Firebase (`schema_version`, `history_closes`, `is_b3`) — incluindo o
+   caminho Firebase na regressão de paridade (F5).
+6. Migrar os charts; remover o `computeNWE` local com a ressalva do D2.
 
 **Etapa 2 — Bloqueios de ambiente** ⇉ *(paralelo à Etapa 1)*
 11. `init_db()` com a cadeia completa de migrações (é Python+SQLite puro — **roda no Linux
@@ -327,16 +464,14 @@ ativação individual, só após o gate.
 
 ## 5. Riscos que decidem o resultado
 
-1. **D1 é lookahead vivo.** Toda métrica histórica de WIN/WDO está inflada. Treinar o Tactical
-   antes de consertá-lo produz um modelo que passa no gate e desaba ao vivo — o risco mais caro
-   de detectar depois.
-2. **A6 tem prazo.** A próxima virada de DST é **01/11/2026**. Se o shift não virar date-aware
-   até lá, a produção volta a desalinhar 1h — possivelmente durante o rollout do Tactical,
-   invalidando o próprio gate "aprovado no live".
+1. **O baseline histórico anterior ao D1 não é reutilizável.** O backend foi corrigido, mas
+   as métricas antigas de WIN/WDO continuam infladas até serem refeitas pelo replay do engine.
+2. **O frontend ainda tem prazo de DST.** O backend já é date-aware; o eixo âmbar ainda usa
+   `-6h` fixo e rotulará a abertura como 08:00 a partir de **01/11/2026** se não for corrigido.
 3. **Paridade do NWE.** Sem warm-up dentro da engine e sem a âncora `win_open`/% explícitas, a
    regressão de paridade falha e a divergência local-vs-prod volta.
-4. **Ambiente.** O banco local está vazio; sem o snapshot de produção (Etapa 0.5, passo 1) a
-   Frente 1 é tão bloqueada quanto a Frente 2.
+4. **Ambiente.** O banco local está vazio. A revisão contornou isso por SSH, mas paridade e
+   auditorias que dependem de barras reais continuam exigindo acesso controlado à produção.
 5. **Escopo do Tactical.** Sem os cortes da §3.5, o gate pode nunca ter amostra para aprovar nada.
 
 ---
