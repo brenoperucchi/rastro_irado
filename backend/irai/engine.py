@@ -751,7 +751,11 @@ class IRAIEngine:
                 pair_sigmas = [local_factor_states[lbl].sigma for lbl in pair_labels]
                 pair = select_active_pair(current_betas, pair_labels, pair_min_beta,
                                           sigmas=pair_sigmas)
-                if pair is not None and not is_pre_market:
+                # `not sem_print` (não `not is_pre_market`): um gap intra-sessão
+                # também não tem observação nova do target — win_ret fica congelado
+                # no forward-fill enquanto o fator segue vivo, e o resíduo fabricado
+                # contaminaria pair_residual_history (review deep-reasoner+fable-reasoner).
+                if pair is not None and not sem_print:
                     # Se o par ativo mudou, zera o histórico: média/σ do z não podem
                     # misturar resíduos de spreads diferentes (senão a troca de par
                     # gera um falso deslocamento).

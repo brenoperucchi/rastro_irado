@@ -348,6 +348,71 @@ def test_ghost_intra_sessao_nao_alimenta_o_kalman():
     assert calls.count("predict") == len(ghosts), "todo ghost deve ser predict-only"
 
 
+# ── 8b. Gap intra-sessão NÃO contamina o pair z-score (review deep+fable) ──
+def test_ghost_intra_sessao_nao_contamina_pair_zscore():
+    """Mesma classe de bug do teste 8, mas no bloco do pair z-score (linha
+    ~754 de engine.py): o guard só checava `is_pre_market`, não `sem_print`.
+    Num gap intra-sessão o target não imprime, mas `win_ret` (linha ~715) só é
+    zerado no pré-mercado — durante o gap ele fica CONGELADO no forward-fill,
+    enquanto o retorno do fator continua vivo. O resíduo `win_ret − β·ret_fator`
+    dessa barra é fabricado e era apendado em `pair_residual_history`,
+    contaminando o z_pair das barras reais seguintes (janela de até
+    PAIR_SIGMA_WINDOW=20 observações)."""
+    import backend.irai.engine as eng_mod
+
+    calls = []
+    orig_residual = eng_mod.pairwise_residual
+    def spy_residual(*a, **k):
+        calls.append(a)
+        return orig_residual(*a, **k)
+
+    class SpyKalman:
+        """Beta fixo > PAIR_MIN_BETA, p/ o par ativo sempre existir."""
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] + [1.5] * (n_dim_state - 1)
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    # mesmo gap intra-sessão do teste 8 (leilão/halt: 3 barras do target somem,
+    # o fator continua imprimindo)
+    c = sqlite3.connect(db)
+    gap = [f"{SESSION}T09:5{i}:00Z" for i in (0, 5)] + [f"{SESSION}T10:00:00Z"]
+    for ts in gap:
+        c.execute("DELETE FROM market_bars WHERE symbol=? AND timestamp_utc=?", (TARGET, ts))
+    n_gap = c.total_changes
+    c.commit(); c.close()
+    assert n_gap > 0, "fixture inválida: nenhuma barra removida"
+
+    orig_k = eng_mod.KalmanFilterWrapper
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    eng_mod.pairwise_residual = spy_residual
+    try:
+        snaps = eng_mod.IRAIEngine(db_path=db).compute_from_db(
+            SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig_k
+        eng_mod.pairwise_residual = orig_residual
+
+    n_reais = sum(1 for s in snaps if not s.is_ghost)
+    assert len(calls) == n_reais, (
+        f"pairwise_residual chamado {len(calls)}x para {n_reais} barras REAIS "
+        f"({len(snaps) - n_reais} ghosts) — gap intra-sessão alimentou resíduo "
+        f"fabricado na janela rolante do z-score")
+
+    # e nenhum snapshot ghost carrega um pair_z/pair_signal calculado sobre o
+    # forward-fill (deve ficar no default: sem observação nova, sem sinal)
+    for s in snaps:
+        if s.is_ghost:
+            assert s.pair_signal == "neutral" and s.pair_z == 0.0, (
+                f"ghost em {s.timestamp} carrega pair_signal={s.pair_signal!r} "
+                f"pair_z={s.pair_z} fabricado a partir do forward-fill")
+
+
 # ── 9. Replay histórico NÃO persiste o estado do Kalman ────────
 def test_replay_historico_nao_persiste_estado():
     """O guard monotônico do save_kalman_state só protege quando JÁ existe estado
@@ -443,6 +508,137 @@ def test_engine_nao_emite_marker_em_barra_sintetica():
     for s in snaps:
         assert not (s.pair_compra is not None and s.pair_venda is not None)
         assert not (s.z_compra_val is not None and s.z_venda_val is not None)
+
+
+# ── 10b. INTEGRAÇÃO: marker de par DIFERIDO através de um gap (review Codex) ──
+def test_marker_pair_diferido_atravessa_gap_intra_sessao():
+    """test_markers.py trava essa semântica na lógica REIMPLEMENTADA
+    isoladamente (test_nunca_emite_marker_em_barra_sintetica); este aqui
+    dirige o ENGINE DE VERDADE com um gap intra-sessão real e um sinal
+    SCRIPTADO (via monkeypatch de pair_signal) que transiciona exatamente
+    durante o gap — o marker não pode ser perdido nem duplicado: deve
+    aparecer só na 1ª barra REAL depois do gap."""
+    import backend.irai.engine as eng_mod
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] + [1.5] * (n_dim_state - 1)
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    # mesmo gap intra-sessão dos testes 8/8b: barras i=10,11,12 do target somem
+    c = sqlite3.connect(db)
+    gap = [f"{SESSION}T09:5{i}:00Z" for i in (0, 5)] + [f"{SESSION}T10:00:00Z"]
+    for ts in gap:
+        c.execute("DELETE FROM market_bars WHERE symbol=? AND timestamp_utc=?", (TARGET, ts))
+    n_gap = c.total_changes
+    c.commit(); c.close()
+    assert n_gap > 0, "fixture inválida: nenhuma barra removida"
+
+    # sinal scriptado: as 10 primeiras barras reais (i=0..9, antes do gap)
+    # ficam "neutral"; a partir da 11ª (i=13, 1ª real depois do gap) vira
+    # "sell" — a transição em si acontece só "dentro" do gap (i=10,11,12
+    # nem existem mais), então só pode ser observada na 1ª barra real seguinte.
+    call_idx = [0]
+    def scripted_signal(z_pair, beta, threshold):
+        call_idx[0] += 1
+        return "neutral" if call_idx[0] <= 10 else "sell"
+
+    orig_k = eng_mod.KalmanFilterWrapper
+    orig_sig = eng_mod.pair_signal
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    eng_mod.pair_signal = scripted_signal
+    try:
+        snaps = eng_mod.IRAIEngine(db_path=db).compute_from_db(
+            SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig_k
+        eng_mod.pair_signal = orig_sig
+
+    assert call_idx[0] == 37, (
+        f"esperava 37 barras reais (40 - 3 do gap) chamando o sinal, "
+        f"veio {call_idx[0]}")
+
+    reais = [s for s in snaps if not s.is_ghost]
+    vendas = [i for i, s in enumerate(reais) if s.pair_venda is not None]
+    assert vendas == [10], (
+        f"esperava o marker só na 11ª barra real (índice 10, 1ª depois do "
+        f"gap), veio em {vendas} — transição perdida ou duplicada através do gap")
+
+    ghosts = [s for s in snaps if s.is_ghost]
+    assert all(s.pair_venda is None for s in ghosts), "marker fantasma em barra sintética"
+
+
+# ── 10c. INTEGRAÇÃO: marker de par e de divergência coexistem na mesma barra ──
+def test_marker_pair_e_divergencia_coexistem_na_mesma_barra():
+    """Os dois eventos são branches independentes no engine (linhas ~825 e
+    ~842) e podem disparar juntos na mesma barra real — nenhum deve suprimir
+    o outro (review Codex: 'mesma barra, duas transições simultâneas?')."""
+    import backend.irai.engine as eng_mod
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] + [1.5] * (n_dim_state - 1)
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+
+    # sinal de par: "neutral" até a 20ª barra real, "sell" a partir da 21ª.
+    # `real_bar_flag` é aceso pelo pair_signal (só roda em barra real, linha
+    # ~769 do engine) e consumido pelo compute() logo em seguida (linha ~775,
+    # mesma iteração do loop) — assim sei, sem inspecionar is_ghost (que só é
+    # setado pelo CALLER depois do compute retornar), que este compute() é o
+    # da mesma barra real que acabou de gerar o sinal.
+    call_idx = [0]
+    real_bar_flag = [False]
+    def scripted_signal(z_pair, beta, threshold):
+        call_idx[0] += 1
+        real_bar_flag[0] = True
+        return "neutral" if call_idx[0] <= 20 else "sell"
+
+    eng = _engine(db)
+    orig_compute = eng.compute
+    def wrapped_compute(*a, **k):
+        snap = orig_compute(*a, **k)
+        if real_bar_flag[0]:
+            real_bar_flag[0] = False
+            # na 21ª barra real (mesma em que o sinal de par vira "sell"),
+            # força p_up<45 p/ a divergência bater junto — price_diverge_z já
+            # é organicamente > threshold nessa altura da sessão (a cesta é
+            # monotonicamente altista na fixture; ver diagnóstico da task).
+            if call_idx[0] == 21:
+                snap.p_up = 20.0
+        return snap
+    eng.compute = wrapped_compute
+
+    orig_k = eng_mod.KalmanFilterWrapper
+    orig_sig = eng_mod.pair_signal
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    eng_mod.pair_signal = scripted_signal
+    try:
+        snaps = eng.compute_from_db(SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig_k
+        eng_mod.pair_signal = orig_sig
+
+    reais = [s for s in snaps if not s.is_ghost]
+    assert len(reais) >= 21, f"fixture inválida: só {len(reais)} barras reais"
+    alvo = reais[20]   # 21ª barra real (0-indexed 20)
+    assert alvo.pair_venda is not None, "marker de par não disparou na barra alvo"
+    assert alvo.z_venda_val is not None, "marker de divergência não disparou na barra alvo"
+    assert alvo.pair_venda == alvo.z_venda_val, (
+        "os dois markers devem carregar o mesmo preço (close) da barra")
+    assert not (alvo.pair_compra or alvo.z_compra_val), "lado de compra não deveria disparar aqui"
 
 
 if __name__ == "__main__":
