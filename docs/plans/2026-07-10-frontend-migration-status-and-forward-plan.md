@@ -1,104 +1,129 @@
 # IRAI — Plano de convergência de sinal (foco: **Parte 2**)
 
 **Projeto:** IRAI — Intraday Risk Appetite Index
-**Criado:** 2026-07-10 · **Reescrito com ênfase na Parte 2:** 2026-07-12
+**Criado:** 2026-07-10 · **Reescrito com ênfase na Parte 2:** 2026-07-12 · **Reverificado e atualizado:** 2026-07-13
 **Revisões:** `fable-reasoner` + `codex` (`/codex-r`) na v1; evidências de linha
-**reverificadas contra o código em 2026-07-12** (os números de `main.py` mudaram
-com a entrada do endpoint de GEX).
+reverificadas contra o código em 2026-07-12, e novamente em 2026-07-13 depois que
+o Pacote A fechou.
 
 > **Por que a ênfase mudou.** A v1 deste documento era um plano de *migração de
 > frontend* com um apêndice sobre backend. A migração acabou (5/5 charts, GEX
-> entregue, recharts removido). **O que sobrou — e o que hoje separa o nosso
-> dashboard da produção — é inteiramente a Parte 2: sinal e contrato de backend.**
+> entregue, recharts removido). **O que sobrou — e o que separava o nosso
+> dashboard da produção — era inteiramente a Parte 2: sinal e contrato de backend.**
 > Por isso a Parte 2 virou o corpo do plano; a Parte 1 (entregue) foi comprimida
 > para o fim, como registro.
+
+> **Atualização 2026-07-13 — Pacote A fechado.** Fases 2, 3, 4 e B1 concluídas
+> (3/3 do Pacote A). Pacote B em 2/3 (markers de sinal e GEX do dólar entregues;
+> falta confirmar a cesta do WDO). Pacote C e Parte 3 seguem sem nenhum item
+> iniciado. Detalhe item a item com commits em §2.2 e §2.3.
 
 ---
 
 ## PARTE 2 — Backend e sinal (FOCO DE TRABALHO)
 
-### 2.0 A prova visual: Mini Dólar, nós vs. produção (2026-07-12)
+### 2.0 A prova visual: Mini Dólar, nós vs. produção (medição de 2026-07-12)
 
-Comparação lado a lado do mesmo ativo, mesma sessão:
+Comparação lado a lado do mesmo ativo, mesma sessão — estado **antes** do Pacote A:
 
-| Leitura | Nosso (local) | Produção | Diagnóstico |
+| Leitura | Nosso (local) | Produção | Diagnóstico em 12/07 |
 |---|---|---|---|
 | Chart de movimento/NWE | ✅ igual | ✅ | **convergido** (migração cumpriu o objetivo) |
 | Sinal direcional | BAIXA | BAIXA | **convergido** |
 | **P(↑) dinâmico** | **1,0% — linha reta** | **32,4% — oscilando** | ❌ **V1 estático vs. V2/Kalman** |
 | Convicção | 59% | 21% | ❌ consequência do mesmo V1/V2 |
 | PAR ATIVO / DIV Z | ausente | `isharescurrencybond+` β −1.061 | ❌ só existe no V2 |
-| Markers P VENDA no chart | ausentes | presentes | ❌ engine não emite eventos discretos |
-| GEX / MID | só WIN | WIN **e DOL** | ❌ nosso worker só cobre IBOV |
+| Markers P VENDA no chart | ausentes | presentes | ❌ engine não emitia eventos discretos |
+| GEX / MID | só WIN | WIN **e DOL** | ❌ nosso worker só cobria IBOV |
 
-**O chart não é mais o problema. O modelo servido à UI é.** Essa é a tese central
-deste plano.
+**O chart não era mais o problema. O modelo servido à UI era.** Essa foi a tese
+central deste plano — e é o que o Pacote A atacou.
 
-### 2.1 O bug-raiz — um único parâmetro explica a maior parte da divergência
+### 2.0.1 Depois do Pacote A + parte do B (verificado no código em 2026-07-13)
 
-`frontend/src/App.jsx:648` pede `version=both`, que o engine resolve como **V1
-estático**. O `scripts/firebase_sync.py` (linhas 48/66) pede **`version=v2`**.
+Reverificação **estática do código-fonte**, não uma nova medição ao vivo lado a
+lado com a produção — os valores específicos (1,0% vs 32,4%, etc.) não foram
+remedidos hoje.
 
-> **Localhost mostra V1. Produção mostra V2. Ambos rotulados "DINÂMICO (KALMAN)".**
+| Leitura | Situação em 13/07 |
+|---|---|
+| Chart de movimento/NWE | ✅ seguia convergido, sem mudanças |
+| Sinal direcional | ✅ seguia convergido, sem mudanças |
+| **P(↑) dinâmico** | ✅ mecanismo corrigido — `App.jsx` agora pede `version=v2` igual à produção (`e5f513f`); volta a oscilar bar-a-bar em vez de travado |
+| Convicção | ✅ mesma correção, consequência direta |
+| PAR ATIVO / DIV Z | ✅ passa a existir, porque o V2 roda por padrão agora |
+| Markers P VENDA no chart | ✅ engine emite eventos discretos (`e235c03`; endurecido por `0236f19` e `97f2cb7`) |
+| GEX / MID | ✅ WIN **e** WDO (`39e6822`) |
 
-Consequências em cascata (todas visíveis na tabela 2.0): P(↑) travado, convicção
-deslocada, PAR ATIVO/DIV Z ausentes, painel de pesos Kalman exibindo pesos
-**estáticos**. Corrigir isso é o maior salto de convergência por linha de código do
-projeto — **mas não pode ser feito sozinho** (ver 2.3, o pacote Fase 3 + B2).
+### 2.1 O bug-raiz ✅ RESOLVIDO 2026-07-13
 
-### 2.2 Estado verificado das fases (evidência revalidada em 2026-07-12)
+*Diagnóstico original (12/07):* `frontend/src/App.jsx:648` pedia `version=both`,
+que o engine resolvia como **V1 estático**. O `scripts/firebase_sync.py` (linhas
+48/66) já pedia **`version=v2`**.
 
-| Fase | Tema | Status | Evidência (linha conferida hoje) |
+> **Localhost mostrava V1. Produção mostrava V2. Ambos rotulados "DINÂMICO (KALMAN)".**
+
+Consequências em cascata (tabela 2.0): P(↑) travado, convicção deslocada, PAR
+ATIVO/DIV Z ausentes, painel de pesos Kalman exibindo pesos **estáticos**.
+
+**Estado em 13/07:** corrigido junto com a Fase 3, como o plano exigia (não
+podiam ser separadas — ver 2.3). `App.jsx` agora pede `version=v2` explicitamente
+nos dois ramos de `fetchSeries` (commit `e5f513f`), com um comentário no próprio
+código documentando a troca.
+
+### 2.2 Estado verificado das fases (evidência reconferida em 2026-07-13)
+
+| Fase | Tema | Status | Evidência |
 |---|---|---|---|
-| **2** | Contrato `version=both` | ❌ **P0 — o bug-raiz** | `App.jsx:648` pede `both` → V1 no local; `firebase_sync.py:48,66` pede `v2` → **divergência V1/V2 entre ambientes** |
-| **3** | Ghost bars / pré-mercado | ❌ **P0 vivo** | `target_cursor = 0` (`engine.py:588`) → o gate `is_pre_market = (target_cursor < 0)` (`:655`) **nunca dispara** → `snap.win_return = 0.0` (`:768`) **é inalcançável**. Barras sintéticas usam `close` de ontem + `win_open` de hoje → **retorno falso em todo o pré-mercado**, que no V2 alimenta o Kalman por ~180 barras M5 e o `price_diverge_z` |
-| **4** | Persistência Kalman monotônica | ❌ **Corrupção viva** | `INSERT OR REPLACE INTO kalman_state` **sem guard de timestamp** (`db.py:187`), chamado ao fim de todo compute v2. `irai_current` itera datas anteriores em v2 → **sobrescreve o estado live com estado antigo**, que vira prior da sessão seguinte |
-| **1** | Schema `divergence_config` | 🔶 Parcial | `init_db()` roda só `conn.executescript(SCHEMA)` (`db.py:115`) e **não** chama `migrate_divergence_config()` → instalação limpa ainda pode cair em "0 models loaded" |
-| **5** | NWE causal (backend) | ❌ Pendente | `get_center` soma sobre `range(n)` (`main.py:288-291`) → **lookahead de 1 barra** no `nwe_slope` dos cards do overview |
-| **6** | API não-bloqueante | ❌ Pendente | Sem single-flight/threadpool em `main.py` |
-| **7** | Contrato Firebase completo | ❌ Pendente | `firebase_sync` só conserva `series`/`summaries`; o frontend lê `data.history[safeTarget]`, que nunca existe → `history_closes` vazio em produção; falta `is_b3`. *(Nuance: `accuracy` já viaja em `summaries[target]` → **B1 não depende desta fase**)* |
-| **8.1** | Acurácia no detalhe (**B1**) | 🔶 Quebrado, fix trivial | `App.jsx:978` lê `seriesInfo.accuracy ?? 80`, mas `fetchSeries` nunca seta `accuracy` → **sempre o fallback 80** |
-| **8.2** | Corridas de request | ❌ Pendente | `fetchSeries` sem `AbortController`/sequence-id |
-| **10** | Modularização `App.jsx` | 🔶 Parcial | 5 charts extraídos; `App.jsx` segue com **~1.200 linhas** |
+| **2** | Contrato `version=both` | ✅ **RESOLVIDO** | `App.jsx:656` pede `version=v2` nos dois ramos, igual ao `firebase_sync.py` — bug-raiz fechado. Commit `e5f513f` |
+| **3** | Ghost bars / pré-mercado | ✅ **RESOLVIDO** | Gate de pré-mercado corrigido em `engine.py`. Commit `28ecf2a`; endurecido por `ceec25d` (review Codex: só a sessão viva persiste o Kalman, e o gap intra-sessão passa a ser tratado como observação ausente, não retorno falso) |
+| **4** | Persistência Kalman monotônica | ✅ **RESOLVIDO** | Guard monotônico implementado. Commit `01e0b9b`; caso de borda do replay histórico fechado por `ceec25d` |
+| **1** | Schema `divergence_config` | 🔶 Parcial (sem mudança) | `init_db()` (`db.py:112`) segue rodando só `conn.executescript(SCHEMA)`; `migrate_divergence_config()` só roda se `db.py` for executado como script (`__main__`). Confirmado ainda assim em 13/07 |
+| **5** | NWE causal (backend) | ❌ Pendente (sem mudança) | `get_center` ainda soma sobre `range(n)` inteiro (`main.py:288-295`) → lookahead de 1 barra confirmado ainda presente em 13/07 |
+| **6** | API não-bloqueante | ❌ Pendente (sem mudança) | Nenhum single-flight/threadpool encontrado em `main.py` |
+| **7** | Contrato Firebase completo | ❌ Pendente (sem mudança) | `firebase_sync.py` segue sem `history_closes` nem `is_b3` |
+| **8.1** | Acurácia no detalhe (**B1**) | ✅ **RESOLVIDO** | Commit `e5f513f`; fix adicional em `82e3727` (o card de overview rotulava P(up) como "v1" com valor hardcoded) |
+| **8.2** | Corridas de request | ✅ **RESOLVIDO** (bônus) | Não estava no pacote de trabalho ativo — resolvido de graça dentro do commit `39e6822` (GEX do dólar): guard de `reqId`/sequence-id em `fetchSeries` descarta respostas fora de ordem |
+| **10** | Modularização `App.jsx` | 🔶 Parcial (sem mudança de fundo) | 5 charts extraídos, mas `App.jsx` tem **1.254 linhas** hoje (era ~1.200 em 12/07) |
 
-### 2.3 Ordem de execução (a sequência importa — não reordenar sem motivo)
+### 2.3 Ordem de execução (histórico de como foi feito)
 
-**Pacote A — destravar o V2 (o coração do plano)**
+**Pacote A — destravar o V2 (o coração do plano) — ✅ 3/3 concluído**
 
-1. **Fase 4 — guard monotônico do Kalman.** *URGENTE e independente.* É corrupção
-   ativa **agora, em produção**. `ON CONFLICT ... WHERE excluded.timestamp > ...` +
-   `persist_state=False` para replay histórico. Remover a def morta de
-   `compute_from_db`. **Antes de implantar**, snapshotar `kalman_state` + timestamps
-   (para distinguir correção de mudança de continuidade).
-2. **Fase 3 + B2 juntos (não separar).** Corrigir o `win_return=0` de pré-mercado
-   **e então** trocar a UI para `version=v2`. Fazer B2 sozinho **pioraria** o
-   localhost: exporia na UI principal o caminho de pré-mercado bugado que o
-   `version=both` hoje esconde acidentalmente ao cair no V1.
-   *Resultado esperado: P(↑) dinâmico, convicção, PAR ATIVO e DIV Z convergindo com
-   a produção — resolve 4 das 7 linhas da tabela 2.0 de uma vez.*
-3. **B1 — acurácia no detalhe.** Trivial, alto valor, independente. Propagar
-   `summary.accuracy` para `seriesInfo` nos dois ramos de `fetchSeries`.
+1. ✅ **Fase 4 — guard monotônico do Kalman.** Era corrupção ativa em produção.
+   Implementado com `ON CONFLICT ... WHERE excluded.timestamp > ...` +
+   `persist_state=False` para replay histórico. Commit `01e0b9b`, endurecido por
+   `ceec25d`.
+2. ✅ **Fase 3 + B2 juntos (não foram separadas).** Corrigido o `win_return=0` de
+   pré-mercado e então trocada a UI para `version=v2`, na ordem que o plano exigia
+   — fazer B2 sozinho teria exposto na UI principal o caminho de pré-mercado ainda
+   bugado. Commits `28ecf2a` + `e5f513f`.
+   *Resultado: P(↑) dinâmico, convicção, PAR ATIVO e DIV Z voltaram a convergir com
+   a produção — resolveu 4 das 7 linhas da tabela 2.0 de uma vez.*
+3. ✅ **B1 — acurácia no detalhe.** `summary.accuracy` propagado para `seriesInfo`
+   nos dois ramos de `fetchSeries`. Commit `e5f513f` + fix `82e3727`.
 
-**Pacote B — o que sobra da divergência**
+**Pacote B — o que sobra da divergência — 🔶 2/3 concluído**
 
-4. **Markers de sinal (pair/z) por barra.** O `TVNweChart` **já suporta** os markers
-   (`pair_compra`/`pair_venda`/`z_compra_val`/`z_venda_val`); falta o engine emitir
-   os **eventos discretos**. ⚠️ Manter a decisão de projeto: **não** derivar de
-   thresholds contínuos (viraria spam, não os eventos por barra da produção).
-5. **WDO — verificar a cesta (não assumir que está errada).** A produção mostra
-   PAR ATIVO `isharescurrencybond+` no Mini Dólar, e **esse fator já está na nossa
-   cesta do WDO**. Ou seja: **a hipótese "cesta velha" não está confirmada** — o
-   V1/V2 (item 2) provavelmente explica a divergência sozinho. *Só recalibrar se,
-   depois do Pacote A, o WDO ainda divergir.* Cestas atuais no DB:
-   - `win`: `WDO$N, DI1$N, BRENT, BTCUSD, CADCHF, US30, USDMXN, iSharesTreasury1-3+` (acc 69,0% · R² 0,464 — **já convergida com a produção**)
-   - `wdo`: `WIN$N, DI1$N, VIX, US500, USTEC, DE40, USDCHF, iSharesCurrencyBond+` (acc 73,9% · R² 0,499 — **a verificar**)
-   - ⚠️ O feed Firebase agora exige auth (**401**) — a verificação precisa de outra via (credencial ou inspeção da UI de produção).
-6. **GEX do dólar.** Nosso `gex_worker` cobre só as opções do **IBOV** (→ WIN$N). A
-   produção plota GEX/MID também no Mini Dólar. Extensão: opções de **dólar** na
-   mesma API BDI/B3 (`OpenPositionsEquities` é renda variável; DOL vive na trilha de
-   derivativos — mapear a tabela) + join no MT5, reusando todo o pipeline de cálculo.
+4. ✅ **Markers de sinal (pair/z) por barra.** O `TVNweChart` já suportava os
+   markers (`pair_compra`/`pair_venda`/`z_compra_val`/`z_venda_val`); o engine
+   passou a emitir os eventos discretos, sem derivar de thresholds contínuos
+   (decisão de projeto preservada). Commit `e235c03`, com dois fixes de review:
+   `0236f19` (pair_signal invertia compra/venda para β>0) e `97f2cb7` (gap
+   intra-sessão contaminava o pair z-score).
+5. ⏳ **WDO — verificar a cesta — ainda em aberto.** A produção mostrava PAR ATIVO
+   `isharescurrencybond+` no Mini Dólar, e esse fator já estava na nossa cesta do
+   WDO — ou seja, a hipótese "cesta velha" nunca foi confirmada; o V1/V2 (Fase 2)
+   provavelmente explicava a divergência sozinho. O plano previa recalibrar **só
+   se**, depois do Pacote A, o WDO ainda divergisse — e essa checagem **ainda não
+   foi feita**. `.planning/docs/FACTOR_MAP.md` está desatualizado (gerado em
+   10/07, antes da cesta citada aqui) e não deve ser usado como fonte até ser
+   regenerado. O feed Firebase de produção também exige auth (**401**) — a
+   verificação precisa de outra via.
+6. ✅ **GEX do dólar.** `gex_worker.py` passou a cobrir WIN$N e WDO$N num único
+   ciclo (registry de targets, isolamento de falha por leg). Commit `39e6822`.
 
-**Pacote C — higiene quantitativa (sem impacto visual imediato)**
+**Pacote C — higiene quantitativa (sem impacto visual imediato) — ❌ 0/4, nada iniciado**
 
 7. **Fase 5 — NWE causal no backend** (kernel `j <= i`, lookback 95). Vem **antes**
    de qualquer polimento visual que dependa do NWE.
@@ -114,15 +139,20 @@ permanente antes da correção**. Hoje `tests/` cobre só z-score/pair. Mínimo 
 `test_engine_premarket`, `test_engine_kalman_state`, `test_api_contract`,
 `test_nwe_causality`, `test_db_schema`.
 
-### 2.5 Riscos da Parte 2
+### 2.5 Riscos da Parte 2 (atualizado — os riscos do Pacote A já foram consumidos)
 
-- **Fase 4 é corrupção ativa hoje** — snapshotar o estado antes do guard.
-- **B2 sem a Fase 3** exporia o pré-mercado bugado na UI principal → manter o pacote junto.
-- **"Corrigir o sinal, depois polir o visual"** — inverter deixa o operador lendo
-  sinais errados enquanto se ajusta crosshair/eixo.
-- **Markers derivados de threshold contínuo** viram spam — só eventos discretos.
+- ~~Fase 4 é corrupção ativa hoje~~ — **mitigado** pelo guard monotônico
+  (`01e0b9b`/`ceec25d`).
+- ~~B2 sem a Fase 3 exporia o pré-mercado bugado na UI principal~~ — **mitigado**:
+  as duas entraram juntas, como o plano exigia.
+- **"Corrigir o sinal, depois polir o visual"** — segue valendo para o que resta:
+  inverter a ordem deixaria o operador lendo sinais errados enquanto se ajusta
+  crosshair/eixo (relevante para a Parte 3).
+- **Markers derivados de threshold contínuo** viram spam — decisão preservada na
+  entrega do item 4 do Pacote B: só eventos discretos.
 - **Recalibrar o WDO sem necessidade** (item 5) gastaria uma janela e mexeria num
-  modelo que hoje tem a **melhor acurácia do par** (73,9%).
+  modelo que, pela última medição conhecida, tinha a **melhor acurácia do par**
+  (73,9%) — por isso o item segue como verificação, não recalibração automática.
 
 ---
 
@@ -176,10 +206,11 @@ de ponta a ponta, em ~40 s/dia.
 
 ---
 
-## PARTE 3 — Backlog secundário (polimento de frontend; **não bloqueia a Parte 2**)
+## PARTE 3 — Backlog secundário (polimento de frontend)
 
-Só entra **depois** do Pacote A da Parte 2 — e a Trilha C depende da Fase 5 (NWE
-correto) para não polir cima de um sinal errado.
+Só entra **depois** do Pacote A da Parte 2 — condição **agora satisfeita** — mas a
+Trilha C ainda depende da Fase 5 (NWE causal, Pacote C, ainda pendente) para não
+polir em cima de um sinal errado. Segue bloqueada por esse motivo.
 
 - **C1 · Rede de testes primeiro.** Vitest sobre as funções puras: `computeNWE` causal,
   paridade %-vs-preço, `padSeriesToFullDay`, `toUnixTime`, convicção. **Trava o
@@ -191,5 +222,6 @@ correto) para não polir cima de um sinal errado.
 - **C5 · Sync de crosshair/time-axis** entre os 5 charts (`subscribeCrosshairMove`).
 - **C6 · Concluir a modularização** (Fase 10): extrair de `App.jsx` o cliente de dados,
   timezone, `computeNWE`, `SignalGauge`.
-- **Fase 8.2 · `AbortController`** em `fetchSeries`.
+- ~~Fase 8.2 · `AbortController` em `fetchSeries`~~ — **já resolvido**, ver §2.2
+  (Fase 8.2).
 - **UX da produção não replicada:** hint "[Y-AXIS DESLOCADO — DUPLO CLIQUE PARA RESETAR]".
