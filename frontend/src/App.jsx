@@ -479,7 +479,9 @@ const REFRESH_INTERVAL = 30_000 // 30 seconds (fallback polling)
 
 // Helper: compute local time from UTC time string + offset in hours
 function toLocalTime(utcTimeStr, offsetH) {
-  if (!utcTimeStr || !offsetH) return null;
+  // `!offsetH` descartaria um offset 0 legítimo (ativo sem deslocamento) — só a
+  // ausência do valor deve anular.
+  if (!utcTimeStr || offsetH == null) return null;
   const [hStr, mStr] = utcTimeStr.split(':');
   let h = (parseInt(hStr, 10) + offsetH + 24) % 24;
   return `${h.toString().padStart(2, '0')}:${mStr}`;

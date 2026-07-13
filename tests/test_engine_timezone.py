@@ -93,6 +93,13 @@ def _seed_engine(tmp_path, *, target, target_source, factor, factor_source,
 
     _insert_bar(conn, target, target_source, f"{session}T09:00:00Z", 1_000.0)
     _insert_bar(conn, factor, factor_source, f"{session}T09:00:00Z", 10.0)
+    # Barra-armadilha. Ela é o que separa "o fator foi deslocado junto" de "o
+    # fator ficou no eixo BRT" numa sessão de INVERNO (target 09:00 BRT -> 14:00
+    # no eixo): se o fator for deslocado, esta barra vai para 17:00 e é futuro,
+    # inalcançável; se NÃO for (o bug D1), ela fica em 12:00, vira passado no
+    # eixo e o cursor a consome — devolvendo 15.0 em vez de 10.0.
+    # Sem ela o teste de inverno passaria nos dois casos.
+    _insert_bar(conn, factor, factor_source, f"{session}T12:00:00Z", 15.0)
     _insert_bar(conn, factor, factor_source, f"{session}T15:00:00Z", 20.0)
     conn.commit()
     conn.close()
