@@ -514,10 +514,16 @@ def test_engine_nao_emite_marker_em_barra_sintetica():
 def test_marker_pair_diferido_atravessa_gap_intra_sessao():
     """test_markers.py trava essa semântica na lógica REIMPLEMENTADA
     isoladamente (test_nunca_emite_marker_em_barra_sintetica); este aqui
-    dirige o ENGINE DE VERDADE com um gap intra-sessão real e um sinal
-    SCRIPTADO (via monkeypatch de pair_signal) que transiciona exatamente
-    durante o gap — o marker não pode ser perdido nem duplicado: deve
-    aparecer só na 1ª barra REAL depois do gap."""
+    dirige o ENGINE DE VERDADE com um gap intra-sessão real.
+
+    Nota (review Codex): pós-fix, `pair_signal()` nem é CHAMADO em barras
+    ghost (gated por `sem_print`) — não existe "transição correndo durante
+    o gap" no engine real, só o último sinal real antes do gap, congelado.
+    O que este teste trava é o que É observável de fato: o sinal scriptado
+    muda a partir da 1ª chamada pós-gap (== 1ª barra REAL depois do gap), e
+    o marker correspondente precisa emergir exatamente ali — nunca antes
+    (nenhuma chamada "vaza" pro gap), nunca numa ghost, e sem duplicar nas
+    barras reais seguintes que mantêm o mesmo sinal."""
     import backend.irai.engine as eng_mod
 
     class SpyKalman:
