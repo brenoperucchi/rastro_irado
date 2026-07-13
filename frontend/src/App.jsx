@@ -610,8 +610,15 @@ export default function App() {
   }, [])
 
   // Fetch series data (silent = no loading spinner on auto-refresh)
+  const fetchSeriesReqRef = useRef(0)
   const fetchSeries = useCallback((date, target, silent = false) => {
     if (!date) return
+    // Descarta respostas fora de ordem: se o usuário trocar de target (ex.
+    // WIN$N -> WDO$N) antes da requisição anterior voltar, a resposta antiga
+    // não pode sobrescrever `series`/`seriesInfo` -- senão as walls de GEX do
+    // novo target (já corretamente filtradas por gex.target===selectedTarget)
+    // acabam desenhadas sobre a série de preço do target anterior.
+    const reqId = ++fetchSeriesReqRef.current
     if (!silent) {
       setLoading(true)
       // Clear previous data so we don't show ghost data from a previously selected target
@@ -626,6 +633,7 @@ export default function App() {
       fetch(url)
         .then(r => r.json())
         .then(data => {
+          if (reqId !== fetchSeriesReqRef.current) return
           if (data.error) { setError(data.error); setLoading(false); return }
           const safeTarget = target.replace('$', '_').replace('.', '_')
           const s = data?.series?.[safeTarget] || []
@@ -643,11 +651,12 @@ export default function App() {
           setLastUpdate(new Date(data?.last_update ? data.last_update * 1000 : Date.now()))
           setError(null)
         })
-        .catch(e => { setError(e.message); setLoading(false) })
+        .catch(e => { if (reqId !== fetchSeriesReqRef.current) return; setError(e.message); setLoading(false) })
     } else {
       fetch(`${API}/api/irai/series?session_date=${date}&target=${encodeURIComponent(target)}&version=v2`)   // v2 = engine dinâmico (Kalman); antes pedia `both`, que o engine resolvia como V1 estático
         .then(r => r.json())
         .then(data => {
+          if (reqId !== fetchSeriesReqRef.current) return
           if (data.error) { setError(data.error); setLoading(false); return }
           const isB3 = data.is_b3 || false;
           const processed = (data.series || []).map(s => {
@@ -670,7 +679,7 @@ export default function App() {
           setLastUpdate(new Date())
           setError(null)
         })
-        .catch(e => { setError(e.message); setLoading(false) })
+        .catch(e => { if (reqId !== fetchSeriesReqRef.current) return; setError(e.message); setLoading(false) })
     }
   }, [])
 
