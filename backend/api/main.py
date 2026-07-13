@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.db import get_connection, DB_PATH
 from backend.irai.engine import IRAIEngine, FACTOR_LABELS, TARGET
+from backend.irai.timezones import brt_to_tickmill_offset_hours
 
 # ── Engine singleton ──────────────────────────────────────
 engine: IRAIEngine = None
@@ -400,6 +401,13 @@ async def irai_series(
     target_info = next((t for t in engine.registered_targets if t["target"] == target), {})
     # B3 assets (WIN$N, WDO$N) need BRT offset (UTC-3) for dual axis
     is_b3 = target_info.get("session_start_h", 0) != 0
+    # O engine desloca as barras da B3 em +brt_offset_h para o eixo do servidor.
+    # O offset varia com o horário de verão (6h ou 5h), então o cliente não pode
+    # assumir -6h fixo ao reconstruir o eixo BRT — precisa do valor da sessão.
+    brt_offset_h = (
+        brt_to_tickmill_offset_hours(datetime.fromisoformat(session_date))
+        if is_b3 else 0
+    )
     result = {
         "session_date": session_date,
         "target": target,
@@ -409,6 +417,7 @@ async def irai_series(
         "series": [_snap_to_dict(s) for s in snapshots],
         "history_closes": history_closes,
         "is_b3": is_b3,
+        "brt_offset_h": brt_offset_h,
         "summary": {
             "p_up_min": min(s.p_up for s in snapshots),
             "p_up_max": max(s.p_up for s in snapshots),

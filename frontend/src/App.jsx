@@ -485,7 +485,7 @@ function toLocalTime(utcTimeStr, offsetH) {
   return `${h.toString().padStart(2, '0')}:${mStr}`;
 }
 
-const padSeriesToFullDay = (series, isB3 = false) => {
+const padSeriesToFullDay = (series, isB3 = false, brtOffsetH = 6) => {
   if (!series || series.length === 0) return series;
   
   const lastTimeStr = series[series.length - 1].time; // ex: "18:05"
@@ -511,7 +511,7 @@ const padSeriesToFullDay = (series, isB3 = false) => {
     
     padded.push({
       time: timeTickmill,
-      time_local: isB3 ? toLocalTime(timeTickmill, -6) : null
+      time_local: isB3 ? toLocalTime(timeTickmill, -brtOffsetH) : null
     });
   }
   return padded;
@@ -659,20 +659,22 @@ export default function App() {
           if (reqId !== fetchSeriesReqRef.current) return
           if (data.error) { setError(data.error); setLoading(false); return }
           const isB3 = data.is_b3 || false;
+          // O engine desloca a B3 para o eixo do servidor somando `brt_offset_h`,
+          // que VARIA com o horário de verão (6h ou 5h) — não assuma -6h fixo aqui,
+          // senão o eixo BRT erra 1h fora do DST americano (próxima virada: 01/11/2026).
+          const brtOffsetH = data.brt_offset_h ?? 6;
           const processed = (data.series || []).map(s => {
             const timeDb = s.timestamp ? s.timestamp.substring(11, 16) : '00:00';
-            // The backend now correctly shifts B3 timestamps to Tickmill time (+6h).
-            // So timeDb is already the primary axis Tickmill time.
+            // timeDb já é o eixo primário (relógio do servidor).
             const timeTickmill = timeDb;
-            // The secondary BRT axis is Tickmill time - 6 hours.
-            const timeBrt = isB3 ? toLocalTime(timeDb, -6) : null;
+            const timeBrt = isB3 ? toLocalTime(timeDb, -brtOffsetH) : null;
             return {
               ...s,
               time: timeTickmill,
               time_local: timeBrt,
             };
           })
-          setSeries(padSeriesToFullDay(processed, isB3))
+          setSeries(padSeriesToFullDay(processed, isB3, brtOffsetH))
           setSummary(data.summary)
           setSeriesInfo({ display_name: data.display_name, icon: data.icon, history_closes: data.history_closes || [], tz_offset: isB3 ? -3 : 0, tz_label: 'BRT', accuracy: data.summary?.accuracy })
           setLoading(false)
