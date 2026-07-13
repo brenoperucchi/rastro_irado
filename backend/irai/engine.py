@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.db import get_connection, DB_PATH, load_kalman_state, save_kalman_state
 from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
+from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.irai.zscore import (
     DEFAULT_SIGMA, normalized_zscore,
     select_active_pair, pairwise_residual, pair_zscore, pair_signal,
@@ -422,7 +423,7 @@ class IRAIEngine:
         all_symbols = list(set([data_target] + db_factors))
         placeholders = ",".join(["?"] * len(all_symbols))
         query = f"""
-            SELECT symbol, timestamp_utc, open, high, low, close, real_volume, delta
+            SELECT symbol, source, timestamp_utc, open, high, low, close, real_volume, delta
             FROM market_bars
             WHERE timeframe = 'M5'
               AND symbol IN ({placeholders})
@@ -457,10 +458,6 @@ class IRAIEngine:
         if not rows_raw:
             return []
 
-        # Detectar sessão via config do modelo (antes de iterar rows)
-        session_start = cfg.get("session_start_h", 0)
-        is_b3 = session_start != 0
-
         # Converter sqlite3.Row para dicts com timestamp parsed e hora extraída
         rows = []
         for r in rows_raw:
@@ -468,9 +465,9 @@ class IRAIEngine:
             ts_str = d["timestamp_utc"]
             ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
             
-            # Alinhar fuso horário: XP (BRT, UTC-3) para Tickmill (EEST, UTC+3) = +6 horas
-            if is_b3 and d["symbol"] == data_target:
-                ts_dt += timedelta(hours=6)
+            if d["source"] == "br":
+                offset_h = brt_to_tickmill_offset_hours(ts_dt)
+                ts_dt += timedelta(hours=offset_h)
                 d["timestamp_utc"] = ts_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
             d["timestamp"] = ts_dt

@@ -77,6 +77,7 @@ FACTOR_OPEN = 5_000.0
 
 def _seed(db_path, target_is_b3=True):
     """Semeia um DB com 1 fator 24h e um target que abre tarde (ou 24h)."""
+    target_source = "br" if target_is_b3 else "tickmill"
     c = sqlite3.connect(db_path)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
@@ -123,9 +124,9 @@ def _seed(db_path, target_is_b3=True):
     c.execute("""INSERT INTO market_bars
                  (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume, real_volume, delta)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-              (TARGET, "br", "M5", prev_ts, PREV_CLOSE, PREV_CLOSE, PREV_CLOSE, PREV_CLOSE, 10, 10, 0))
+              (TARGET, target_source, "M5", prev_ts, PREV_CLOSE, PREV_CLOSE, PREV_CLOSE, PREV_CLOSE, 10, 10, 0))
 
-    # Target: se B3, abre 09:00 BRT (o engine soma +6h -> 15:00 no eixo EEST).
+    # Target: se B3, abre 09:00 BRT (no verão observado, +6h -> 15:00 Tickmill).
     # Se 24h, começa junto com o fator (00:00) -> não deve haver pré-mercado.
     start_h = 9 if target_is_b3 else 0
     t_base = datetime.fromisoformat(f"{SESSION}T{start_h:02d}:00:00")
@@ -136,7 +137,7 @@ def _seed(db_path, target_is_b3=True):
         c.execute("""INSERT INTO market_bars
                      (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume, real_volume, delta)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                  (TARGET, "br", "M5", ts, o, px, px, px, 10, 10, 0))
+                  (TARGET, target_source, "M5", ts, o, px, px, px, 10, 10, 0))
     c.commit()
     c.close()
 
