@@ -13,6 +13,9 @@ conn.row_factory = sqlite3.Row
 models = []
 for row in conn.execute("SELECT * FROM asset_models WHERE active = 1"):
     slug = row["slug"]
+    row_columns = set(row.keys())
+    oos_accuracy = row["oos_accuracy"] if "oos_accuracy" in row_columns else None
+    oos_r2 = row["oos_r2"] if "oos_r2" in row_columns else None
     factors = json.loads(row["factors"])
     factor_labels = json.loads(row["factor_labels"])
     
@@ -37,12 +40,14 @@ for row in conn.execute("SELECT * FROM asset_models WHERE active = 1"):
     models.append({
         'display': row["display_name"],
         'target': row["target"],
-        'acc': f"{row['accuracy']:.1f}%" if row['accuracy'] else "0%",
-        'r2': f"{row['r_squared']:.4f}" if row['r_squared'] else "0.0",
+        'acc_in': f"{row['accuracy']:.1f}%" if row['accuracy'] is not None else "n/d",
+        'acc_oos': f"{oos_accuracy:.1f}%" if oos_accuracy is not None else "n/d",
+        'r2_in': f"{row['r_squared']:.4f}" if row['r_squared'] is not None else "n/d",
+        'r2_oos': f"{oos_r2:.4f}" if oos_r2 is not None else "n/d",
         'n_factors': len(factors),
         'alpha': f"{params.get(f'{slug}_alpha', 0.0):.4f}",
         'weights': weights,
-        'acc_val': float(row['accuracy'] or 0)
+        'acc_val': float(oos_accuracy or 0)
     })
 
 models.sort(key=lambda x: x['acc_val'], reverse=True)
@@ -51,6 +56,8 @@ md = '''# IRAI Multi-Asset — Mapa de Fatores por Ativo
 
 > [!NOTE]
 > 20 modelos ativos extraídos diretamente do banco de dados (irai.db).
+> **ACC/R² in** são ajustes na janela completa; **ACC/R² OOS** são métricas
+> do holdout temporal intocado e devem orientar comparação e decisão.
 > Regras aplicadas:
 > 1. Ativos internacionais **não** utilizam ativos BR (WIN, DOL, DI1).
 > 2. Índices americanos (US500, US30, USTEC) **não** utilizam outros índices americanos.
@@ -59,10 +66,10 @@ md = '''# IRAI Multi-Asset — Mapa de Fatores por Ativo
 
 ---
 
-## Ranking por Acurácia (Pós-Isolamento e Score Misto)
+## Ranking por Acurácia OOS (Pós-Isolamento e Score Misto)
 
-| # | Ativo | ACC | R² | Fatores | Fator Principal |
-|---|---|---|---|---|---|
+| # | Ativo | ACC in | ACC OOS | R² in | R² OOS | Fatores | Fator Principal |
+|---|---|---|---|---|---|---|---|
 '''
 
 flags = {
@@ -76,7 +83,11 @@ flags = {
 for i, m in enumerate(models):
     flag = flags.get(m['target'], '')
     main_f = f"{m['weights'][0][0]} ({m['weights'][0][1]:.4f})" if m['weights'] else '-'
-    md += f"| {i+1} | {flag} **{m['display']}** | **{m['acc']}** | **{m['r2']}** | {m['n_factors']} | {main_f} |\n"
+    md += (
+        f"| {i+1} | {flag} **{m['display']}** | {m['acc_in']} | "
+        f"**{m['acc_oos']}** | {m['r2_in']} | **{m['r2_oos']}** | "
+        f"{m['n_factors']} | {main_f} |\n"
+    )
 
 md += '''
 ---
@@ -88,7 +99,10 @@ md += '''
 for i, m in enumerate(models):
     flag = flags.get(m['target'], '')
     session = '09h - 18h' if m['target'] in ('WIN$N', 'WDO$N') else '00h - 24h'
-    md += f"### {i+1}. {flag} {m['display']} ({m['target']}) — ACC {m['acc']} (Sessão: {session})\n"
+    md += (
+        f"### {i+1}. {flag} {m['display']} ({m['target']}) — "
+        f"ACC in {m['acc_in']} / OOS {m['acc_oos']} (Sessão: {session})\n"
+    )
     md += "```\n"
     md += f"α={m['alpha']}\n\n"
     md += "  Fator       Peso        σ         Direção\n"

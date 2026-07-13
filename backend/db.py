@@ -3,6 +3,7 @@ IRAI Database — Schema e inicialização do SQLite.
 """
 import sqlite3
 import os
+import json
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "irai.db")
 
@@ -83,6 +84,8 @@ CREATE TABLE IF NOT EXISTS asset_models (
     data_proxy      TEXT,                     -- símbolo no banco se diferente (DOL$N para WDO$N)
     accuracy        REAL,                     -- última acurácia direcional calibrada
     r_squared       REAL,                     -- último R²
+    oos_accuracy    REAL,                     -- acurácia em holdout temporal intocado
+    oos_r2          REAL,                     -- R² em holdout temporal intocado
     n_sessions      INTEGER,                  -- sessões usadas na calibração
     calibrated_at   TEXT,                     -- timestamp última calibração
     active          INTEGER DEFAULT 1         -- 1=ativo, 0=inativo
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS kalman_state (
     state_covariance TEXT NOT NULL,         -- JSON 2D array
     johansen_p_value REAL,
     is_cointegrated  INTEGER DEFAULT 1,     -- 1=sim, 0=não
+    factor_signature TEXT,                  -- cesta ordenada associada aos betas
     timestamp_utc    TEXT NOT NULL
 );
 """
@@ -154,6 +158,22 @@ def migrate_divergence_config(db_path=None):
     conn.close()
 
 
+def migrate_oos_metrics(db_path=None):
+    """Adiciona métricas de holdout a ``asset_models`` de forma idempotente."""
+    conn = get_connection(db_path)
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(asset_models)")}
+
+    if "oos_accuracy" not in cols:
+        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_accuracy REAL")
+        print("  + coluna oos_accuracy adicionada")
+    if "oos_r2" not in cols:
+        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_r2 REAL")
+        print("  + coluna oos_r2 adicionada")
+
+    conn.commit()
+    conn.close()
+
+
 def migrate_kalman_state(db_path=None):
     """Adiciona a tabela kalman_state se não existir (migração Fase 6)."""
     conn = get_connection(db_path)
@@ -164,17 +184,26 @@ def migrate_kalman_state(db_path=None):
             state_covariance TEXT NOT NULL,
             johansen_p_value REAL,
             is_cointegrated  INTEGER DEFAULT 1,
+            factor_signature TEXT,
             timestamp_utc    TEXT NOT NULL
         )
     """)
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(kalman_state)")}
+    if "factor_signature" not in cols:
+        conn.execute("ALTER TABLE kalman_state ADD COLUMN factor_signature TEXT")
+        print("  + coluna factor_signature adicionada")
     conn.commit()
     print("  + tabela kalman_state garantida")
     conn.close()
 
 
-def save_kalman_state(conn, slug: str, state_mean, state_covariance, p_value: float, is_cointegrated: bool, timestamp_utc: str):
+def factor_signature(factors) -> str:
+    """Serializa a cesta preservando a ordem posicional dos betas."""
+    return json.dumps(list(factors), ensure_ascii=False, separators=(",", ":"))
+
+
+def save_kalman_state(conn, slug: str, state_mean, state_covariance, p_value: float, is_cointegrated: bool, timestamp_utc: str, factor_signature_value: str = None):
     """Salva o estado atual do filtro de Kalman e teste de Johansen."""
-    import json
     import numpy as np
     
     # Converter numpy arrays para listas para serialização JSON
@@ -192,29 +221,27 @@ def save_kalman_state(conn, slug: str, state_mean, state_covariance, p_value: fl
     # ordem cronológica. Ver tests/test_kalman_state.py.
     conn.execute("""
         INSERT INTO kalman_state
-        (slug, state_mean, state_covariance, johansen_p_value, is_cointegrated, timestamp_utc)
-        VALUES (?, ?, ?, ?, ?, ?)
+        (slug, state_mean, state_covariance, johansen_p_value, is_cointegrated, timestamp_utc, factor_signature)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slug) DO UPDATE SET
             state_mean       = excluded.state_mean,
             state_covariance = excluded.state_covariance,
             johansen_p_value = excluded.johansen_p_value,
             is_cointegrated  = excluded.is_cointegrated,
-            timestamp_utc    = excluded.timestamp_utc
+            timestamp_utc    = excluded.timestamp_utc,
+            factor_signature = excluded.factor_signature
         WHERE excluded.timestamp_utc >= kalman_state.timestamp_utc
-    """, (slug, json.dumps(state_mean), json.dumps(state_covariance), p_value, int(is_cointegrated), timestamp_utc))
+    """, (slug, json.dumps(state_mean), json.dumps(state_covariance), p_value, int(is_cointegrated), timestamp_utc, factor_signature_value))
     conn.commit()
 
 
 def load_kalman_state(conn, slug: str):
     """Carrega o último estado do filtro de Kalman para o ativo."""
-    import json
     import numpy as np
     
-    row = conn.execute("""
-        SELECT state_mean, state_covariance, johansen_p_value, is_cointegrated, timestamp_utc
-        FROM kalman_state
-        WHERE slug = ?
-    """, (slug,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM kalman_state WHERE slug = ?", (slug,)
+    ).fetchone()
     
     if not row:
         return None
@@ -224,7 +251,10 @@ def load_kalman_state(conn, slug: str):
         "state_covariance": np.array(json.loads(row["state_covariance"])),
         "johansen_p_value": row["johansen_p_value"],
         "is_cointegrated": bool(row["is_cointegrated"]),
-        "timestamp_utc": row["timestamp_utc"]
+        "timestamp_utc": row["timestamp_utc"],
+        "factor_signature": (
+            row["factor_signature"] if "factor_signature" in row.keys() else None
+        ),
     }
 
 
@@ -233,3 +263,4 @@ if __name__ == "__main__":
     migrate_delta()
     migrate_kalman_state()
     migrate_divergence_config()
+    migrate_oos_metrics()

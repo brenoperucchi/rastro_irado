@@ -16,7 +16,9 @@ from typing import Optional
 import sys, os
 import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from backend.db import get_connection, DB_PATH, load_kalman_state, save_kalman_state
+from backend.db import (
+    get_connection, DB_PATH, factor_signature, load_kalman_state, save_kalman_state,
+)
 from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
 from backend.irai.market_geometry import (
@@ -440,6 +442,7 @@ class IRAIEngine:
         # Load previous Kalman state if valid
         slug = cfg.get("slug", self.target_slugs.get(target, "win"))
         saved_state = load_kalman_state(conn, slug)
+        current_factor_signature = factor_signature(active_factors)
 
         # A sessão VIVA é a última que o target tem no banco. Só ela pode gravar
         # o estado do Kalman — replay histórico (date-picker, fallback do
@@ -600,7 +603,7 @@ class IRAIEngine:
                 initial_state_mean=initial_state_mean
             )
             
-            if saved_state:
+            if saved_state and saved_state.get("factor_signature") == current_factor_signature:
                 state_ts = datetime.fromisoformat(saved_state["timestamp_utc"].replace("Z", "+00:00"))
                 session_start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
                 if state_ts < session_start_dt:
@@ -846,7 +849,10 @@ class IRAIEngine:
             last_coint = snapshots[-1].is_cointegrated
             s_mean, s_cov = kf.get_state()
             conn2 = get_connection(self.db_path)
-            save_kalman_state(conn2, slug, s_mean, s_cov, last_p, last_coint, last_ts)
+            save_kalman_state(
+                conn2, slug, s_mean, s_cov, last_p, last_coint, last_ts,
+                current_factor_signature,
+            )
             conn2.close()
 
         return snapshots

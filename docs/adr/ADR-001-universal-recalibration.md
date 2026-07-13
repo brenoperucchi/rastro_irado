@@ -7,6 +7,8 @@ The IRAI (Intraday Risk Appetite Index) dashboard requires high robustness in di
 We conducted a comprehensive recalibration across all 20 assets with the following architectural constraints:
 1. **Minimum Factors Constraint:** The minimum number of factors required per model was elevated from `4` to `6` (the maximum remains `8`). This enforces wider factor baskets, significantly increasing the structural inertia of the models and reducing the likelihood of overfitted, non-generalizing correlations.
 2. **DE40 Inclusion:** The DAX 40 index (`DE40`) was introduced into the global candidate pool (`ALL_FACTORS`) for all assets. This allows the brute-force regression engine to account for European equity dynamics.
+3. **Actual Ridge calibration:** Candidate factors are standardized and Ridge is used both during basket screening and in the final fit. Alpha is selected from `0.01, 0.1, 1, 10, 100` on the final 20% of the training partition, then revalidated using only the selected basket; the external temporal holdout is never consulted. Candidate baskets whose standardized design matrix has condition number above 10 are rejected, in addition to the Treasury and EM-bond structural rules. The threshold is applied to `X`, not to the normal-equation matrix `X'X`, and catches materially collinear baskets without a market-specific “one US index” rule.
+4. **Honest temporal evaluation:** The latest database date is always discarded as potentially partial. In-sample and out-of-sample ACC/R² are persisted separately and reported with explicit labels.
 
 ## Execution (4 Waves)
 The recalibration was executed sequentially across 4 distinct asset classes on April 30, 2026:
@@ -24,4 +26,4 @@ The results validated the hypothesis that wider baskets and European exposure yi
 ## Consequences
 - The SQLite database (`irai.db`) was successfully purged of the old coefficients and fully updated.
 - The system must now be restarted so that the Regime Collector, APIs, and trading robots can ingest the new structural parameters.
-- Future calibrations should maintain the `--min-factors 6` constraint as the new standard baseline for production robustness.
+- Future calibrations should maintain the `--min-factors 6` constraint, temporal holdout, Ridge validation and condition-number guard as the production robustness baseline.

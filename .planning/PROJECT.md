@@ -60,7 +60,7 @@ O sistema analisa **20 alvos globais** simultâneos, cada um calibrado contra um
 **Ativos Locais (BR/XP — sessão 09h–18h):** WIN$N (Mini Índice), WDO$N (Mini Dólar)
 
 **Calibracao V2 (Ridge Regularization + DE40 + iShares):**
-O modelo utiliza Regressao Ridge com **31 fatores candidatos** (24 tradicionais + 6 iShares Axi ETFs + DE40). O algoritmo de força bruta testa combinações impondo um **mínimo de 6 fatores** por cesta para mitigar overfitting. O índice alemão DE40 tornou-se estrutural para índices americanos e pares de moedas.
+O `calibrate_universal.py` padroniza os fatores e usa Ridge de fato na triagem e no fit final. O α é escolhido entre `0.01, 0.1, 1, 10, 100` no trecho final de 20% do treino e revalidado somente na cesta vencedora, sem consultar o holdout externo. A força bruta mantém 6–8 fatores, as regras estruturais e rejeita cestas com número de condição de `X` acima de 10. A última data do snapshot é descartada como potencialmente parcial, e ACC/R² in-sample e OOS são persistidos separadamente.
 Ver `.planning/docs/FACTOR_MAP.md` para a tabela completa de pesos, R2 e Acuracia por ativo.
 
 ### Profundidade de dados disponível (M5)

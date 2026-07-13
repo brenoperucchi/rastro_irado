@@ -8,6 +8,7 @@ Uso:
     python scripts/calibrate_universal.py --all --force   # recalibra todos
 """
 import sqlite3, json, sys, os, argparse
+from dataclasses import dataclass
 from itertools import combinations
 from datetime import datetime, timezone
 
@@ -45,6 +46,83 @@ DXY_COMPONENTS = {"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF"}
 # Alias: target lógico → símbolo nos dados
 # WDO$N e DOL$N rastreiam o mesmo preço — WDO é o contrato mini oficial
 ALIASES = {}  # sem aliases: usar WDO$N diretamente
+
+RIDGE_ALPHAS = (0.01, 0.1, 1.0, 10.0, 100.0)
+MAX_CONDITION_NUMBER = 10.0
+TRIAGE_JITTER_RATIO = 1e-10
+
+
+@dataclass(frozen=True)
+class RidgeFit:
+    coef: np.ndarray
+    intercept: float
+    alpha: float
+
+    def predict(self, x):
+        return np.asarray(x, dtype=float) @ self.coef + self.intercept
+
+
+def _standardize(x):
+    x = np.asarray(x, dtype=float)
+    means = x.mean(axis=0)
+    scales = x.std(axis=0)
+    scales[scales == 0] = 1.0
+    return (x - means) / scales, means, scales
+
+
+def fit_ridge(x, y, alpha):
+    """Ajusta Ridge com fatores padronizados e intercepto não penalizado."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    xs, means, scales = _standardize(x)
+    y_mean = float(y.mean())
+    gram = xs.T @ xs
+    jitter = max(float(np.trace(gram)) / max(len(gram), 1), 1.0) * TRIAGE_JITTER_RATIO
+    beta_std = np.linalg.solve(
+        gram + np.eye(x.shape[1]) * (float(alpha) + jitter),
+        xs.T @ (y - y_mean),
+    )
+    coef = beta_std / scales
+    intercept = y_mean - float(means @ coef)
+    return RidgeFit(coef=coef, intercept=intercept, alpha=float(alpha))
+
+
+def choose_ridge_alpha(x, y, alphas=RIDGE_ALPHAS):
+    """Escolhe α no trecho final do treino, sem acesso ao holdout externo."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    validation_size = max(20, int(round(len(y) * 0.2)))
+    split = len(y) - validation_size
+    if split < 50:
+        raise ValueError("treino insuficiente para validação interna do Ridge")
+    x_fit, x_validation = x[:split], x[split:]
+    y_fit, y_validation = y[:split], y[split:]
+    tss = np.sum((y_validation - y_validation.mean()) ** 2)
+    best = None
+    for alpha in alphas:
+        model = fit_ridge(x_fit, y_fit, alpha)
+        prediction = model.predict(x_validation)
+        accuracy = np.mean((prediction > 0) == (y_validation > 0))
+        r2 = 1 - np.sum((y_validation - prediction) ** 2) / tss
+        score = accuracy * 0.7 + max(0.0, r2) * 0.3
+        candidate = (score, r2, -float(alpha), float(alpha))
+        if best is None or candidate > best:
+            best = candidate
+    return best[-1]
+
+
+def design_condition_number(x):
+    """Condição de X padronizado; não usa X'X, cuja condição é quadrática."""
+    xs, _, _ = _standardize(x)
+    return float(np.linalg.cond(xs))
+
+
+def discard_latest_session(frame):
+    """Remove sempre a última data, que pode representar sessão ainda parcial."""
+    if frame.empty:
+        return frame, None
+    latest = frame.index[-1]
+    return frame.iloc[:-1], latest
 
 
 def load_daily_returns(conn, session_start_h, session_end_h, target_symbol=None):
@@ -181,7 +259,11 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     for f in available_factors:
         label = f.replace("$N", "").lower()
         merged_all[label] = daily[f]
-    merged_all = merged_all.dropna().iloc[-252:]
+    merged_all = merged_all.dropna()
+    merged_all, discarded_session = discard_latest_session(merged_all)
+    if discarded_session is not None:
+        print(f"  Sessão descartada (potencialmente parcial): {discarded_session}")
+    merged_all = merged_all.iloc[-252:]
     
     print(f"  Sessões merged: {len(merged_all)}")
 
@@ -225,40 +307,45 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
                        if f in em_bonds}
 
     skipped_multicol = 0
+    skipped_condition = 0
 
     candidate_matrix = train[available_labels].values
-    gram = candidate_matrix.T @ candidate_matrix
-    sums = candidate_matrix.sum(axis=0)
-    rhs_factors = candidate_matrix.T @ y_train
-    rhs_intercept = y_train.sum()
+    candidate_standardized, _, _ = _standardize(candidate_matrix)
+    y_train_mean = float(y_train.mean())
+    y_train_centered = y_train - y_train_mean
+    gram = candidate_standardized.T @ candidate_standardized
+    rhs_factors = candidate_standardized.T @ y_train_centered
+    triage_alpha = choose_ridge_alpha(candidate_matrix, y_train)
+    print(f"  Ridge triagem: alpha={triage_alpha:g} escolhido no trecho final de 20% do treino")
     batch_size = 2_000
 
     def evaluate_batch(combo_batch, n_factors):
-        nonlocal best_score, best_result
+        nonlocal best_score, best_result, skipped_condition
         combo_array = np.asarray(combo_batch, dtype=int)
-        n_batch = len(combo_array)
-        normal = np.empty((n_batch, n_factors + 1, n_factors + 1))
-        normal[:, :n_factors, :n_factors] = gram[
+        combo_grams = gram[
             combo_array[:, :, None], combo_array[:, None, :]
         ]
-        normal[:, :n_factors, n_factors] = sums[combo_array]
-        normal[:, n_factors, :n_factors] = sums[combo_array]
-        normal[:, n_factors, n_factors] = len(train)
-        rhs = np.empty((n_batch, n_factors + 1))
-        rhs[:, :n_factors] = rhs_factors[combo_array]
-        rhs[:, n_factors] = rhs_intercept
+        if not forced_factors:
+            eigenvalues = np.linalg.eigvalsh(combo_grams)
+            conditions = np.sqrt(
+                np.maximum(eigenvalues[:, -1], 0.0)
+                / np.maximum(eigenvalues[:, 0], np.finfo(float).eps)
+            )
+            valid = conditions <= MAX_CONDITION_NUMBER
+            skipped_condition += int(np.count_nonzero(~valid))
+            if not np.any(valid):
+                return
+            combo_array = combo_array[valid]
+            combo_grams = combo_grams[valid]
 
-        try:
-            betas = np.linalg.solve(normal, rhs[..., None])[..., 0]
-        except np.linalg.LinAlgError:
-            betas = np.stack([
-                np.linalg.lstsq(normal[i], rhs[i], rcond=None)[0]
-                for i in range(n_batch)
-            ])
+        jitter = max(float(np.trace(gram)) / max(len(gram), 1), 1.0) * TRIAGE_JITTER_RATIO
+        regularized = combo_grams + np.eye(n_factors) * (triage_alpha + jitter)
+        rhs = rhs_factors[combo_array]
+        betas_std = np.linalg.solve(regularized, rhs[..., None])[..., 0]
 
         predictions = np.einsum(
-            "sbn,bn->sb", candidate_matrix[:, combo_array], betas[:, :n_factors]
-        ) + betas[:, n_factors]
+            "sbn,bn->sb", candidate_standardized[:, combo_array], betas_std
+        ) + y_train_mean
         accuracies = np.mean(
             (predictions > 0) == (y_train[:, None] > 0), axis=0
         )
@@ -268,17 +355,15 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         if scores[winner] > best_score:
             combo = tuple(combo_array[winner])
             labels = [available_labels[i] for i in combo]
-            # Refit direto para manter a mesma solução numérica histórica.
-            Xb = np.column_stack([train[labels].values, np.ones(len(train))])
-            beta = np.linalg.lstsq(Xb, y_train, rcond=None)[0]
-            yp = Xb @ beta
+            model = fit_ridge(train[labels].values, y_train, triage_alpha)
+            yp = model.predict(train[labels].values)
             acc = np.mean((yp > 0) == (y_train > 0))
             r2 = 1 - np.sum((y_train - yp) ** 2) / tss
             best_score = acc * 0.7 + max(0, r2) * 0.3
             best_result = {
                 "factors": [available_factors[i] for i in combo],
                 "labels": labels,
-                "beta": beta,
+                "model": model,
                 "r2": r2,
                 "acc": acc,
                 "n_factors": n_factors,
@@ -300,11 +385,11 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
             evaluate_batch(batch, n_factors)
 
     if best_result is None:
-        print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} descartadas por multicolinearidade)")
+        print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} regras; {skipped_condition:,} condição)")
         print(f"  [FAIL] Nenhum resultado valido")
         return None
 
-    print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} descartadas por multicolinearidade)")
+    print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} regras; {skipped_condition:,} condição)")
     print(f"  >> Seleção no treino: {best_result['n_factors']} fatores, ACC={best_result['acc']:.1%}, R2={best_result['r2']:.4f}")
     print(f"  Fatores: {', '.join(best_result['factors'])}")
 
@@ -312,21 +397,18 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     # coeficientes provisórios do treino; só depois refazemos o fit em todas as
     # sessões para produzir os parâmetros finais de serving.
     labels = best_result["labels"]
-    beta_train = best_result["beta"]
-    X_holdout_b = np.column_stack(
-        [holdout[labels].values, np.ones(len(holdout))]
-    )
+    ridge_alpha = choose_ridge_alpha(train[labels].values, y_train)
+    model_train = fit_ridge(train[labels].values, y_train, ridge_alpha)
+    print(f"  Ridge cesta final: alpha={ridge_alpha:g} revalidado somente na cesta selecionada")
     y_holdout = holdout["target"].values
-    yp_holdout = X_holdout_b @ beta_train
+    yp_holdout = model_train.predict(holdout[labels].values)
     oos_acc = np.mean((yp_holdout > 0) == (y_holdout > 0))
     oos_tss = np.sum((y_holdout - y_holdout.mean()) ** 2)
     oos_r2 = 1 - np.sum((y_holdout - yp_holdout) ** 2) / oos_tss
 
-    X_all_b = np.column_stack(
-        [merged_all[labels].values, np.ones(len(merged_all))]
-    )
-    beta = np.linalg.lstsq(X_all_b, y_all, rcond=None)[0]
-    yp_all = X_all_b @ beta
+    model_all = fit_ridge(merged_all[labels].values, y_all, ridge_alpha)
+    beta = model_all.coef
+    yp_all = model_all.predict(merged_all[labels].values)
     in_sample_acc = np.mean((yp_all > 0) == (y_all > 0))
     all_tss = np.sum((y_all - y_all.mean()) ** 2)
     in_sample_r2 = 1 - np.sum((y_all - yp_all) ** 2) / all_tss
@@ -363,8 +445,8 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     train_scores = np.zeros(len(train))
     holdout_scores = np.zeros(len(holdout))
     for i, label in enumerate(labels):
-        train_scores += beta_train[i] * train[label].values / train_sigmas[label]
-        holdout_scores += beta_train[i] * holdout[label].values / train_sigmas[label]
+        train_scores += model_train.coef[i] * train[label].values / train_sigmas[label]
+        holdout_scores += model_train.coef[i] * holdout[label].values / train_sigmas[label]
     lr_oos = LogisticRegression(fit_intercept=True, max_iter=1000, C=1e6)
     lr_oos.fit(train_scores.reshape(-1, 1), y_train_dir)
     oos_p_up = lr_oos.predict_proba(holdout_scores.reshape(-1, 1))[:, 1]
@@ -391,6 +473,8 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         "oos_logistic_acc": oos_logistic_acc,
         "n_sessions": len(merged_all),
         "holdout_sessions": len(holdout),
+        "ridge_alpha": ridge_alpha,
+        "discarded_sessions": 1 if discarded_session is not None else 0,
     }
 
 
@@ -398,6 +482,17 @@ def save_to_db(conn, target, slug, result):
     """Salva pesos no model_params e atualiza asset_models."""
     effective = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     prefix = f"{slug}_"
+
+    previous = conn.execute(
+        "SELECT factors FROM asset_models WHERE target = ?", (target,)
+    ).fetchone()
+    previous_factors = json.loads(previous[0]) if previous and previous[0] else []
+    if previous_factors != result["factors"]:
+        has_kalman_state = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'kalman_state'"
+        ).fetchone()
+        if has_kalman_state:
+            conn.execute("DELETE FROM kalman_state WHERE slug = ?", (slug,))
 
     # Limpar TODOS os params antigos deste slug antes de inserir os novos.
     # Isso evita params de calibrações anteriores (com fatores diferentes)
@@ -421,11 +516,17 @@ def save_to_db(conn, target, slug, result):
         params,
     )
 
-    # Atualizar asset_models
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(asset_models)")}
+    if "oos_accuracy" not in cols:
+        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_accuracy REAL")
+    if "oos_r2" not in cols:
+        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_r2 REAL")
+
+    # As colunas históricas permanecem in-sample; as OOS são explícitas.
     conn.execute("""
         UPDATE asset_models SET
             factors = ?, factor_labels = ?,
-            accuracy = ?, r_squared = ?, n_sessions = ?,
+            accuracy = ?, r_squared = ?, oos_accuracy = ?, oos_r2 = ?, n_sessions = ?,
             calibrated_at = ?
         WHERE target = ?
     """, (
@@ -433,6 +534,8 @@ def save_to_db(conn, target, slug, result):
         json.dumps(result["factor_labels"]),
         result["accuracy"],
         result["r2"],
+        result["oos_accuracy"],
+        result["oos_r2"],
         result["n_sessions"],
         effective,
         target,

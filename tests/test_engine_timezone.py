@@ -33,7 +33,7 @@ except ModuleNotFoundError:
     sys.modules["statsmodels"] = statsmodels_stub
     sys.modules["statsmodels.tsa.vector_ar.vecm"].coint_johansen = lambda *args, **kwargs: None
 
-from backend.db import SCHEMA, migrate_divergence_config
+from backend.db import SCHEMA, factor_signature, migrate_divergence_config
 from backend.irai.engine import IRAIEngine
 
 
@@ -104,6 +104,72 @@ def _seed_engine(tmp_path, *, target, target_source, factor, factor_source,
     conn.commit()
     conn.close()
     return IRAIEngine(db_path=str(db_path))
+
+
+def test_engine_ignora_estado_de_cesta_anterior_com_mesma_dimensao(tmp_path, monkeypatch):
+    import backend.irai.engine as engine_module
+
+    engine = _seed_engine(
+        tmp_path,
+        target="TARGET",
+        target_source="tickmill",
+        factor="FACTOR_B",
+        factor_source="tickmill",
+        session_start_h=0,
+    )
+    applied_states = []
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, initial_state_mean, **kwargs):
+            self.n = n_dim_state
+            self.mean = list(initial_state_mean)
+
+        def set_state(self, mean, covariance):
+            applied_states.append(list(mean))
+            self.mean = list(mean)
+
+        def update(self, observation, observation_matrix):
+            return self.mean, None
+
+        def predict(self, observation_matrix=None):
+            return self.mean, None
+
+        def get_state(self):
+            return self.mean, [[0.0] * self.n for _ in range(self.n)]
+
+    monkeypatch.setattr(engine_module, "KalmanFilterWrapper", SpyKalman)
+    monkeypatch.setattr(
+        engine_module,
+        "load_kalman_state",
+        lambda conn, slug: {
+            "state_mean": [99.0, 88.0],
+            "state_covariance": [[1.0, 0.0], [0.0, 1.0]],
+            "timestamp_utc": "2026-07-09T23:55:00Z",
+            "factor_signature": factor_signature(["FACTOR_A"]),
+        },
+    )
+
+    snapshots = engine.compute_from_db(
+        SESSION, target="TARGET", version="v2", persist_state=False
+    )
+
+    assert snapshots
+    assert applied_states == []
+
+    monkeypatch.setattr(
+        engine_module,
+        "load_kalman_state",
+        lambda conn, slug: {
+            "state_mean": [99.0, 88.0],
+            "state_covariance": [[1.0, 0.0], [0.0, 1.0]],
+            "timestamp_utc": "2026-07-09T23:55:00Z",
+            "factor_signature": factor_signature(["FACTOR_B"]),
+        },
+    )
+    engine.compute_from_db(
+        SESSION, target="TARGET", version="v2", persist_state=False
+    )
+    assert applied_states == [[99.0, 88.0]]
 
 
 def test_target_b3_consumes_factor_b3_do_mesmo_instante_de_parede(tmp_path):
