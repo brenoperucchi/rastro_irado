@@ -19,7 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.db import get_connection, DB_PATH, load_kalman_state, save_kalman_state
 from backend.irai.kalman import KalmanFilterWrapper
 from backend.irai.johansen import check_cointegration
-from backend.irai.timezones import brt_to_tickmill_offset_hours
+from backend.irai.market_geometry import (
+    align_market_bars,
+    return_from_open,
+)
 from backend.irai.zscore import (
     DEFAULT_SIGMA, normalized_zscore,
     select_active_pair, pairwise_residual, pair_zscore, pair_signal,
@@ -301,10 +304,8 @@ class IRAIEngine:
 
         for label, state in fs.items():
             # Retorno desde open
-            if state.open_price > 0 and state.current_price > 0:
-                state.ret = (state.current_price - state.open_price) / state.open_price
-            else:
-                state.ret = 0.0
+            state.ret = return_from_open(state.open_price, state.current_price)
+            if state.open_price <= 0 or state.current_price <= 0:
                 state.stale = True
 
             # Z-score normalizado por tempo (σ≤0 usa piso, não zera o sinal)
@@ -459,20 +460,7 @@ class IRAIEngine:
             return []
 
         # Converter sqlite3.Row para dicts com timestamp parsed e hora extraída
-        rows = []
-        for r in rows_raw:
-            d = dict(r)
-            ts_str = d["timestamp_utc"]
-            ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            
-            if d["source"] == "br":
-                offset_h = brt_to_tickmill_offset_hours(ts_dt)
-                ts_dt += timedelta(hours=offset_h)
-                d["timestamp_utc"] = ts_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            d["timestamp"] = ts_dt
-            d["hour"] = d["timestamp"].hour
-            rows.append(d)
+        rows = align_market_bars(rows_raw)
 
         # Detectar sessão via config do modelo
         session_start = cfg.get("session_start_h", 0)
@@ -716,9 +704,7 @@ class IRAIEngine:
                 for factor in active_factors:
                     label = active_labels.get(factor, factor)
                     state = local_factor_states[label]
-                    f_ret = 0.0
-                    if state.open_price > 0 and state.current_price > 0:
-                        f_ret = (state.current_price - state.open_price) / state.open_price
+                    f_ret = return_from_open(state.open_price, state.current_price)
                     obs_matrix.append(f_ret)
                     
                 # Kalman: no pré-mercado NÃO há observação do target — roda só o

@@ -15,6 +15,9 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.irai.market_geometry import serving_daily_returns
+
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "irai.db")
@@ -44,36 +47,31 @@ DXY_COMPONENTS = {"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF"}
 ALIASES = {}  # sem aliases: usar WDO$N diretamente
 
 
-def load_daily_returns(conn, session_start_h, session_end_h):
-    """Carrega retornos diários de todos os símbolos disponíveis."""
-    df = pd.read_sql_query(
-        "SELECT symbol, timestamp_utc, open, close FROM market_bars WHERE timeframe='M5'",
-        conn,
+def load_daily_returns(conn, session_start_h, session_end_h, target_symbol=None):
+    """Carrega exatamente os retornos finais observáveis pelo engine.
+
+    ``session_start_h``/``session_end_h`` ficam na assinatura por compatibilidade,
+    mas não recortam barras: no serving eles dimensionam ``t_frac`` e não a
+    abertura. A sessão consultada pelo engine é sempre o dia cru do banco.
+    """
+    if target_symbol is None:
+        raise ValueError("target_symbol é obrigatório para reproduzir o cutoff do serving")
+    symbols = sorted(set(ALL_FACTORS) | {target_symbol})
+    placeholders = ",".join("?" for _ in symbols)
+    rows = conn.execute(
+        f"""SELECT symbol, source, timestamp_utc, open, close
+            FROM market_bars
+            WHERE timeframe='M5' AND symbol IN ({placeholders})
+            ORDER BY timestamp_utc""",
+        symbols,
     )
-    df["timestamp"] = pd.to_datetime(df["timestamp_utc"])
-    df["hour"] = df["timestamp"].dt.hour
-    df["date"] = df["timestamp"].dt.date
-
-    # Filtrar por sessão
-    if session_end_h == 24:
-        # 24h — sem filtro de hora
-        pass
-    else:
-        df = df[(df["hour"] >= session_start_h) & (df["hour"] < session_end_h)]
-
-    daily = {}
-    for sym in df["symbol"].unique():
-        s = df[df["symbol"] == sym].sort_values("timestamp")
-        d = s.groupby("date").agg(o=("open", "first"), c=("close", "last"), n=("close", "count"))
-        d = d[d["n"] >= 10]  # mínimo de barras
-        d["ret"] = (d["c"] - d["o"]) / d["o"]
-        daily[sym] = d["ret"]
-
-    return daily
+    returns = serving_daily_returns(rows, target_symbol)
+    return {symbol: pd.Series(values, dtype=float) for symbol, values in returns.items()}
 
 
 def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
-                     data_proxy=None, min_factors=4, max_factors=8, forced_factors=None):
+                     data_proxy=None, min_factors=4, max_factors=8, forced_factors=None,
+                     holdout_sessions=50):
     """
     Brute-force: testa todas combinações de fatores para o target.
     Retorna: best_factors, best_labels, weights, sigmas, alpha, intercept, r2, accuracy
@@ -82,10 +80,10 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     
     print(f"\n{'='*60}")
     print(f"  Calibrando: {target} (dados: {data_sym})")
-    print(f"  Sessão: {session_start_h:02d}-{session_end_h:02d} UTC")
+    print(f"  Geometria: serving 00-24 cru, alinhada por source; cutoff no close do target")
     print(f"{'='*60}")
 
-    daily = load_daily_returns(conn, session_start_h, session_end_h)
+    daily = load_daily_returns(conn, session_start_h, session_end_h, data_sym)
 
     if data_sym not in daily:
         print(f"  [FAIL] Sem dados para {data_sym}")
@@ -191,8 +189,23 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         print(f"  [FAIL] Poucos dados ({len(merged_all)} < 100)")
         return None
 
-    y_ret = merged_all["target"].values
-    y_dir = (y_ret > 0).astype(int)
+    if holdout_sessions <= 0:
+        print("  [FAIL] --holdout-sessions deve ser positivo")
+        return None
+    if len(merged_all) - holdout_sessions < 100:
+        print(f"  [FAIL] Treino insuficiente após holdout ({len(merged_all) - holdout_sessions} < 100)")
+        return None
+
+    train = merged_all.iloc[:-holdout_sessions]
+    holdout = merged_all.iloc[-holdout_sessions:]
+    y_train = train["target"].values
+    y_train_dir = (y_train > 0).astype(int)
+    y_all = merged_all["target"].values
+    y_all_dir = (y_all > 0).astype(int)
+    print(
+        f"  Split temporal: treino={len(train)} até {train.index[-1]}, "
+        f"holdout={len(holdout)} de {holdout.index[0]} a {holdout.index[-1]}"
+    )
 
     # Brute force
     best_score = -float("inf")
@@ -203,7 +216,7 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     available_labels = [factor_labels_map[f] for f in available_factors]
 
     # Precompute TSS for R2
-    tss = np.sum((y_ret - y_ret.mean()) ** 2)
+    tss = np.sum((y_train - y_train.mean()) ** 2)
 
     # Precompute index sets for multicollinearity groups
     treasury_indices = {i for i, f in enumerate(available_factors) 
@@ -213,46 +226,78 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
 
     skipped_multicol = 0
 
+    candidate_matrix = train[available_labels].values
+    gram = candidate_matrix.T @ candidate_matrix
+    sums = candidate_matrix.sum(axis=0)
+    rhs_factors = candidate_matrix.T @ y_train
+    rhs_intercept = y_train.sum()
+    batch_size = 2_000
+
+    def evaluate_batch(combo_batch, n_factors):
+        nonlocal best_score, best_result
+        combo_array = np.asarray(combo_batch, dtype=int)
+        n_batch = len(combo_array)
+        normal = np.empty((n_batch, n_factors + 1, n_factors + 1))
+        normal[:, :n_factors, :n_factors] = gram[
+            combo_array[:, :, None], combo_array[:, None, :]
+        ]
+        normal[:, :n_factors, n_factors] = sums[combo_array]
+        normal[:, n_factors, :n_factors] = sums[combo_array]
+        normal[:, n_factors, n_factors] = len(train)
+        rhs = np.empty((n_batch, n_factors + 1))
+        rhs[:, :n_factors] = rhs_factors[combo_array]
+        rhs[:, n_factors] = rhs_intercept
+
+        try:
+            betas = np.linalg.solve(normal, rhs[..., None])[..., 0]
+        except np.linalg.LinAlgError:
+            betas = np.stack([
+                np.linalg.lstsq(normal[i], rhs[i], rcond=None)[0]
+                for i in range(n_batch)
+            ])
+
+        predictions = np.einsum(
+            "sbn,bn->sb", candidate_matrix[:, combo_array], betas[:, :n_factors]
+        ) + betas[:, n_factors]
+        accuracies = np.mean(
+            (predictions > 0) == (y_train[:, None] > 0), axis=0
+        )
+        r2s = 1 - np.sum((y_train[:, None] - predictions) ** 2, axis=0) / tss
+        scores = accuracies * 0.7 + np.maximum(0, r2s) * 0.3
+        winner = int(np.argmax(scores))
+        if scores[winner] > best_score:
+            combo = tuple(combo_array[winner])
+            labels = [available_labels[i] for i in combo]
+            # Refit direto para manter a mesma solução numérica histórica.
+            Xb = np.column_stack([train[labels].values, np.ones(len(train))])
+            beta = np.linalg.lstsq(Xb, y_train, rcond=None)[0]
+            yp = Xb @ beta
+            acc = np.mean((yp > 0) == (y_train > 0))
+            r2 = 1 - np.sum((y_train - yp) ** 2) / tss
+            best_score = acc * 0.7 + max(0, r2) * 0.3
+            best_result = {
+                "factors": [available_factors[i] for i in combo],
+                "labels": labels,
+                "beta": beta,
+                "r2": r2,
+                "acc": acc,
+                "n_factors": n_factors,
+            }
+
     for n_factors in range(min_factors, min(max_factors + 1, len(available_factors) + 1)):
+        batch = []
         for combo in combinations(range(len(available_factors)), n_factors):
-            # Filtro: no máximo 1 Treasury e 1 EM Bond por cesta
             combo_set = set(combo)
-            n_treas = len(combo_set & treasury_indices)
-            n_em = len(combo_set & em_bond_indices)
-            if n_treas > 1 or n_em > 1:
+            if len(combo_set & treasury_indices) > 1 or len(combo_set & em_bond_indices) > 1:
                 skipped_multicol += 1
                 continue
-
             total_combos += 1
-            labels = [available_labels[i] for i in combo]
-            factors = [available_factors[i] for i in combo]
-
-            X = merged_all[labels].values
-            Xb = np.column_stack([X, np.ones(len(X))])
-
-            try:
-                beta = np.linalg.lstsq(Xb, y_ret, rcond=None)[0]
-            except Exception:
-                continue
-
-            yp = Xb @ beta
-            correct = np.sum((yp > 0) == (y_ret > 0))
-            acc = correct / len(y_ret)
-            
-            # Score Misto: 70% Direcional, 30% Correlação Estrutural (R²)
-            r2 = 1 - np.sum((y_ret - yp) ** 2) / tss
-            score = (acc * 0.7) + (max(0, r2) * 0.3)
-
-            if score > best_score:
-                best_score = score
-                best_result = {
-                    "factors": factors,
-                    "labels": labels,
-                    "beta": beta,
-                    "r2": r2,
-                    "acc": acc,
-                    "n_factors": n_factors,
-                }
+            batch.append(combo)
+            if len(batch) == batch_size:
+                evaluate_batch(batch, n_factors)
+                batch = []
+        if batch:
+            evaluate_batch(batch, n_factors)
 
     if best_result is None:
         print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} descartadas por multicolinearidade)")
@@ -260,12 +305,37 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         return None
 
     print(f"  Testadas: {total_combos:,} combos ({skipped_multicol:,} descartadas por multicolinearidade)")
-    print(f"  >> Melhor: {best_result['n_factors']} fatores, ACC={best_result['acc']:.1%}, R2={best_result['r2']:.4f}")
+    print(f"  >> Seleção no treino: {best_result['n_factors']} fatores, ACC={best_result['acc']:.1%}, R2={best_result['r2']:.4f}")
     print(f"  Fatores: {', '.join(best_result['factors'])}")
 
-    # Calibrar sigmas e logistic
+    # O holdout fica intocado durante a escolha da cesta. Métricas OOS usam os
+    # coeficientes provisórios do treino; só depois refazemos o fit em todas as
+    # sessões para produzir os parâmetros finais de serving.
     labels = best_result["labels"]
-    beta = best_result["beta"]
+    beta_train = best_result["beta"]
+    X_holdout_b = np.column_stack(
+        [holdout[labels].values, np.ones(len(holdout))]
+    )
+    y_holdout = holdout["target"].values
+    yp_holdout = X_holdout_b @ beta_train
+    oos_acc = np.mean((yp_holdout > 0) == (y_holdout > 0))
+    oos_tss = np.sum((y_holdout - y_holdout.mean()) ** 2)
+    oos_r2 = 1 - np.sum((y_holdout - yp_holdout) ** 2) / oos_tss
+
+    X_all_b = np.column_stack(
+        [merged_all[labels].values, np.ones(len(merged_all))]
+    )
+    beta = np.linalg.lstsq(X_all_b, y_all, rcond=None)[0]
+    yp_all = X_all_b @ beta
+    in_sample_acc = np.mean((yp_all > 0) == (y_all > 0))
+    all_tss = np.sum((y_all - y_all.mean()) ** 2)
+    in_sample_r2 = 1 - np.sum((y_all - yp_all) ** 2) / all_tss
+    print(
+        f"  Avaliação: in-sample ACC={in_sample_acc:.1%} R2={in_sample_r2:.4f}; "
+        f"OOS ACC={oos_acc:.1%} R2={oos_r2:.4f}"
+    )
+
+    # Calibrar sigmas e logistic finais em todas as sessões.
     
     weights = {}
     sigmas = {}
@@ -282,14 +352,28 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
 
     from sklearn.linear_model import LogisticRegression
     lr = LogisticRegression(fit_intercept=True, max_iter=1000, C=1e6)
-    lr.fit(scores.reshape(-1, 1), y_dir)
+    lr.fit(scores.reshape(-1, 1), y_all_dir)
     alpha = float(lr.coef_[0, 0])
     intercept = float(lr.intercept_[0])
 
     p_up = expit(alpha * scores + intercept) * 100
-    dir_acc = np.mean((p_up > 50).astype(int) == y_dir) * 100
+    dir_acc = np.mean((p_up > 50).astype(int) == y_all_dir) * 100
 
-    print(f"  Logistic: a={alpha:.4f}, intercept={intercept:.4f}, ACC={dir_acc:.1f}%")
+    train_sigmas = train[labels].std()
+    train_scores = np.zeros(len(train))
+    holdout_scores = np.zeros(len(holdout))
+    for i, label in enumerate(labels):
+        train_scores += beta_train[i] * train[label].values / train_sigmas[label]
+        holdout_scores += beta_train[i] * holdout[label].values / train_sigmas[label]
+    lr_oos = LogisticRegression(fit_intercept=True, max_iter=1000, C=1e6)
+    lr_oos.fit(train_scores.reshape(-1, 1), y_train_dir)
+    oos_p_up = lr_oos.predict_proba(holdout_scores.reshape(-1, 1))[:, 1]
+    oos_logistic_acc = np.mean((oos_p_up > 0.5) == (y_holdout > 0)) * 100
+
+    print(
+        f"  Logistic final: a={alpha:.4f}, intercept={intercept:.4f}, "
+        f"ACC in-sample={dir_acc:.1f}%, ACC OOS={oos_logistic_acc:.1f}%"
+    )
 
     return {
         "factors": best_result["factors"],
@@ -299,10 +383,14 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         "sigmas": sigmas,
         "alpha": alpha,
         "intercept": intercept,
-        "r2": best_result["r2"],
-        "accuracy": best_result["acc"] * 100,
+        "r2": in_sample_r2,
+        "accuracy": in_sample_acc * 100,
+        "oos_accuracy": oos_acc * 100,
+        "oos_r2": oos_r2,
         "logistic_acc": dir_acc,
+        "oos_logistic_acc": oos_logistic_acc,
         "n_sessions": len(merged_all),
+        "holdout_sessions": len(holdout),
     }
 
 
@@ -365,11 +453,19 @@ def main():
                         help="Força cesta exata (CSV de símbolos, ex: WDO$N,DI1$N,BRENT). Pula o brute-force.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Não grava no DB (só imprime cesta/métricas) — diagnóstico.")
+    parser.add_argument("--db", type=str, default=DB_PATH,
+                        help="Caminho do SQLite (default: data/irai.db)")
+    parser.add_argument("--holdout-sessions", type=int, default=50,
+                        help="Últimas N sessões reservadas, sem embaralhar (default: 50)")
     args = parser.parse_args()
 
     forced = [f.strip() for f in args.factors.split(",")] if args.factors else None
 
-    conn = sqlite3.connect(DB_PATH)
+    if args.dry_run:
+        db_uri = f"file:{os.path.abspath(args.db)}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+    else:
+        conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
 
     if args.all:
@@ -399,25 +495,37 @@ def main():
             conn, target, s_start, s_end, proxy,
             args.min_factors, args.max_factors,
             forced_factors=forced,
+            holdout_sessions=args.holdout_sessions,
         )
         if result:
             if args.dry_run:
-                print(f"  [DRY-RUN] cesta={result['factors']} acc={result['accuracy']:.1f}% r2={result['r2']:.4f} — NÃO gravado")
+                print(
+                    f"  [DRY-RUN] cesta={result['factors']} "
+                    f"acc_in={result['accuracy']:.1f}% r2_in={result['r2']:.4f} "
+                    f"acc_oos={result['oos_accuracy']:.1f}% r2_oos={result['oos_r2']:.4f} "
+                    "— NÃO gravado"
+                )
             else:
                 save_to_db(conn, target, slug, result)
-            results_summary.append((target, result["accuracy"], result["r2"], result["logistic_acc"], len(result["factors"])))
+            results_summary.append((
+                target, result["accuracy"], result["oos_accuracy"], result["r2"],
+                result["oos_r2"], result["logistic_acc"], len(result["factors"])
+            ))
         else:
-            results_summary.append((target, None, None, None, 0))
+            results_summary.append((target, None, None, None, None, None, 0))
 
     # Summary
     print(f"\n{'='*60}")
     print(f"  RESUMO CALIBRAÇÃO")
     print(f"{'='*60}")
-    print(f"  {'Target':12s} {'ACC':>8s} {'R2':>8s} {'LogACC':>8s} {'#Fats':>6s}")
-    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*8} {'-'*6}")
-    for target, acc, r2, lacc, nf in results_summary:
+    print(f"  {'Target':12s} {'ACC in':>8s} {'ACC OOS':>8s} {'R2 in':>8s} {'R2 OOS':>8s} {'LogACC':>8s} {'#Fats':>6s}")
+    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*6}")
+    for target, acc, oos_acc, r2, oos_r2, lacc, nf in results_summary:
         if acc:
-            print(f"  {target:12s} {acc:7.1f}% {r2:7.4f} {lacc:7.1f}% {nf:5d}")
+            print(
+                f"  {target:12s} {acc:7.1f}% {oos_acc:7.1f}% {r2:7.4f} "
+                f"{oos_r2:7.4f} {lacc:7.1f}% {nf:5d}"
+            )
         else:
             print(f"  {target:12s}  FAILED")
     

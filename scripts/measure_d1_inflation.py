@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import argparse
 import copy
-import inspect
 import math
 import random
 import sqlite3
 import sys
-import textwrap
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -40,28 +38,37 @@ class ShiftArm(str, Enum):
 
 
 def compute_method_for_arm(arm: ShiftArm) -> Callable:
-    """Cria uma cópia do método com a condição de shift do braço escolhido.
+    """Cria o método com a geometria do braço contrafactual escolhido.
 
     O braço COM BUG existe exclusivamente para este contrafactual: ele restaura
     em memória a condição anterior ao fix D1, sem modificar engine.py.
     """
-    source = textwrap.dedent(inspect.getsource(IRAIEngine.compute_from_db))
-    current = 'if d["source"] == "br":\n'
-    replacement = {
-        ShiftArm.WITH_BUG: 'if d["source"] == "br" and d["symbol"] == data_target:\n',
-        ShiftArm.FIXED: current,
-    }[arm]
-    if source.count(current) != 1:
-        raise RuntimeError(
-            "engine.py mudou: não foi possível localizar de forma única a condição do shift D1"
-        )
-    source = source.replace(current, replacement, 1)
+    original_compute = IRAIEngine.compute_from_db
+    original_align = engine_module.align_market_bars
 
-    # A indireção mantém o get_connection monkeypatched como read-only no replay.
-    namespace = dict(engine_module.__dict__)
-    namespace["get_connection"] = lambda db_path=None: engine_module.get_connection(db_path)
-    exec(compile(source, f"<compute_from_db:{arm.value}>", "exec"), namespace)
-    return namespace["compute_from_db"]
+    def compute(self, session_date=None, target=None, version="v1", persist_state=True):
+        selected_target = target or engine_module.TARGET
+        cfg = self._get_model_config(selected_target)[4]
+        data_target = cfg.get("data_proxy") or engine_module.resolve_symbol(selected_target)
+
+        def align_for_arm(rows):
+            if arm is ShiftArm.FIXED:
+                return original_align(rows)
+            bug_rows = []
+            for row in rows:
+                copied = dict(row)
+                if copied["source"] == "br" and copied["symbol"] != data_target:
+                    copied["source"] = "d1_bug_unshifted"
+                bug_rows.append(copied)
+            return original_align(bug_rows)
+
+        with patch.object(engine_module, "align_market_bars", align_for_arm):
+            return original_compute(
+                self, session_date, target=target, version=version,
+                persist_state=persist_state,
+            )
+
+    return compute
 
 
 def readonly_connection(db_path: str | None = None) -> sqlite3.Connection:
@@ -77,10 +84,9 @@ def readonly_connection(db_path: str | None = None) -> sqlite3.Connection:
 @contextmanager
 def readonly_engine(db_path: str, arm: ShiftArm, initial_states: dict[str, dict | None]):
     compute = compute_method_for_arm(arm)
-    compute.__globals__["load_kalman_state"] = (
-        lambda _conn, slug: copy.deepcopy(initial_states.get(slug))
-    )
-    with patch.object(engine_module, "get_connection", readonly_connection):
+    load_initial = lambda _conn, slug: copy.deepcopy(initial_states.get(slug))
+    with patch.object(engine_module, "get_connection", readonly_connection), \
+         patch.object(engine_module, "load_kalman_state", load_initial):
         instance = IRAIEngine(db_path=db_path)
         with patch.object(IRAIEngine, "compute_from_db", compute):
             yield instance
