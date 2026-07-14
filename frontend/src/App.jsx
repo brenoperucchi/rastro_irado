@@ -38,7 +38,7 @@ function getFactorMeta(fkey) {
 }
 
 /* ── Big Gauge ────────────────────────────────────── */
-function SignalGauge({ title, pUp = 50, verdict, score = 0, winReturn, flowConfirms, cumDeltaNorm, targetLabel, hasFlow = true, accuracy = 80, recentPUp = [], priceDiverges, nweUp, nweUpper, nweLower, isPreview }) {
+function SignalGauge({ title, pUp = 50, verdict, score = 0, winReturn, flowConfirms, cumDeltaNorm, targetLabel, hasFlow = true, accuracy = 80, recentPUp = [], priceDiverges, nweUp, nweUpper, nweLower, nweAvailable, isPreview }) {
   const isBuy = pUp >= 60
   const isSell = pUp <= 40
 
@@ -118,8 +118,8 @@ function SignalGauge({ title, pUp = 50, verdict, score = 0, winReturn, flowConfi
 
   const isReturnDivergentBuy = isBuy && winReturn < 0;
   const isReturnDivergentSell = isSell && winReturn > 0;
-  const isNweExhaustionDown = nweUpper !== undefined && winReturn > nweUpper;
-  const isNweExhaustionUp = nweLower !== undefined && winReturn < nweLower;
+  const isNweExhaustionDown = nweAvailable && nweUpper != null && winReturn > nweUpper;
+  const isNweExhaustionUp = nweAvailable && nweLower != null && winReturn < nweLower;
   const isNweDivergentBuy = isBuy && nweUp === false;
   const isNweDivergentSell = isSell && nweUp === true;
 
@@ -858,9 +858,10 @@ export default function App() {
                   accuracy={seriesInfo.accuracy ?? 80}
                   recentPUp={series.slice(-8).map(b => b.p_up).filter(v => v != null)}
                   priceDiverges={now.price_diverges}
-                  nweUp={nweNow?.nwe_direction === 'up'}
+                  nweUp={nweNow?.nwe_available ? nweNow.nwe_direction === 'up' : undefined}
                   nweUpper={nweNow?.nwe_upper}
                   nweLower={nweNow?.nwe_lower}
+                  nweAvailable={nweNow?.nwe_available}
                   isPreview={now.is_preview}
                 />
               )}
@@ -950,9 +951,9 @@ export default function App() {
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                    color: nweNow?.nwe_direction === 'up' ? '#4ADE80' : '#F87171',
+                    color: !nweNow?.nwe_available ? '#64748B' : nweNow.nwe_direction === 'up' ? '#4ADE80' : '#F87171',
                   }}>
-                    {nweNow?.nwe_direction === 'up' ? '▲ NWE ALTA' : '▼ NWE BAIXA'}
+                    {!nweNow?.nwe_available ? '◌ NWE —' : nweNow.nwe_direction === 'up' ? '▲ NWE ALTA' : '▼ NWE BAIXA'}
                     <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
                       {`bw=${NWE_BW}`} · {nweNow?.nwe_center?.toFixed(3)}%
                     </span>

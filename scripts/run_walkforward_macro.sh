@@ -24,6 +24,9 @@ BOOTSTRAP="${BOOTSTRAP:-2000}"
 # tabelas diagnósticas. O IC decisório usa BOOTSTRAP sobre as predições acumuladas.
 FOLD_BOOTSTRAP="${FOLD_BOOTSTRAP:-50}"
 mkdir -p "$OUT"
+# Limpa artefatos de uma rodada anterior — sem isto, o glob de agregação no fim
+# reincorpora silenciosamente gate3b_*.json de um run com outros cutoffs/cesta.
+rm -f "$OUT"/gate3b_*.json
 
 cd "$REPO"
 

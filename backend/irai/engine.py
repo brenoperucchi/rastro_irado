@@ -895,7 +895,7 @@ class IRAIEngine:
         # entram no kernel; o warm-up dá contexto às primeiras barras.
         if snapshots:
             nwe_results = compute_nwe_series(nwe_bars, nwe_history_closes)
-            for snap, nres in zip(snapshots, nwe_results):
+            for snap, nres in zip(snapshots, nwe_results, strict=True):
                 for key, value in nres.items():
                     setattr(snap, key, value)
 

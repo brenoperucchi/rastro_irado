@@ -451,16 +451,29 @@ estatístico necessário:
 incluem zero e, mais importante, o teto superior fica abaixo do mínimo operacional
 pré-fixado de ΔAUC=+0,02 em praticamente todos os braços/horizontes — o único ponto
 positivo (WIN$N v1 h=3, +0,0067) fica longe do limiar. **O item 3 do gate acima está
-satisfeito: o macro sai do plano como fonte de sinal tático de médio prazo (h=3/h=6).**
-h=20 continua estruturalmente inconclusivo (o IC ainda permite ~+0,02, e está fora do
-horizonte decisório tático de qualquer forma — precisaria de ~22 anos de histórico para
-ter poder).
+satisfeito nesta cesta e neste escopo: o macro sai do plano como fonte de sinal tático de
+médio prazo (h=3/h=6) para a cesta de história longa medida no escopo OPEN_20 (abertura da
+sessão, ~09:00–10:40 BRT) — ver qualificadores abaixo.** h=20 continua estruturalmente
+inconclusivo (o IC ainda permite ~+0,02, e está fora do horizonte decisório tático de
+qualquer forma — precisaria de ~22 anos de histórico para ter poder).
 
 **Implicação para a Etapa 3:** a Frente 3 (Tactical Layer, modelo micro de 15 minutos) não
-deve tratar o macro `P_up` como *feature* de médio prazo com edge preditivo próprio.
-Continua fazendo sentido como **contexto/filtro de regime** (ex.: gating de operar/não
-operar), não como sinal direcional aditivo — essa distinção deve entrar explicitamente no
-desenho do NF-02/NF-03 quando essa etapa começar.
+deve tratar o macro `P_up` **desta cesta, neste escopo,** como *feature* de médio prazo com
+edge preditivo próprio — com dois limites de escopo que a Frente 3 deve carregar
+explicitamente ao desenhar NF-02/NF-03, para não generalizar a conclusão além do que foi
+medido:
+- **(a) Composição da cesta:** este resultado vale para a cesta de história longa deste
+  experimento (fatores com ≥1000 sessões — ver início da §3.7), que **exclui iShares e os
+  pares FX** (USDCAD/USDCHF). Não é a mesma cesta incumbente calibrada em produção, que
+  inclui iShares; o veredito não se estende a ela.
+- **(b) Escopo temporal:** o resultado decisivo foi medido só no escopo `OPEN_20`
+  (`scripts/measure_tactical_gate3.py`, janela de abertura, ~09:00–10:40 BRT) — nenhuma
+  conclusão foi extraída para o resto da sessão.
+
+Continua fazendo sentido tratar o macro como **contexto/filtro de regime** (ex.: gating de
+operar/não operar), não como sinal direcional aditivo — mas essa distinção deve entrar no
+desenho do NF-02/NF-03 escopada às duas condições acima, não generalizada para "o macro"
+como um todo.
 
 Artefato completo: `aggregate.json` (8 folds, 673/674 sessões, 2000 draws) —
 implementação: `codex` (worktree isolada, sem gravação em produção,
