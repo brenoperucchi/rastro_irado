@@ -335,144 +335,10 @@ function FactorSignal({ fkey, data }) {
 }
 
 /* ── NWE (Nadaraya-Watson Envelope) ──────────────── */
-const NWE_BW = 8;    // bandwidth (kernel width)
-const NWE_MULT = 3;  // envelope multiplier
-const NWE_LOOKBACK = 95; // janela retroativa
-
-function computeNWE(data, history_closes = []) {
-  if (!data || data.length < 1) return data;
-  
-  // Only use valid prices for NWE calculation
-  const historyPrices = history_closes || [];
-  const validData = data.filter(d => d.win_current !== undefined && !d.is_ghost);
-  const currentPrices = validData.map(d => d.win_current);
-  const allPrices = [...historyPrices, ...currentPrices];
-  const nAll = allPrices.length;
-  if (nAll < 3) return data;
-  
-  // 1) Kernel regression (center line) - CAUSAL (Lookback only)
-  const center = new Array(nAll).fill(0);
-  for (let t = 0; t < nAll; t++) {
-    let sumW = 0, sumY = 0;
-    const lookbackLimit = Math.min(t, NWE_LOOKBACK - 1);
-    
-    for (let i = 0; i <= lookbackLimit; i++) {
-      const w = Math.exp(-Math.pow(i, 2) / (2 * NWE_BW * NWE_BW));
-      sumW += w;
-      sumY += w * allPrices[t - i];
-    }
-    center[t] = sumY / sumW;
-  }
-
-  // 2) Envelope width from rolling MAE (Mean Absolute Error)
-  const envWidth = new Array(nAll).fill(0);
-  for (let t = 0; t < nAll; t++) {
-    let sumErr = 0;
-    const lookbackLimit = Math.min(t, NWE_LOOKBACK - 1);
-    const count = lookbackLimit + 1;
-    
-    for (let i = 0; i <= lookbackLimit; i++) {
-      sumErr += Math.abs(allPrices[t - i] - center[t - i]);
-    }
-    
-    const mae = sumErr / count;
-    envWidth[t] = mae * NWE_MULT;
-  }
-
-  // Slice to only keep the current data parts
-  const currentCenter = center.slice(historyPrices.length);
-  const currentEnvWidth = envWidth.slice(historyPrices.length);
-
-  // Initialize carry-forward NWE values from history (if any)
-  let lastNweCenter = null, lastNweUpper = null, lastNweLower = null, lastNweSlope = 0;
-  // Idem em espaço de preço absoluto (consumido pelo TVNweChart lightweight-charts).
-  let lastNweCenterPrice = null, lastNweUpperPrice = null, lastNweLowerPrice = null;
-
-  // 3) Build enriched data with per-bar slope coloring
-  let validIdx = 0;
-  return data.map((d) => {
-    // If it's a future padded bar without data, leave it blank so it doesn't plot.
-    if (d.win_current === undefined) return d;
-    
-    const open = d.win_open || 1; // avoid div by 0
-
-    // Set initial carry-forward values from history at the start of the mapping if needed
-    if (validIdx === 0 && historyPrices.length > 0 && lastNweCenter === null) {
-        lastNweCenter = ((center[historyPrices.length - 1] / open) - 1) * 100;
-        lastNweUpper = ((center[historyPrices.length - 1] + envWidth[historyPrices.length - 1]) / open - 1) * 100;
-        lastNweLower = ((center[historyPrices.length - 1] - envWidth[historyPrices.length - 1]) / open - 1) * 100;
-        lastNweCenterPrice = center[historyPrices.length - 1];
-        lastNweUpperPrice = center[historyPrices.length - 1] + envWidth[historyPrices.length - 1];
-        lastNweLowerPrice = center[historyPrices.length - 1] - envWidth[historyPrices.length - 1];
-        const prevHistoricalCenter = historyPrices.length > 1 ? center[historyPrices.length - 2] : center[historyPrices.length - 1];
-        lastNweSlope = center[historyPrices.length - 1] - prevHistoricalCenter;
-    }
-
-    // If it's a ghost bar (overnight flat), just repeat the last known NWE so the bands stay flat
-    if (d.is_ghost) {
-      return {
-        ...d,
-        nwe_center: lastNweCenter !== null ? lastNweCenter : (((d.win_current / open) - 1) * 100),
-        nwe_upper: lastNweUpper !== null ? lastNweUpper : (((d.win_current / open) - 1) * 100),
-        nwe_lower: lastNweLower !== null ? lastNweLower : (((d.win_current / open) - 1) * 100),
-        nwe_center_price: lastNweCenterPrice !== null ? lastNweCenterPrice : d.win_current,
-        nwe_upper_price: lastNweUpperPrice !== null ? lastNweUpperPrice : d.win_current,
-        nwe_lower_price: lastNweLowerPrice !== null ? lastNweLowerPrice : d.win_current,
-        nwe_slope: lastNweSlope >= 0,
-        nwe_is_transition: false,
-        nwe_was_transition: false
-      };
-    }
-    
-    // Real bar: consume the NWE computed values
-    const i = validIdx++;
-    
-    // Convert absolute price back to percentage return relative to open
-    const nwe_center = ((currentCenter[i] / open) - 1) * 100;
-    const nwe_upper = ((currentCenter[i] + currentEnvWidth[i]) / open - 1) * 100;
-    const nwe_lower = ((currentCenter[i] - currentEnvWidth[i]) / open - 1) * 100;
-    // Mesmos valores em preço absoluto (sem normalizar por open) p/ o TVNweChart.
-    const nwe_center_price = currentCenter[i];
-    const nwe_upper_price = currentCenter[i] + currentEnvWidth[i];
-    const nwe_lower_price = currentCenter[i] - currentEnvWidth[i];
-
-    const prevCenter = i > 0 ? currentCenter[i - 1] : (historyPrices.length > 0 ? center[historyPrices.length - 1] : currentCenter[0]);
-    const nwe_slope_price = currentCenter[i] - prevCenter;
-    const isUp = nwe_slope_price >= 0;
-
-    // Check if next bar changes direction (transition point)
-    const nextSlope = i < validData.length - 1 ? currentCenter[i + 1] - currentCenter[i] : nwe_slope_price;
-    const isTransition = (nwe_slope_price >= 0) !== (nextSlope >= 0);
-    
-    // Check if previous bar was different direction
-    const prevPrevCenter = i > 1 ? currentCenter[i - 2] : (historyPrices.length > 1 ? center[historyPrices.length - 2] : prevCenter);
-    const prevSlopePrice = prevCenter - prevPrevCenter;
-    const wasTransition = (prevSlopePrice >= 0) !== (nwe_slope_price >= 0);
-
-    // Update carry-forward values for any subsequent ghost bars
-    lastNweCenter = nwe_center;
-    lastNweUpper = nwe_upper;
-    lastNweLower = nwe_lower;
-    lastNweCenterPrice = nwe_center_price;
-    lastNweUpperPrice = nwe_upper_price;
-    lastNweLowerPrice = nwe_lower_price;
-    lastNweSlope = nwe_slope_price;
-
-    return {
-      ...d,
-      nwe_center,
-      nwe_upper,
-      nwe_lower,
-      nwe_center_price,
-      nwe_upper_price,
-      nwe_lower_price,
-      nwe_slope: nwe_slope_price,
-      // Both series get the value at transition points for continuity
-      nwe_up: (isUp || isTransition || wasTransition) ? nwe_center : null,
-      nwe_down: (!isUp || isTransition || wasTransition) ? nwe_center : null,
-    };
-  });
-}
+// O envelope é calculado de forma 100% causal no backend (backend/irai/nwe.py)
+// e chega pronto por barra via /api/irai/series (campos nwe_*). NÃO recalcular
+// no cliente — NWE_BW sobrevive apenas como label textual do badge.
+const NWE_BW = 8;    // bandwidth (kernel width) — label apenas
 
 /* ── Main App ────────────────────────────────────── */
 const REFRESH_INTERVAL = 30_000 // 30 seconds (fallback polling)
@@ -745,20 +611,21 @@ export default function App() {
     )
   }
 
-  // Applica NWE na série
+  // Os campos NWE (nwe_center_price, nwe_upper_price, nwe_lower_price, nwe_center,
+  // nwe_upper, nwe_lower, nwe_slope_price, nwe_direction, nwe_available) já vêm
+  // prontos e causais por barra de /api/irai/series (backend/irai/nwe.py). Aqui só
+  // achatamos os pesos em weight_<fator> (consumido pelo TVKalmanWeightsChart).
   const seriesWithNWE = useMemo(() => {
-    const rawNwe = computeNWE(series, seriesInfo?.history_closes || []);
-    return rawNwe.map(entry => {
+    return series.map(entry => {
       const mappedEntry = { ...entry };
 
-      // Achata os pesos em weight_<fator> (consumido pelo TVKalmanWeightsChart)
       const factors = entry.factors;
       if (factors) {
         Object.keys(factors).forEach(label => {
           mappedEntry[`weight_${label}`] = factors[label].weight;
         });
       }
-      
+
       return mappedEntry;
     });
   }, [series]);
@@ -991,7 +858,7 @@ export default function App() {
                   accuracy={seriesInfo.accuracy ?? 80}
                   recentPUp={series.slice(-8).map(b => b.p_up).filter(v => v != null)}
                   priceDiverges={now.price_diverges}
-                  nweUp={(nweNow?.nwe_slope || 0) >= 0}
+                  nweUp={nweNow?.nwe_direction === 'up'}
                   nweUpper={nweNow?.nwe_upper}
                   nweLower={nweNow?.nwe_lower}
                   isPreview={now.is_preview}
@@ -1083,9 +950,9 @@ export default function App() {
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                    color: (nweNow?.nwe_slope || 0) >= 0 ? '#4ADE80' : '#F87171',
+                    color: nweNow?.nwe_direction === 'up' ? '#4ADE80' : '#F87171',
                   }}>
-                    {(nweNow?.nwe_slope || 0) >= 0 ? '▲ NWE ALTA' : '▼ NWE BAIXA'}
+                    {nweNow?.nwe_direction === 'up' ? '▲ NWE ALTA' : '▼ NWE BAIXA'}
                     <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
                       {`bw=${NWE_BW}`} · {nweNow?.nwe_center?.toFixed(3)}%
                     </span>

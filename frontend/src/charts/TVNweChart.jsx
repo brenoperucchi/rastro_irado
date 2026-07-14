@@ -143,7 +143,7 @@ const TVNweChart = forwardRef(function TVNweChart(
       // Recharts (nwe_up/nwe_down eram null p/ ghost) e evita colorir a barra
       // fantasma pelo slope-booleano legado. Cor só em barras reais.
       if (!bar.is_ghost && bar.nwe_center_price != null && Number.isFinite(bar.nwe_center_price)) {
-        centerRows.push({ time: t, value: bar.nwe_center_price, color: bar.nwe_slope >= 0 ? '#4ADE80' : '#F87171' })
+        centerRows.push({ time: t, value: bar.nwe_center_price, color: bar.nwe_direction === 'up' ? '#4ADE80' : '#F87171' })
       } else {
         centerRows.push({ time: t })
       }

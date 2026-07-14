@@ -279,7 +279,7 @@ function AssetCard({ card, onClick }) {
   const bgColor = isBuy ? 'rgba(74,222,128,0.04)' : isSell ? 'rgba(248,113,113,0.04)' : 'rgba(71,85,105,0.03)'
   const borderColor = isBuy ? 'rgba(74,222,128,0.15)' : isSell ? 'rgba(248,113,113,0.15)' : '#1C1C22'
 
-  const nweUp = card.nwe_slope !== undefined ? card.nwe_slope >= 0 : undefined;
+  const nweUp = card.nwe_direction !== undefined ? card.nwe_direction === 'up' : undefined;
   const isNweDivergentBuy = isBuy && nweUp === false;
   const isNweDivergentSell = isSell && nweUp === true;
   

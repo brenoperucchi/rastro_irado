@@ -280,28 +280,6 @@ async def irai_overview(
             except Exception:
                 pass
 
-            # NWE
-            nwe_slope = 0.0
-            try:
-                if len(primary) >= 2:
-                    h = 8
-                    n = len(primary)
-                    vals = [s.win_return for s in primary]
-                    def get_center(i_idx):
-                        sum_w = 0.0
-                        sum_y = 0.0
-                        for j in range(n):
-                            w = math.exp(-((i_idx - j) ** 2) / (2 * h * h))
-                            sum_w += w
-                            sum_y += w * vals[j]
-                        return sum_y / sum_w if sum_w > 0 else vals[i_idx]
-                    
-                    c_last = get_center(n - 1)
-                    c_prev = get_center(n - 2)
-                    nwe_slope = round(c_last - c_prev, 6)
-            except Exception:
-                pass
-                
             res_obj = {
                 "target": t["target"],
                 "slug": t["slug"],
@@ -313,7 +291,14 @@ async def irai_overview(
                 "flow_confirms": flow_confirms,
                 "price_diverges": price_diverges,
                 "price_diverge_z": price_diverge_z,
-                "nwe_slope": nwe_slope,
+                # NWE causal do último snapshot (já enriquecido pela engine).
+                # NÃO reintroduzir "nwe_slope" sem sufixo (ver engine.py:109).
+                "nwe_direction": getattr(last, "nwe_direction", "up"),
+                "nwe_slope_price": getattr(last, "nwe_slope_price", 0.0),
+                "nwe_center": getattr(last, "nwe_center", None),
+                "nwe_upper": getattr(last, "nwe_upper", None),
+                "nwe_lower": getattr(last, "nwe_lower", None),
+                "nwe_available": getattr(last, "nwe_available", False),
                 # Pair z-score do último bar (gauge "Par: X | β=…" + badge Pr)
                 "pair_z": round(getattr(last, "pair_z", 0.0), 2),
                 "pair_factor": getattr(last, "pair_factor", None),
@@ -513,6 +498,24 @@ def _snap_to_dict(snap) -> dict:
         "z_venda_val": getattr(snap, "z_venda_val", None),
         "is_preview": getattr(snap, "is_preview", False),
         "is_ghost": getattr(snap, "is_ghost", False),
+        # NWE (Nadaraya-Watson Envelope) — fonte causal única (backend/irai/nwe.py),
+        # enriquecido no snapshot pela engine. Floats opcionais viram None quando
+        # indisponíveis; nunca "nwe_slope" sem sufixo (ver engine.py:109).
+        "nwe_center_price": getattr(snap, "nwe_center_price", None),
+        "nwe_upper_price": getattr(snap, "nwe_upper_price", None),
+        "nwe_lower_price": getattr(snap, "nwe_lower_price", None),
+        "nwe_center": getattr(snap, "nwe_center", None),
+        "nwe_upper": getattr(snap, "nwe_upper", None),
+        "nwe_lower": getattr(snap, "nwe_lower", None),
+        "nwe_slope_price": getattr(snap, "nwe_slope_price", 0.0),
+        "nwe_direction": getattr(snap, "nwe_direction", "up"),
+        "nwe_available": getattr(snap, "nwe_available", False),
+        "atr_14": getattr(snap, "atr_14", None),
+        "atr_available": getattr(snap, "atr_available", False),
+        "session_vwap": getattr(snap, "session_vwap", None),
+        "vwap_available": getattr(snap, "vwap_available", False),
+        "distance_to_nwe_atr": getattr(snap, "distance_to_nwe_atr", None),
+        "distance_to_vwap_atr": getattr(snap, "distance_to_vwap_atr", None),
     }
 
 
