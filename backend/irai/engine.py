@@ -25,6 +25,7 @@ from backend.irai.market_geometry import (
     align_market_bars,
     return_from_open,
 )
+from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.irai.nwe import compute_nwe_series, NWE_LOOKBACK
 from backend.irai.zscore import (
     DEFAULT_SIGMA, normalized_zscore,
@@ -44,6 +45,50 @@ def resolve_symbol(sym: str) -> str:
 TARGET = "WIN$N"
 FACTOR_LABELS = {}  # carregado do DB
 BARS_PER_SESSION = 108
+
+# X3 (tri-review): idade máxima (relógio de parede, no MESMO eixo que as
+# barras B3 já usam) que a ÚLTIMA barra do target pode ter antes de deixar
+# de ser tratada como "pode estar em formação" pro gate de markers. Quarta
+# versão desta correção — as três anteriores foram derrubadas em revisão
+# /codex-r: comparar dias (`is_live_session`) deixava a última barra de uma
+# sessão B3 (fecha 18h BRT) sem marker por até ~15h; `received_at` não
+# funcionava porque a produção roda o collector com `--force`, que continua
+# reescrevendo a barra fora do pregão; e "algum fator já avançou"
+# (`all_timestamps`) esbarrava no offset +6h de verão: a última barra B3
+# (17:55 BRT) alinha pra ~23:55, quase na borda da janela de UM DIA que a
+# query carrega — nenhum fator tinha onde "avançar" dentro da mesma janela.
+# Relógio de parede de verdade, comparado no eixo Tickmill
+# (`_now_on_tickmill_axis`, que reaproveita `brt_to_tickmill_offset_hours` —
+# a MESMA função que `align_market_bar` usa pras barras B3, já testada em
+# test_engine_timezone.py), não depende de nenhum dos três: nem do que o
+# collector grava, nem de quais outros símbolos existem no banco, nem do
+# dia calendário.
+#
+# Limite conhecido e aceito (4ª revisão /codex-r): isto prova que o
+# PERÍODO da barra terminou, não que o banco já tem o OHLCV final — numa
+# reconexão/outage do collector que deixa uma barra parcial gravada e só
+# corrige depois de BAR_FORMING_MAX_AGE já ter passado, o marker pode sair
+# sobre o valor parcial e um recompute posterior (com o valor corrigido)
+# discordar. É um problema de confiabilidade de coleta, não de causalidade
+# de leitura — o mesmo problema afetaria QUALQUER campo derivado (P_up,
+# NWE, z-scores) durante uma janela de outage, não só os markers, e o
+# projeto não tem hoje uma forma de detectar/reconciliar dado parcial de
+# forma geral. Fora de escopo pra esta correção. A margem abaixo (10min, >
+# período de 1 barra M5 de 5min) é dimensionada pra absorver reconexões
+# curtas de rotina (o collector já reconecta MT5 por terminal a cada
+# ciclo), não outages longos.
+BAR_FORMING_MAX_AGE = timedelta(minutes=10)
+
+
+def _now_on_tickmill_axis() -> datetime:
+    """'Agora', no mesmo eixo (timezone.utc, mas representando o eixo B3->
+    Tickmill — o mesmo truque de `align_market_bar`, não UTC real) que as
+    barras alinhadas usam. BRT (sem DST no Brasil) deslocado pelo MESMO
+    offset sazonal já testado, não uma regra de fuso nova. Função de módulo
+    (não inline) pra poder ser substituída em teste, no mesmo padrão de
+    `pair_signal`."""
+    brt_now = datetime.now(timezone.utc) - timedelta(hours=3)
+    return brt_now + timedelta(hours=brt_to_tickmill_offset_hours(brt_now))
 # DEFAULT_SIGMA e normalized_zscore vivem em backend/irai/zscore.py (primitiva
 # pura, testável sem numpy/pykalman) e são importados no topo deste módulo.
 
@@ -697,6 +742,24 @@ class IRAIEngine:
                 row = {"close": pre_market_close, "open": pre_market_open, "delta": 0, "real_volume": 0, "timestamp": ts}
                 is_ghost_bar = True
 
+            # A última barra do target é a única que o collector ainda pode
+            # reescrever (INSERT OR REPLACE só nela — collector.py:98-101);
+            # todas as anteriores já estão congeladas (INSERT OR IGNORE).
+            # Eventos/markers não podem nascer dela: o preço ainda pode mudar
+            # no próximo ciclo do collector, e um marker emitido agora
+            # poderia "flipar" no polling seguinte (achado X3 da tri-review).
+            # Ver BAR_FORMING_MAX_AGE acima pro histórico das 2 versões
+            # anteriores (comparação de dia; received_at) derrubadas em
+            # revisão /codex-r antes desta.
+            is_last_target_bar = (
+                not is_pre_market and not is_ghost_bar
+                and target_cursor == len(target_bars) - 1
+            )
+            bar_may_be_forming = (
+                is_last_target_bar
+                and (_now_on_tickmill_axis() - ts) < BAR_FORMING_MAX_AGE
+            )
+
             for factor in active_factors:
                 prices = factor_prices[factor]
                 cursor = factor_cursors[factor]
@@ -874,7 +937,12 @@ class IRAIEngine:
             # ── EVENTOS discretos (markers) ──────────────────────────────
             # Só em barra REAL: um marker sobre barra sintética/forward-fill seria
             # um sinal fantasma (o target não negociou ali). Ver Fase 3.
-            if not is_pre_market and not is_ghost_bar:
+            # Nunca na barra em formação (bar_may_be_forming) — achado X3: o
+            # collector ainda pode reescrever seu OHLCV, então um marker aqui
+            # seria provisório e poderia flipar no próximo ciclo. prev_pair_sig/
+            # prev_div_dir também não avançam nela de propósito: a transição
+            # correta é reavaliada quando a barra fecha, na próxima chamada.
+            if not is_pre_market and not is_ghost_bar and not bar_may_be_forming:
                 px = float(row["close"])
                 if snap.pair_signal == "buy" and prev_pair_sig != "buy":
                     snap.pair_compra = px

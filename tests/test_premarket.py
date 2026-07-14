@@ -37,7 +37,7 @@ import sys
 import json
 import sqlite3
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -646,6 +646,185 @@ def test_marker_pair_e_divergencia_coexistem_na_mesma_barra():
     assert alvo.pair_venda == alvo.z_venda_val, (
         "os dois markers devem carregar o mesmo preço (close) da barra")
     assert not (alvo.pair_compra or alvo.z_compra_val), "lado de compra não deveria disparar aqui"
+
+
+# ── 10d/e/f. INTEGRAÇÃO: X3 — markers não nascem da barra em formação ──────
+# Achado X3 da tri-review do plano consolidado (§3.1, CRÍTICO): o collector
+# faz INSERT OR REPLACE só na última barra de cada símbolo (collector.py:98-
+# 101), reescrevendo seu OHLCV a cada ciclo — sem essa checagem, um marker
+# emitido ali seria provisório e poderia "flipar" no próximo polling. A
+# emenda: eventos só avançam em barra fechada. `bar_may_be_forming` em
+# engine.py combina 2 sinais: (1) estrutural — é a última barra do target
+# (`target_cursor == len(target_bars)-1`), a única posição que o INSERT OR
+# REPLACE do collector alcança; (2) relógio de parede — `_now_on_tickmill_axis()`
+# precisa estar a menos de `BAR_FORMING_MAX_AGE` do timestamp desta barra.
+# TRÊS versões anteriores foram derrubadas em revisão /codex-r: comparar
+# dias (`is_live_session`) deixava a última barra de uma sessão B3 já
+# encerrada (WIN$N/WDO$N fecham 18h BRT) sem marker por até ~15h;
+# `received_at` não funcionava porque a produção roda o collector com
+# `--force`, que continua reescrevendo a última barra do target mesmo fora
+# do pregão (received_at nunca envelheceria); e "algum fator avançou"
+# (`all_timestamps`) esbarrava no offset +6h de verão — a última barra B3
+# (17:55 BRT) alinha pra ~23:55, quase na borda da janela de UM DIA que a
+# query carrega, sem espaço pra um fator "ultrapassar" dentro da mesma
+# janela. `_now_on_tickmill_axis()` reaproveita `brt_to_tickmill_offset_hours`
+# (a mesma função, já testada, que `align_market_bar` usa) — imune a
+# `--force` (não depende do que o collector grava) e a fronteira de dia
+# (relógio de parede não tem essa janela).
+#
+# Estes testes fixam `_now_on_tickmill_axis` via monkeypatch (mesmo padrão
+# de `pair_signal`/`KalmanFilterWrapper`) em vez de depender do relógio real
+# — SESSION é uma data fixa no passado, então usar o relógio de verdade
+# tornaria os testes dependentes de quando rodam (mesmo bug de fundo que
+# este achado corrige, só que no teste em vez de produção).
+
+def _insert_bar(db_path, symbol, source, ts, price):
+    c = sqlite3.connect(db_path)
+    c.execute(
+        """INSERT INTO market_bars
+           (symbol, source, timeframe, timestamp_utc, open, high, low, close, volume, real_volume, delta)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (symbol, source, "M5", ts, price, price, price, price, 10, 10, 0),
+    )
+    c.commit()
+    c.close()
+
+
+def _aligned_ts(eng_mod, brt_naive_dt):
+    """Converte um datetime naive rotulado BRT pro eixo alinhado (aware,
+    UTC-marcado) que as barras B3 usam — mesma fórmula de align_market_bar,
+    reaproveitando a função real (não uma cópia)."""
+    offset = eng_mod.brt_to_tickmill_offset_hours(brt_naive_dt)
+    return brt_naive_dt.replace(tzinfo=timezone.utc) + timedelta(hours=offset)
+
+
+def _run_com_sinal_na_ultima_barra(db, target_call_idx, total_calls_esperado, fixed_now=None):
+    """Roda o engine (v2) com pair_signal scriptado pra virar 'buy' só na
+    barra de índice `target_call_idx` (1-indexed, ordem das chamadas reais).
+    `fixed_now`, se dado, substitui `_now_on_tickmill_axis` por um valor
+    fixo — determinístico, independente de quando o teste roda de verdade.
+    Retorna a lista de snapshots."""
+    import backend.irai.engine as eng_mod
+
+    class SpyKalman:
+        def __init__(self, n_dim_state, **kw):
+            self.n = n_dim_state
+            self.mean = [0.0] + [1.5] * (n_dim_state - 1)
+        def update(self, observation, observation_matrix): return self.mean, None
+        def predict(self, observation_matrix=None): return self.mean, None
+        def get_state(self): return list(self.mean), [[0.0] * self.n] * self.n
+        def set_state(self, m, c): self.mean = list(m)
+
+    call_idx = [0]
+    def scripted_signal(z_pair, beta, threshold):
+        call_idx[0] += 1
+        return "buy" if call_idx[0] == target_call_idx else "neutral"
+
+    orig_k = eng_mod.KalmanFilterWrapper
+    orig_sig = eng_mod.pair_signal
+    orig_now = eng_mod._now_on_tickmill_axis
+    eng_mod.KalmanFilterWrapper = SpyKalman
+    eng_mod.pair_signal = scripted_signal
+    if fixed_now is not None:
+        eng_mod._now_on_tickmill_axis = lambda: fixed_now
+    try:
+        snaps = eng_mod.IRAIEngine(db_path=db).compute_from_db(
+            SESSION, target=TARGET, version="v2", persist_state=False)
+    finally:
+        eng_mod.KalmanFilterWrapper = orig_k
+        eng_mod.pair_signal = orig_sig
+        eng_mod._now_on_tickmill_axis = orig_now
+
+    assert call_idx[0] == total_calls_esperado, (
+        f"fixture mudou: esperava {total_calls_esperado} barras reais chamando "
+        f"o sinal, veio {call_idx[0]}")
+    return snaps
+
+
+def test_marker_suprimido_na_ultima_barra_de_sessao_viva():
+    """'Agora' fixado a 2 minutos da última (40ª) barra real -> bem dentro
+    de BAR_FORMING_MAX_AGE (7min). Uma transição 'buy' plantada exatamente
+    nela NÃO pode virar marker: essa barra ainda pode ser reescrita pelo
+    collector."""
+    import backend.irai.engine as eng_mod
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    t_base = datetime.fromisoformat(f"{SESSION}T09:00:00")
+    ultima_brt = t_base + timedelta(minutes=5 * 39)
+    agora = _aligned_ts(eng_mod, ultima_brt) + timedelta(minutes=2)
+
+    snaps = _run_com_sinal_na_ultima_barra(
+        db, target_call_idx=40, total_calls_esperado=40, fixed_now=agora)
+
+    reais = [s for s in snaps if not s.is_ghost]
+    assert len(reais) == 40, f"fixture inválida: {len(reais)} barras reais"
+    ultima = reais[-1]
+    assert ultima.pair_signal == "buy", "fixture não plantou a transição na última barra"
+    assert ultima.pair_compra is None, (
+        "marker nasceu da barra em formação — achado X3 reintroduzido")
+
+
+def test_marker_da_barra_que_fecha_dispara_na_chamada_seguinte():
+    """A mesma barra/'agora' do teste anterior, uma vez que uma barra MAIS
+    NOVA do TARGET chega (ela deixa de ser a última) -> deixa de estar 'em
+    formação' e o marker sai normalmente na chamada seguinte, sem precisar
+    mudar o sinal scriptado."""
+    import backend.irai.engine as eng_mod
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    t_base = datetime.fromisoformat(f"{SESSION}T09:00:00")
+    ultima_brt = t_base + timedelta(minutes=5 * 39)
+    agora_1 = _aligned_ts(eng_mod, ultima_brt) + timedelta(minutes=2)
+
+    # 1ª chamada: suprimido (idêntico ao teste anterior).
+    snaps_antes = _run_com_sinal_na_ultima_barra(
+        db, target_call_idx=40, total_calls_esperado=40, fixed_now=agora_1)
+    reais_antes = [s for s in snaps_antes if not s.is_ghost]
+    assert reais_antes[-1].pair_compra is None, "pré-condição do teste: deveria estar suprimido antes"
+
+    # Chega uma barra 41 do TARGET -> a barra 40 deixa de ser a última dele.
+    nova_brt = t_base + timedelta(minutes=5 * 40)
+    nova_ts = nova_brt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    _insert_bar(db, TARGET, "br", nova_ts, TODAY_OPEN * 1.02)
+    agora_2 = _aligned_ts(eng_mod, nova_brt) + timedelta(minutes=2)
+
+    # 2ª chamada: mesmo script (buy na 40ª chamada), mas agora com 41 barras reais.
+    snaps_depois = _run_com_sinal_na_ultima_barra(
+        db, target_call_idx=40, total_calls_esperado=41, fixed_now=agora_2)
+
+    reais = [s for s in snaps_depois if not s.is_ghost]
+    assert len(reais) == 41
+    barra_40 = reais[39]   # a mesma barra do teste anterior, agora fechada
+    assert barra_40.pair_signal == "buy"
+    assert barra_40.pair_compra is not None, (
+        "a barra fechou (não é mais a última) e o marker continuou suprimido")
+
+
+def test_marker_nao_suprimido_quando_relogio_ja_passou_da_barra():
+    """Cenário real do fechamento B3 (3ª revisão /codex-r): passado
+    BAR_FORMING_MAX_AGE desde o timestamp da última barra — não importa se
+    é 8 minutos (a barra fechou há pouco) ou 3 dias (replay histórico); o
+    relógio de parede já provou que a barra está congelada. A mesma
+    transição na última barra do target DEVE emitir o marker normalmente."""
+    import backend.irai.engine as eng_mod
+
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    t_base = datetime.fromisoformat(f"{SESSION}T09:00:00")
+    ultima_brt = t_base + timedelta(minutes=5 * 39)
+    agora = _aligned_ts(eng_mod, ultima_brt) + timedelta(days=3)
+
+    snaps = _run_com_sinal_na_ultima_barra(
+        db, target_call_idx=40, total_calls_esperado=40, fixed_now=agora)
+
+    reais = [s for s in snaps if not s.is_ghost]
+    assert len(reais) == 40
+    ultima = reais[-1]
+    assert ultima.pair_signal == "buy"
+    assert ultima.pair_compra is not None, (
+        "marker suprimido mesmo com o relógio já bem além da última barra")
 
 
 if __name__ == "__main__":
