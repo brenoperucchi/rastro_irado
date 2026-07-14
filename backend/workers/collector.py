@@ -19,7 +19,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from backend.db import get_connection, DB_PATH
+from backend.db import get_connection, migrate_to_head, DB_PATH
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -182,6 +182,8 @@ def main():
     log.info("IRAI Collector v1.0")
     log.info(f"Intervalo: {args.interval}s | DB: {args.db}")
     log.info("=" * 50)
+
+    migrate_to_head(args.db)
 
     cycle = 0
 

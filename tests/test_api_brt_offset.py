@@ -76,6 +76,57 @@ def _skip_if_no_fastapi():
     return True
 
 
+def test_lifespan_migra_banco_legado_antes_de_criar_engine(tmp_path, monkeypatch):
+    if _skip_if_no_fastapi():
+        return
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE market_bars (
+            symbol TEXT, source TEXT, timeframe TEXT, timestamp_utc TEXT
+        );
+        CREATE TABLE asset_models (
+            target TEXT PRIMARY KEY, accuracy REAL, r_squared REAL
+        );
+        CREATE TABLE kalman_state (
+            slug TEXT PRIMARY KEY,
+            state_mean TEXT NOT NULL,
+            state_covariance TEXT NOT NULL,
+            johansen_p_value REAL,
+            is_cointegrated INTEGER DEFAULT 1,
+            timestamp_utc TEXT NOT NULL
+        );
+        """
+    )
+    conn.close()
+
+    class EngineFake:
+        def __init__(self):
+            check = sqlite3.connect(db_path)
+            kalman_cols = {
+                row[1] for row in check.execute("PRAGMA table_info(kalman_state)")
+            }
+            asset_cols = {
+                row[1] for row in check.execute("PRAGMA table_info(asset_models)")
+            }
+            check.close()
+            assert "factor_signature" in kalman_cols
+            assert {"oos_accuracy", "oos_r2"} <= asset_cols
+            self.models = {}
+            self.registered_targets = []
+
+    monkeypatch.setattr(api_main, "DB_PATH", str(db_path))
+    monkeypatch.setattr(api_main, "IRAIEngine", EngineFake)
+
+    async def subir_api():
+        async with api_main.lifespan(api_main.app):
+            pass
+
+    asyncio.run(subir_api())
+
+
 def _seed(db_path, *, target, source, session, session_start_h):
     """Uma sessão mínima: 1 target + 1 fator global, o bastante pra rota responder."""
     conn = sqlite3.connect(db_path)

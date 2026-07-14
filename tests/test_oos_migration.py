@@ -4,6 +4,9 @@ import sqlite3
 import importlib.util
 import os
 import re
+import threading
+
+import pytest
 
 from backend import db
 
@@ -91,6 +94,121 @@ def test_migracao_kalman_adiciona_assinatura_em_tabela_legada(tmp_path):
     }
     conn.close()
     assert "factor_signature" in columns
+
+
+def test_migradores_concorrentes_toleram_coluna_adicionada_pelo_rival(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "irai.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE kalman_state (
+            slug TEXT PRIMARY KEY,
+            state_mean TEXT NOT NULL,
+            state_covariance TEXT NOT NULL,
+            johansen_p_value REAL,
+            is_cointegrated INTEGER DEFAULT 1,
+            timestamp_utc TEXT NOT NULL
+        )"""
+    )
+    conn.close()
+
+    barrier = threading.Barrier(2)
+
+    class RacingConnection:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, sql, *args):
+            cursor = self.connection.execute(sql, *args)
+            if sql.strip().startswith("PRAGMA table_info(kalman_state)"):
+                rows = cursor.fetchall()
+                barrier.wait(timeout=5)
+                return rows
+            return cursor
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    connections = []
+    for _ in range(2):
+        connection = sqlite3.connect(db_path, check_same_thread=False)
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.row_factory = sqlite3.Row
+        connections.append(RacingConnection(connection))
+
+    monkeypatch.setattr(db, "get_connection", lambda _path=None: connections.pop())
+    errors = []
+
+    def migrate():
+        try:
+            db.migrate_kalman_state(str(db_path))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=migrate) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+
+
+def test_add_column_nao_esconde_outros_erros_operacionais():
+    class LockedConnection:
+        def execute(self, _sql):
+            raise sqlite3.OperationalError("database is locked")
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        db._add_column(LockedConnection(), "ALTER TABLE example ADD COLUMN value TEXT")
+
+
+def test_init_db_migra_ate_head_e_permite_write_kalman_em_banco_legado(tmp_path):
+    """O bootstrap novo precisa tornar um banco pré-bcab7a1 gravável."""
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE market_bars (
+            symbol TEXT, source TEXT, timeframe TEXT, timestamp_utc TEXT
+        );
+        CREATE TABLE asset_models (
+            target TEXT PRIMARY KEY, accuracy REAL, r_squared REAL
+        );
+        CREATE TABLE kalman_state (
+            slug TEXT PRIMARY KEY,
+            state_mean TEXT NOT NULL,
+            state_covariance TEXT NOT NULL,
+            johansen_p_value REAL,
+            is_cointegrated INTEGER DEFAULT 1,
+            timestamp_utc TEXT NOT NULL
+        );
+        """
+    )
+    conn.close()
+
+    db.init_db(str(db_path))
+
+    conn = db.get_connection(str(db_path))
+    db.save_kalman_state(
+        conn,
+        "win",
+        [0.1, 0.2],
+        [[1.0, 0.0], [0.0, 1.0]],
+        0.04,
+        True,
+        "2026-07-13T18:00:00+00:00",
+        db.factor_signature(["WDO$N", "DI1$N"]),
+    )
+    saved = conn.execute(
+        "SELECT factor_signature FROM kalman_state WHERE slug = 'win'"
+    ).fetchone()[0]
+    conn.close()
+
+    assert saved == '["WDO$N","DI1$N"]'
 
 
 def test_save_to_db_persiste_metricas_in_e_oos_separadas(tmp_path):

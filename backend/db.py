@@ -113,13 +113,27 @@ def get_connection(db_path=None):
     return conn
 
 
-def init_db(db_path=None):
-    """Cria schema se não existir."""
+def _initialize_schema(db_path=None):
+    """Cria as tabelas atuais sem substituir estruturas legadas."""
     conn = get_connection(db_path)
     conn.executescript(SCHEMA)
     conn.commit()
-    print(f"Database initialized: {db_path or DB_PATH}")
     conn.close()
+
+
+def init_db(db_path=None):
+    """Cria o schema e aplica todas as migrações pendentes."""
+    migrate_to_head(db_path)
+
+
+def _add_column(conn, sql):
+    try:
+        conn.execute(sql)
+        return True
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+        return False
 
 
 def migrate_delta(db_path=None):
@@ -129,11 +143,11 @@ def migrate_delta(db_path=None):
     cols = {row["name"] for row in cursor}
 
     if "real_volume" not in cols:
-        conn.execute("ALTER TABLE market_bars ADD COLUMN real_volume REAL DEFAULT 0")
-        print("  + coluna real_volume adicionada")
+        if _add_column(conn, "ALTER TABLE market_bars ADD COLUMN real_volume REAL DEFAULT 0"):
+            print("  + coluna real_volume adicionada")
     if "delta" not in cols:
-        conn.execute("ALTER TABLE market_bars ADD COLUMN delta REAL DEFAULT 0")
-        print("  + coluna delta adicionada")
+        if _add_column(conn, "ALTER TABLE market_bars ADD COLUMN delta REAL DEFAULT 0"):
+            print("  + coluna delta adicionada")
 
     conn.commit()
     conn.close()
@@ -151,8 +165,8 @@ def migrate_divergence_config(db_path=None):
     cols = {row["name"] for row in cursor}
 
     if "divergence_config" not in cols:
-        conn.execute("ALTER TABLE asset_models ADD COLUMN divergence_config TEXT")
-        print("  + coluna divergence_config adicionada")
+        if _add_column(conn, "ALTER TABLE asset_models ADD COLUMN divergence_config TEXT"):
+            print("  + coluna divergence_config adicionada")
 
     conn.commit()
     conn.close()
@@ -164,11 +178,11 @@ def migrate_oos_metrics(db_path=None):
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(asset_models)")}
 
     if "oos_accuracy" not in cols:
-        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_accuracy REAL")
-        print("  + coluna oos_accuracy adicionada")
+        if _add_column(conn, "ALTER TABLE asset_models ADD COLUMN oos_accuracy REAL"):
+            print("  + coluna oos_accuracy adicionada")
     if "oos_r2" not in cols:
-        conn.execute("ALTER TABLE asset_models ADD COLUMN oos_r2 REAL")
-        print("  + coluna oos_r2 adicionada")
+        if _add_column(conn, "ALTER TABLE asset_models ADD COLUMN oos_r2 REAL"):
+            print("  + coluna oos_r2 adicionada")
 
     conn.commit()
     conn.close()
@@ -190,11 +204,21 @@ def migrate_kalman_state(db_path=None):
     """)
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(kalman_state)")}
     if "factor_signature" not in cols:
-        conn.execute("ALTER TABLE kalman_state ADD COLUMN factor_signature TEXT")
-        print("  + coluna factor_signature adicionada")
+        if _add_column(conn, "ALTER TABLE kalman_state ADD COLUMN factor_signature TEXT"):
+            print("  + coluna factor_signature adicionada")
     conn.commit()
     print("  + tabela kalman_state garantida")
     conn.close()
+
+
+def migrate_to_head(db_path=None):
+    """Garante o schema atual completo, inclusive ao abrir bancos legados."""
+    _initialize_schema(db_path)
+    migrate_delta(db_path)
+    migrate_kalman_state(db_path)
+    migrate_divergence_config(db_path)
+    migrate_oos_metrics(db_path)
+    print(f"Database migrated to head: {db_path or DB_PATH}")
 
 
 def factor_signature(factors) -> str:
@@ -259,8 +283,4 @@ def load_kalman_state(conn, slug: str):
 
 
 if __name__ == "__main__":
-    init_db()
-    migrate_delta()
-    migrate_kalman_state()
-    migrate_divergence_config()
-    migrate_oos_metrics()
+    migrate_to_head()

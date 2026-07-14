@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from backend.db import get_connection, DB_PATH
+from backend.db import get_connection, migrate_to_head, DB_PATH
 from backend.irai.engine import IRAIEngine, FACTOR_LABELS, TARGET
 from backend.irai.timezones import brt_to_tickmill_offset_hours
 
@@ -98,6 +98,7 @@ async def ws_broadcast_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global engine
+    migrate_to_head(DB_PATH)
     engine = IRAIEngine()
     print(f"IRAI Engine loaded: {len(engine.models)} models, {len(engine.registered_targets)} targets")
     task = asyncio.create_task(ws_broadcast_loop())
