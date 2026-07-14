@@ -10,7 +10,7 @@ Uso:
 import sqlite3, json, sys, os, argparse
 from dataclasses import dataclass
 from itertools import combinations
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -125,6 +125,31 @@ def discard_latest_session(frame):
     return frame.iloc[:-1], latest
 
 
+def parse_as_of(value):
+    """Normaliza o cutoff externo sem aceitar datas ambíguas."""
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("--as-of deve usar o formato YYYY-MM-DD") from exc
+
+
+def truncate_daily_as_of(daily, as_of):
+    """Corta cada série antes de qualquer seleção ou estimação do modelo."""
+    cutoff = parse_as_of(as_of)
+    if cutoff is None:
+        return daily
+    truncated = {}
+    for symbol, series in daily.items():
+        session_dates = pd.to_datetime(series.index).date
+        available = series.loc[session_dates <= cutoff]
+        # Um fator que só nasceu depois do cutoff não pode sequer concorrer à cesta.
+        if not available.empty:
+            truncated[symbol] = available
+    return truncated
+
+
 def load_daily_returns(conn, session_start_h, session_end_h, target_symbol=None):
     """Carrega exatamente os retornos finais observáveis pelo engine.
 
@@ -149,7 +174,7 @@ def load_daily_returns(conn, session_start_h, session_end_h, target_symbol=None)
 
 def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
                      data_proxy=None, min_factors=4, max_factors=8, forced_factors=None,
-                     holdout_sessions=50):
+                     holdout_sessions=50, as_of=None, daily_override=None):
     """
     Brute-force: testa todas combinações de fatores para o target.
     Retorna: best_factors, best_labels, weights, sigmas, alpha, intercept, r2, accuracy
@@ -161,7 +186,14 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
     print(f"  Geometria: serving 00-24 cru, alinhada por source; cutoff no close do target")
     print(f"{'='*60}")
 
-    daily = load_daily_returns(conn, session_start_h, session_end_h, data_sym)
+    as_of = parse_as_of(as_of)
+    daily = truncate_daily_as_of(
+        daily_override if daily_override is not None else
+        load_daily_returns(conn, session_start_h, session_end_h, data_sym),
+        as_of,
+    )
+    if as_of is not None:
+        print(f"  Cutoff externo: sessões <= {as_of.isoformat()} (inclusive)")
 
     if data_sym not in daily:
         print(f"  [FAIL] Sem dados para {data_sym}")
@@ -260,9 +292,11 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         label = f.replace("$N", "").lower()
         merged_all[label] = daily[f]
     merged_all = merged_all.dropna()
-    merged_all, discarded_session = discard_latest_session(merged_all)
-    if discarded_session is not None:
-        print(f"  Sessão descartada (potencialmente parcial): {discarded_session}")
+    discarded_session = None
+    if as_of is None:
+        merged_all, discarded_session = discard_latest_session(merged_all)
+        if discarded_session is not None:
+            print(f"  Sessão descartada (potencialmente parcial): {discarded_session}")
     merged_all = merged_all.iloc[-252:]
     
     print(f"  Sessões merged: {len(merged_all)}")
@@ -475,6 +509,7 @@ def calibrate_target(conn, target, session_start_h=0, session_end_h=24,
         "holdout_sessions": len(holdout),
         "ridge_alpha": ridge_alpha,
         "discarded_sessions": 1 if discarded_session is not None else 0,
+        "as_of": as_of.isoformat() if as_of is not None else None,
     }
 
 
@@ -560,13 +595,23 @@ def main():
                         help="Caminho do SQLite (default: data/irai.db)")
     parser.add_argument("--holdout-sessions", type=int, default=50,
                         help="Últimas N sessões reservadas, sem embaralhar (default: 50)")
+    parser.add_argument("--as-of", type=str, default=None, metavar="YYYY-MM-DD",
+                        help="Usa somente sessões até esta data, inclusive, em todo o pipeline")
+    parser.add_argument("--output-json", type=str, default=None,
+                        help="Grava os resultados calculados em JSON (inclusive em --dry-run)")
     args = parser.parse_args()
+
+    try:
+        args.as_of = parse_as_of(args.as_of)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     forced = [f.strip() for f in args.factors.split(",")] if args.factors else None
 
     if args.dry_run:
         db_uri = f"file:{os.path.abspath(args.db)}?mode=ro"
         conn = sqlite3.connect(db_uri, uri=True)
+        conn.execute("PRAGMA query_only=ON")
     else:
         conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
@@ -593,12 +638,14 @@ def main():
     print(f"\nCalibrando {len(targets)} targets...")
 
     results_summary = []
+    results_by_target = {}
     for target, slug, s_start, s_end, proxy in targets:
         result = calibrate_target(
             conn, target, s_start, s_end, proxy,
             args.min_factors, args.max_factors,
             forced_factors=forced,
             holdout_sessions=args.holdout_sessions,
+            as_of=args.as_of,
         )
         if result:
             if args.dry_run:
@@ -614,6 +661,7 @@ def main():
                 target, result["accuracy"], result["oos_accuracy"], result["r2"],
                 result["oos_r2"], result["logistic_acc"], len(result["factors"])
             ))
+            results_by_target[target] = result
         else:
             results_summary.append((target, None, None, None, None, None, 0))
 
@@ -631,6 +679,18 @@ def main():
             )
         else:
             print(f"  {target:12s}  FAILED")
+
+    if args.output_json:
+        output_path = os.path.abspath(args.output_json)
+        with open(output_path, "w", encoding="utf-8") as output_file:
+            json.dump(
+                {"as_of": args.as_of.isoformat() if args.as_of else None,
+                 "targets": results_by_target},
+                output_file,
+                indent=2,
+                sort_keys=True,
+            )
+        print(f"\n  Resultados exportados: {output_path}")
     
     conn.close()
 

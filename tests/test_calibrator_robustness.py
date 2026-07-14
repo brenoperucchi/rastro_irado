@@ -107,3 +107,49 @@ def test_alpha_e_escolhido_sem_consultar_holdout(monkeypatch):
         assert len(x_recebido) == len(y_recebido) == 150
         assert np.abs(x_recebido).max() < 999_999.0
         assert np.abs(y_recebido).max() < 999_999.0
+
+
+def test_as_of_isola_cesta_pesos_sigmas_e_logistica_de_sessoes_futuras(monkeypatch):
+    pytest.importorskip("sklearn", reason="sklearn não instalado neste ambiente")
+
+    rng = np.random.default_rng(20260713)
+    dates = pd.date_range("2025-08-01", periods=230, freq="B").date
+    cutoff = pd.Timestamp("2026-04-30").date()
+    fator_a = rng.normal(size=len(dates))
+    fator_b = rng.normal(size=len(dates))
+    target = 0.7 * fator_a - 0.2 * fator_b + rng.normal(scale=0.15, size=len(dates))
+
+    original = {
+        "TARGET": pd.Series(target, index=dates),
+        "FATOR_A": pd.Series(fator_a, index=dates),
+        "FATOR_B": pd.Series(fator_b, index=dates),
+    }
+    envenenado = {nome: serie.copy() for nome, serie in original.items()}
+    futuro = np.asarray(dates) > cutoff
+    envenenado["TARGET"].iloc[futuro] = np.where(np.arange(futuro.sum()) % 2, 1e12, -1e12)
+    envenenado["FATOR_A"].iloc[futuro] = 1e15
+    envenenado["FATOR_B"].iloc[futuro] = -1e15
+    envenenado["FATOR_SO_FUTURO"] = pd.Series(
+        np.full(futuro.sum(), 1e20), index=np.asarray(dates)[futuro]
+    )
+    monkeypatch.setattr(calibrator, "ALL_FACTORS", ["FATOR_A", "FATOR_B", "FATOR_SO_FUTURO"])
+
+    def calibrar(daily):
+        monkeypatch.setattr(calibrator, "load_daily_returns", lambda *args: daily)
+        return calibrator.calibrate_target(
+            None,
+            "TARGET",
+            min_factors=1,
+            max_factors=2,
+            holdout_sessions=20,
+            as_of="2026-04-30",
+        )
+
+    resultado_original = calibrar(original)
+    resultado_envenenado = calibrar(envenenado)
+
+    assert resultado_original["factors"] == resultado_envenenado["factors"]
+    assert resultado_original["weights"] == pytest.approx(resultado_envenenado["weights"])
+    assert resultado_original["sigmas"] == pytest.approx(resultado_envenenado["sigmas"])
+    assert resultado_original["alpha"] == pytest.approx(resultado_envenenado["alpha"])
+    assert resultado_original["intercept"] == pytest.approx(resultado_envenenado["intercept"])
