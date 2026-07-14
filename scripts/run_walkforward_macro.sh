@@ -37,8 +37,15 @@ cd "$REPO"
 WIN_FACTORS='WDO$N,DI1$N,DE40,US500,VIX,USTEC,XAUUSD'
 WDO_FACTORS='WIN$N,DI1$N,DE40,US500,VIX,USTEC,XAUUSD'
 
-# Folds ancorados: o treino cresce, a janela OOS avança. Cada fold é honestamente
-# out-of-sample (os pesos do fold i só veem dados <= cutoff_i).
+# Folds ancorados: os cutoffs avançam, a janela OOS avança junto. O treino NÃO
+# cresce — é uma janela rolante de tamanho FIXO (--train-sessions 120 abaixo,
+# as 120 sessões até e incluindo o cutoff de cada fold, select_training_dates()
+# em measure_tactical_gate3.py), diferente do default de 252 sessões do Gate 3
+# legado (measure_tactical_gate3.py --train-sessions, caminho de medição de
+# calibração única, não usado aqui).
+# Cada fold é honestamente out-of-sample (os pesos do fold i só veem dados
+# <= cutoff_i) — achado A#2 da tri-review de 2026-07-14, que corrigiu esta
+# mesma linha de "o treino cresce" (falso: era o comentário, não o código).
 CUTOFFS=(
   "2023-10-25:2023-10-26:2024-02-29"
   "2024-02-29:2024-03-01:2024-06-28"

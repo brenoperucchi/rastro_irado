@@ -858,7 +858,10 @@ export default function App() {
                   accuracy={seriesInfo.accuracy ?? 80}
                   recentPUp={series.slice(-8).map(b => b.p_up).filter(v => v != null)}
                   priceDiverges={now.price_diverges}
-                  nweUp={nweNow?.nwe_available ? nweNow.nwe_direction === 'up' : undefined}
+                  nweUp={!nweNow?.nwe_available ? undefined
+                    : nweNow.nwe_direction === 'up' ? true
+                    : nweNow.nwe_direction === 'down' ? false
+                    : undefined /* 'flat' — sem direção, não conta como divergência */}
                   nweUpper={nweNow?.nwe_upper}
                   nweLower={nweNow?.nwe_lower}
                   nweAvailable={nweNow?.nwe_available}
@@ -951,9 +954,15 @@ export default function App() {
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                    color: !nweNow?.nwe_available ? '#64748B' : nweNow.nwe_direction === 'up' ? '#4ADE80' : '#F87171',
+                    color: !nweNow?.nwe_available ? '#64748B'
+                      : nweNow.nwe_direction === 'up' ? '#4ADE80'
+                      : nweNow.nwe_direction === 'down' ? '#F87171'
+                      : '#9CA3AF' /* 'flat' */,
                   }}>
-                    {!nweNow?.nwe_available ? '◌ NWE —' : nweNow.nwe_direction === 'up' ? '▲ NWE ALTA' : '▼ NWE BAIXA'}
+                    {!nweNow?.nwe_available ? '◌ NWE —'
+                      : nweNow.nwe_direction === 'up' ? '▲ NWE ALTA'
+                      : nweNow.nwe_direction === 'down' ? '▼ NWE BAIXA'
+                      : '● NWE FLAT'}
                     <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
                       {`bw=${NWE_BW}`} · {nweNow?.nwe_center?.toFixed(3)}%
                     </span>

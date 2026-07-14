@@ -114,7 +114,7 @@ class IRAISnapshot:
     nwe_upper: Optional[float] = None
     nwe_lower: Optional[float] = None
     nwe_slope_price: float = 0.0
-    nwe_direction: str = "up"             # "up" | "down" (causal, sem lookahead)
+    nwe_direction: Optional[str] = None    # "up" | "down" | "flat" | None (indisponível)
     nwe_available: bool = False
     atr_14: Optional[float] = None
     atr_available: bool = False

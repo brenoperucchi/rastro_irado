@@ -119,11 +119,22 @@ código documentando a troca.
    foi feita**. `.planning/docs/FACTOR_MAP.md` está desatualizado (gerado em
    10/07, antes da cesta citada aqui) e não deve ser usado como fonte até ser
    regenerado. O feed Firebase de produção também exige auth (**401**) — a
-   verificação precisa de outra via.
+   verificação precisa de outra via. *Item absorvido pelo Tactical Layer
+   ([`2026-07-13-irai-tactical-layer-win-wdo.md`](./2026-07-13-irai-tactical-layer-win-wdo.md)
+   §2.3) como pré-requisito da calibração micro do WDO.*
 6. ✅ **GEX do dólar.** `gex_worker.py` passou a cobrir WIN$N e WDO$N num único
    ciclo (registry de targets, isolamento de falha por leg). Commit `39e6822`.
 
 **Pacote C — higiene quantitativa (sem impacto visual imediato) — ❌ 0/4, nada iniciado**
+
+> **Nota (2026-07-13):** o Pacote C inteiro — e o item 5 do Pacote B (cesta do
+> WDO) — foi absorvido como pré-requisito de dois planos novos, onde o trabalho
+> vai efetivamente acontecer:
+> - [`2026-07-13-nwe-causal-backend-foundation.md`](./2026-07-13-nwe-causal-backend-foundation.md)
+>   — a Fase 5 elevada a plano próprio (spec completa do NWE causal + VWAP/ATR).
+> - [`2026-07-13-irai-tactical-layer-win-wdo.md`](./2026-07-13-irai-tactical-layer-win-wdo.md)
+>   — absorve a Fase 1 (§2.2 migrações idempotentes), a Fase 6 e a B3/Fase 7
+>   (§9 API/Firebase), e a verificação da cesta do WDO (§2.3).
 
 7. **Fase 5 — NWE causal no backend** (kernel `j <= i`, lookback 95). Vem **antes**
    de qualquer polimento visual que dependa do NWE.

@@ -105,8 +105,13 @@ def _assert_series_bar_typed(bar):
         assert isinstance(bar[k], bool), f"{k} deveria ser bool, veio {bar[k]!r}"
     assert _is_number(bar["nwe_slope_price"]), \
         f"nwe_slope_price deveria ser number, veio {bar['nwe_slope_price']!r}"
-    assert bar["nwe_direction"] in ("up", "down"), \
+    # "flat" (slope≈0) e None (nwe_available=False) são estados legítimos —
+    # não um tie-break silencioso pra "up" (achado B1#3 da tri-review).
+    assert bar["nwe_direction"] in ("up", "down", "flat", None), \
         f"nwe_direction inválido: {bar['nwe_direction']!r}"
+    if bar["nwe_direction"] is None:
+        assert bar["nwe_available"] is False, \
+            "nwe_direction None mas nwe_available=True — inconsistente"
 
 
 def _seed(db_path, *, target, source, session_start_h, session, n_bars):
@@ -225,9 +230,19 @@ def test_overview_expoe_nwe_causal_sem_slope_ambiguo():
         # A chave ambígua legada NÃO pode voltar.
         assert "nwe_slope" not in card, \
             "overview reintroduziu a chave ambígua `nwe_slope` sem sufixo"
-        assert card["nwe_direction"] in ("up", "down")
+        assert card["nwe_direction"] in ("up", "down", "flat", None)
+        if card["nwe_direction"] is None:
+            assert card["nwe_available"] is False, \
+                "nwe_direction None mas nwe_available=True — inconsistente"
         assert isinstance(card["nwe_available"], bool)
         assert _is_number(card["nwe_slope_price"])
+
+    # Não é só default: o wiring da engine produz valor real no overview
+    # também — sem isto, o teste passaria mesmo se o overview nunca recebesse
+    # dado real (achado B2#4 da tri-review, o teste da série já tinha essa
+    # guarda, o do overview não).
+    assert any(c["nwe_available"] for c in data["targets"]), \
+        "nenhum card com nwe_available=True — overview não enriqueceu"
 
     json.dumps(data, allow_nan=False)
 

@@ -416,8 +416,10 @@ O Gate 3b (`b93cbfe`) tinha só 49 sessões OOS — sem poder estatístico para 
 ΔAUC=+0,02 a 80% (são precisas ~690 sessões em h=3). Cestas incumbentes nunca chegariam lá
 (o `iSharesCurrencyBond+` do WDO só existe desde 2025-05-27). A saída foi uma cesta de
 história longa (só fatores com ≥1000 sessões, sem iShares/USDCAD/USDCHF) com 8 folds
-ancorados (treino cresce, OOS avança), acumulando o modelo aninhado (momentum próprio vs. +
-features de P_up) via cross-fit.
+ancorados (cutoffs avançam; treino rolante fixo de 120 sessões por fold — não cresce, ver
+achado A#2 da tri-review de 2026-07-14 — vs. o default de 252 sessões do Gate 3 legado,
+caminho de medição não usado neste walk-forward), acumulando o modelo aninhado (momentum
+próprio vs. features de P_up) via cross-fit.
 
 Uma primeira rodada tinha um bug real: `candidate_sessions()` exigia fechamento às 17:55,
 mas grandes trechos de `WIN$N` fecham às 17:50 entre 2021-2023 — sessões completas eram

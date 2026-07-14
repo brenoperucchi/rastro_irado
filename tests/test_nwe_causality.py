@@ -52,6 +52,7 @@ from backend.irai.nwe import (
     NWE_MULT,
     NWE_LOOKBACK,
     ATR_PERIOD,
+    DIRECTION_FLAT_EPS,
 )
 from backend.db import SCHEMA, migrate_divergence_config
 from backend.irai.engine import IRAIEngine
@@ -189,6 +190,15 @@ def ref_compute_nwe(data, history_closes):
     return out
 
 
+def _assert_field_equal(a, b, msg):
+    """Compara 2 leituras de um campo NWE opcional (float|None), tratando
+    None explicitamente — `pytest.approx(None)` levanta TypeError."""
+    if a is None or b is None:
+        assert a is b, msg
+    else:
+        assert a == pytest.approx(b, rel=1e-12, abs=1e-12), msg
+
+
 # ── Invariante 1: invariância de prefixo ───────────────────────────────────
 
 def test_invariancia_de_prefixo():
@@ -201,16 +211,18 @@ def test_invariancia_de_prefixo():
     assert len(prefix) == n
     for t in range(n):
         for f in ("nwe_center_price", "nwe_upper_price", "nwe_lower_price",
-                  "nwe_slope_price"):
-            assert full[t][f] == pytest.approx(prefix[t][f], rel=1e-12, abs=1e-12), \
-                f"prefixo divergiu em t={t}, campo={f}"
+                  "nwe_slope_price", "atr_14", "session_vwap",
+                  "distance_to_nwe_atr", "distance_to_vwap_atr"):
+            _assert_field_equal(full[t][f], prefix[t][f],
+                                f"prefixo divergiu em t={t}, campo={f}")
 
 
 # ── Invariante 2: sem futuro imediato ──────────────────────────────────────
 
 def test_alterar_t_mais_1_nao_altera_t():
     prices = _price_walk(100.0, 30)
-    bars = [_real_bar(p) for p in prices]
+    bars = [_real_bar(p, high=p + 2, low=p - 2, volume=10.0, real_volume=10.0)
+            for p in prices]
     base = compute_nwe_series(bars, [])
 
     t = 15
@@ -220,11 +232,13 @@ def test_alterar_t_mais_1_nao_altera_t():
     after = compute_nwe_series(perturbed, [])
 
     for f in ("nwe_center_price", "nwe_upper_price", "nwe_lower_price",
-              "nwe_slope_price", "nwe_center", "nwe_upper", "nwe_lower"):
-        assert base[t][f] == pytest.approx(after[t][f], rel=1e-12, abs=1e-12), \
-            f"barra futura vazou para t={t}, campo={f}"
+              "nwe_slope_price", "nwe_center", "nwe_upper", "nwe_lower",
+              "atr_14", "session_vwap", "distance_to_nwe_atr", "distance_to_vwap_atr"):
+        _assert_field_equal(base[t][f], after[t][f],
+                             f"barra futura vazou para t={t}, campo={f}")
     # A barra t+1 (a alterada) DEVE mudar — senão o teste não prova nada.
     assert base[t + 1]["nwe_center_price"] != pytest.approx(after[t + 1]["nwe_center_price"])
+    assert base[t + 1]["atr_14"] != pytest.approx(after[t + 1]["atr_14"])
 
 
 # ── Invariante 3: warm-up (histórico) muda início, nunca usa futuro ─────────
@@ -317,6 +331,13 @@ def test_paridade_com_referencia_appjsx(history):
     ref = ref_compute_nwe(bars, history)
 
     for i in range(len(bars)):
+        if not got[i]["nwe_available"]:
+            # `ref_compute_nwe` não modela o gate de prontidão POR BARRA
+            # (NWE_MIN_READY, achado B1#2): ele só verifica se o LOTE inteiro
+            # tem >=3 preços, então sempre calcula um número para toda barra.
+            # Aqui só as 2 primeiras barras reais de uma sessão sem histórico
+            # caem nesse caso — a fórmula em si é testada nas barras prontas.
+            continue
         for f in ("nwe_center_price", "nwe_upper_price", "nwe_lower_price",
                   "nwe_center", "nwe_upper", "nwe_lower", "nwe_slope_price"):
             assert got[i][f] == pytest.approx(ref[i][f], rel=1e-6, abs=1e-9), \
@@ -328,8 +349,77 @@ def test_nwe_direction_e_causal_do_sinal_do_slope():
     bars = [_real_bar(p) for p in prices]
     got = compute_nwe_series(bars, [])
     for r in got:
-        expected = "up" if r["nwe_slope_price"] >= 0 else "down"
+        if not r["nwe_available"]:
+            assert r["nwe_direction"] is None
+            continue
+        slope = r["nwe_slope_price"]
+        expected = "flat" if math.isclose(slope, 0.0, abs_tol=DIRECTION_FLAT_EPS) \
+            else "up" if slope > 0 else "down"
         assert r["nwe_direction"] == expected
+
+
+def test_nwe_direction_flat_quando_slope_e_exatamente_zero():
+    """Preço constante -> slope≈0 -> direction 'flat', não o tie-break
+    silencioso pra 'up' (achado B1#3 da tri-review de 2026-07-14). O kernel
+    ainda produz ruído de ponto flutuante (~1e-14) numa série constante —
+    por isso o teste tolera o ruído em vez de exigir slope_price == 0.0 exato."""
+    bars = [_real_bar(100.0) for _ in range(10)]
+    got = compute_nwe_series(bars, [])
+    for r in got[:2]:
+        assert r["nwe_direction"] is None and r["nwe_available"] is False
+    for r in got[2:]:
+        assert r["nwe_available"] is True
+        assert abs(r["nwe_slope_price"]) < 1e-9
+        assert r["nwe_direction"] == "flat"
+
+
+def test_direction_nao_mascara_tick_minimo_de_forex_como_flat():
+    """DIRECTION_FLAT_EPS precisa ser pequeno o bastante pra não confundir o
+    menor tick real de um par forex (~1.0, 5 casas decimais, tick ~1e-5) com
+    ruído de ponto flutuante — achado da revisão do slice B1#2/#3/#5
+    (2026-07-14): um epsilon grande demais (1e-6) mascararia isto como 'flat'."""
+    prices = [1.0] * 94 + [1.00001]  # 1 tick real após 94 barras paradas
+    bars = [_real_bar(p) for p in prices]
+    got = compute_nwe_series(bars, [])
+    assert got[-1]["nwe_slope_price"] > 0
+    assert got[-1]["nwe_direction"] == "up"
+
+
+def test_disponibilidade_nao_flutua_entre_live_e_replay():
+    """Núcleo do achado B1#2: a leitura 'ao vivo' (só as 2 primeiras barras no
+    banco) e o 'replay' posterior (sessão completa) não podem divergir sobre
+    o status das 2 primeiras barras — elas ficam indisponíveis nos dois casos,
+    não só disponíveis retroativamente quando mais barras chegam."""
+    prices = _price_walk(100.0, 20)
+    bars = [_real_bar(p) for p in prices]
+
+    live_so_far = compute_nwe_series(bars[:2], [])
+    replay_full = compute_nwe_series(bars, [])
+
+    for t in range(2):
+        assert live_so_far[t]["nwe_available"] is False
+        assert replay_full[t]["nwe_available"] is False
+        assert live_so_far[t]["nwe_center_price"] is None
+        assert replay_full[t]["nwe_center_price"] is None
+
+
+def test_ghost_antes_da_terceira_real_fica_indisponivel():
+    """Ghost intercalado ANTES de NWE_MIN_READY barras reais acumuladas fica
+    indisponível — não pode "adiantar" a prontidão nem herdar um centro que
+    ainda não existe (achado B1#2)."""
+    bars = [
+        _ghost_bar(100.0),
+        _real_bar(100.0),
+        _ghost_bar(100.5),
+        _real_bar(101.0),
+        _real_bar(101.5),  # 3ª barra real -> prontidão
+        _ghost_bar(101.5),
+    ]
+    got = compute_nwe_series(bars, [])
+    for r in got[:4]:  # ghost, real#1, ghost, real#2 — só 2 reais vistas até aqui
+        assert r["nwe_available"] is False
+    assert got[4]["nwe_available"] is True   # real#3 — prontidão atingida
+    assert got[5]["nwe_available"] is True   # ghost após prontidão, carry-forward
 
 
 # ── Invariante 9: VWAP/ATR indisponíveis → flag, nunca NaN/Infinity ────────
@@ -367,6 +457,54 @@ def test_atr_fica_disponivel_com_barras_suficientes():
         assert r["session_vwap"] is not None and math.isfinite(r["session_vwap"])
         assert r["distance_to_nwe_atr"] is not None
     json.dumps(got, allow_nan=False)  # não deve levantar
+
+
+def test_atr_indisponivel_quando_atr_e_exatamente_zero():
+    """Sessão sem volatilidade (high==low==close, sem gaps) -> atr_14==0.0,
+    mas atr_available deve ser False — 0.0 não é uma leitura utilizável pras
+    distâncias normalizadas por ATR (achado B1#5 da tri-review)."""
+    bars = [_real_bar(100.0, high=100.0, low=100.0, volume=10.0, real_volume=10.0)
+            for _ in range(ATR_PERIOD + 4)]
+    got = compute_nwe_series(bars, [])
+    for r in got[ATR_PERIOD - 1:]:
+        assert r["atr_14"] == 0.0
+        assert r["atr_available"] is False
+        assert r["distance_to_nwe_atr"] is None
+        assert r["distance_to_vwap_atr"] is None
+    json.dumps(got, allow_nan=False)
+
+
+# ── Invariante 10: entrada não-finita falha alto, nunca propaga (B1#5) ─────
+
+def test_close_nao_finito_levanta_valueerror():
+    """`close` alimenta a série inteira do kernel — um NaN/Infinity aqui
+    corromperia todas as barras seguintes silenciosamente. Falha alto."""
+    with pytest.raises(ValueError):
+        compute_nwe_series(
+            [_real_bar(100.0), _real_bar(float("nan")), _real_bar(102.0)], [])
+    with pytest.raises(ValueError):
+        compute_nwe_series([_real_bar(100.0), _real_bar(float("inf"))], [])
+
+
+def test_history_close_nao_finito_levanta_valueerror():
+    with pytest.raises(ValueError):
+        compute_nwe_series([_real_bar(100.0)], [float("nan")])
+
+
+def test_high_nao_finito_e_tratado_como_ausente_nao_propaga_nan():
+    """high/low são opcionais; um valor presente mas não-finito vira ausente
+    (não contamina TR/VWAP) em vez de propagar NaN pras barras seguintes."""
+    n = ATR_PERIOD + 5
+    bars = [_real_bar(100.0 + k, high=102.0 + k, low=98.0 + k,
+                       volume=10.0, real_volume=10.0)
+            for k in range(n)]
+    bars[ATR_PERIOD]["high"] = float("nan")  # dado malformado no meio da janela
+    got = compute_nwe_series(bars, [])
+    payload = json.dumps(got, allow_nan=False)  # não deve levantar
+    assert "NaN" not in payload
+    # Sem o guard, o NaN entraria em true_ranges e poluiria o ATR de toda a
+    # janela seguinte (14 barras) — a última barra segue finita.
+    assert got[-1]["atr_14"] is not None and math.isfinite(got[-1]["atr_14"])
 
 
 # ── "Anti-teste": a fórmula ANTIGA (main.py) violaria a invariante 1 ───────
@@ -493,8 +631,13 @@ def test_engine_enriquece_snapshots_com_nwe(tmp_path, target, target_source, ses
         payload = {f: getattr(s, f) for f in NWE_FIELDS}
         json.dumps(payload, allow_nan=False)
 
-    # Barras reais têm NWE disponível e centro finito.
-    for s in real:
+    # As 2 primeiras barras reais da sessão (sem warm-up) ficam indisponíveis
+    # de forma permanente — não retroativa conforme a sessão avança (achado
+    # B1#2 da tri-review). A partir da 3ª (NWE_MIN_READY), disponível e finito.
+    for s in real[:2]:
+        assert s.nwe_available is False
+        assert s.nwe_center_price is None
+    for s in real[2:]:
         assert s.nwe_available is True
         assert s.nwe_center_price is not None and math.isfinite(s.nwe_center_price)
 
@@ -576,6 +719,11 @@ def test_engine_ghost_pre_mercado_repete_ultimo_valor_causal(tmp_path):
         assert s.atr_available is False
         assert s.vwap_available is False
 
-    # A 1ª barra real inaugura o NWE; nenhuma barra ghost anterior "vazou" preço
-    # para o kernel — o centro da 1ª real == própria (janela de 1 ponto).
-    assert real[0].nwe_center_price == pytest.approx(prices[0], rel=1e-9)
+    # As 2 primeiras barras reais ainda não atingem NWE_MIN_READY (nenhuma
+    # ghost anterior "vazou" preço pro kernel — elas só carregam via carry-
+    # forward, e não há centro conhecido ainda). A 3ª barra real inaugura o
+    # NWE, usando só as 3 primeiras barras reais vistas.
+    assert real[0].nwe_available is False and real[0].nwe_center_price is None
+    assert real[1].nwe_available is False and real[1].nwe_center_price is None
+    assert real[2].nwe_available is True
+    assert real[2].nwe_center_price is not None and math.isfinite(real[2].nwe_center_price)

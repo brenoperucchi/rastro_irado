@@ -293,7 +293,7 @@ async def irai_overview(
                 "price_diverge_z": price_diverge_z,
                 # NWE causal do último snapshot (já enriquecido pela engine).
                 # NÃO reintroduzir "nwe_slope" sem sufixo (ver engine.py:109).
-                "nwe_direction": getattr(last, "nwe_direction", "up"),
+                "nwe_direction": getattr(last, "nwe_direction", None),
                 "nwe_slope_price": getattr(last, "nwe_slope_price", 0.0),
                 "nwe_center": getattr(last, "nwe_center", None),
                 "nwe_upper": getattr(last, "nwe_upper", None),
@@ -508,7 +508,7 @@ def _snap_to_dict(snap) -> dict:
         "nwe_upper": getattr(snap, "nwe_upper", None),
         "nwe_lower": getattr(snap, "nwe_lower", None),
         "nwe_slope_price": getattr(snap, "nwe_slope_price", 0.0),
-        "nwe_direction": getattr(snap, "nwe_direction", "up"),
+        "nwe_direction": getattr(snap, "nwe_direction", None),
         "nwe_available": getattr(snap, "nwe_available", False),
         "atr_14": getattr(snap, "atr_14", None),
         "atr_available": getattr(snap, "atr_available", False),

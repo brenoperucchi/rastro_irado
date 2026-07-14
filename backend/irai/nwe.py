@@ -17,19 +17,28 @@ Regras causais (ver docs/plans/2026-07-13-nwe-causal-backend-foundation.md §3):
   não `center[t]` — exatamente como App.jsx:375.
 - largura do envelope = MAE móvel × NWE_MULT.
 - inclinação (`nwe_slope_price`) = center[t] - center[t-1] em espaço de PREÇO.
-- `nwe_direction` = sinal causal da inclinação ("up"/"down"). Os campos de
-  renderização não-normativos do frontend (isTransition/wasTransition/nwe_up/
-  nwe_down) NÃO são reproduzidos aqui: eles espiam `t+1` (App.jsx:444-450) e
-  violam a causalidade. Pertencem à camada de UI, reescritos sem lookahead.
+- `nwe_direction` = sinal causal da inclinação: "up" (>0), "down" (<0) ou
+  "flat" (==0, empate exato — nunca um tie-break silencioso pra "up"); `None`
+  quando `nwe_available=False`. Os campos de renderização não-normativos do
+  frontend (isTransition/wasTransition/nwe_up/nwe_down) NÃO são reproduzidos
+  aqui: eles espiam `t+1` (App.jsx:444-450) e violam a causalidade. Pertencem
+  à camada de UI, reescritos sem lookahead.
 - barras ghost (`is_ghost=True`) NÃO entram no kernel, não movem a inclinação e
   não disparam eventos; quando precisam aparecer na série, repetem o último
   valor causal conhecido.
 - warm-up (`history_closes`): closes anteriores à sessão que dão contexto ao
   kernel. Podem alterar as primeiras barras da sessão, mas nunca introduzem
   informação POSTERIOR ao timestamp calculado.
+- prontidão (`nwe_available`) exige `NWE_MIN_READY` preços reais VISTOS ATÉ
+  aquela barra (contagem cumulativa, não sobre o lote inteiro): as 2 primeiras
+  barras reais de toda sessão sem warm-up ficam indisponíveis permanentemente,
+  ao vivo e no replay — nunca mudam de status retroativamente conforme mais
+  barras chegam.
 
-Indisponibilidade (volume/ATR inválidos) vira flag explícita + valor `None`;
-NUNCA `NaN`/`Infinity` (o payload precisa sobreviver a `json.dumps`).
+Indisponibilidade (volume/ATR inválidos/NWE ainda não pronto) vira flag
+explícita + valor `None`; NUNCA `NaN`/`Infinity` (o payload precisa sobreviver
+a `json.dumps`). Entrada não-finita (`close`/`high`/`low`) falha alto
+(`ValueError`) em vez de propagar silenciosamente.
 """
 
 from __future__ import annotations
@@ -112,7 +121,7 @@ def _bar_volume(bar) -> Optional[float]:
 
 
 def _empty_fields() -> dict:
-    """Snapshot NWE totalmente indisponível (sem valores numéricos)."""
+    """Snapshot NWE totalmente indisponível (sem valores numéricos nem direção)."""
     return {
         "nwe_center_price": None,
         "nwe_upper_price": None,
@@ -121,7 +130,7 @@ def _empty_fields() -> dict:
         "nwe_upper": None,
         "nwe_lower": None,
         "nwe_slope_price": 0.0,
-        "nwe_direction": "up",
+        "nwe_direction": None,
         "nwe_available": False,
         "atr_14": None,
         "atr_available": False,
@@ -130,6 +139,38 @@ def _empty_fields() -> dict:
         "distance_to_nwe_atr": None,
         "distance_to_vwap_atr": None,
     }
+
+
+# Barras reais mínimas (App.jsx:351) antes de o NWE ser considerado "pronto".
+# Avaliado POR BARRA (contagem cumulativa), não sobre o lote inteiro: senão as
+# 2 primeiras barras de cada sessão mudam de indisponível(live, poucas barras
+# no banco) pra disponível(replay, sessão completa) conforme mais barras
+# chegam — achado B1#2 da tri-review de 2026-07-14.
+NWE_MIN_READY = 3
+
+# Tolerância p/ considerar o slope "flat": absorve APENAS o ruído de ponto
+# flutuante do kernel (~1e-14 numa série de preço constante), nunca um
+# movimento de preço real. Deliberadamente pequena: um valor maior (ex. 1e-6)
+# mascararia como "flat" o menor tick real de um par forex ~1.0 (5 casas
+# decimais, tick ~1e-5, produz slope suavizado da ordem de ~1e-6/1e-7 — achado
+# da revisão do slice B1#2/#3/#5, 2026-07-14). 1e-9 fica ~5 ordens de grandeza
+# acima do ruído observado e ~2-3 ordens abaixo do menor movimento real.
+DIRECTION_FLAT_EPS = 1e-9
+
+
+def _direction(slope_price: float) -> str:
+    """Direção causal da inclinação — três estados, sem tie-break silencioso.
+
+    slope_price≈0 (dentro de DIRECTION_FLAT_EPS) usa "flat", não "up": um
+    centro que não se moveu não é um sinal de alta — achado B1#3 da
+    tri-review de 2026-07-14. A tolerância (não igualdade exata) é necessária
+    porque uma série de preço literalmente constante ainda produz ruído de
+    ponto flutuante da ordem de 1e-14 na soma ponderada do kernel — um preço
+    genuinamente parado não pode virar "up"/"down" por acaso do arredondamento.
+    """
+    if math.isclose(slope_price, 0.0, abs_tol=DIRECTION_FLAT_EPS):
+        return "flat"
+    return "up" if slope_price > 0.0 else "down"
 
 
 def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[float]] = None) -> list[dict]:
@@ -157,16 +198,32 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
         return []
 
     history_prices = [float(x) for x in (history_closes or [])]
+    for p in history_prices:
+        if not math.isfinite(p):
+            raise ValueError(
+                f"nwe: close não-finito no warm-up ({p!r}) — dado malformado do DB")
 
     # Apenas barras REAIS (não-ghost) alimentam o kernel — App.jsx:347 filtra
-    # `!d.is_ghost`. A ordem preserva a sequência da sessão.
-    current_prices = [float(b["close"]) for b in bars if not b.get("is_ghost")]
+    # `!d.is_ghost`. A ordem preserva a sequência da sessão. `close` é
+    # obrigatório e alimenta a série inteira do kernel: um valor não-finito
+    # corromperia todas as barras subsequentes silenciosamente, então falha
+    # alto em vez de propagar NaN/Infinity pro output (achado B1#5).
+    current_prices = []
+    for b in bars:
+        if b.get("is_ghost"):
+            continue
+        close_val = float(b["close"])
+        if not math.isfinite(close_val):
+            raise ValueError(
+                f"nwe: close não-finito na entrada ({close_val!r}) — dado malformado do DB")
+        current_prices.append(close_val)
+
     all_prices = history_prices + current_prices
     n_all = len(all_prices)
     hlen = len(history_prices)
 
-    nwe_ready = n_all >= 3  # App.jsx:351 exige nAll >= 3
-    if nwe_ready:
+    has_data = n_all >= 1
+    if has_data:
         center = _causal_center(all_prices)
         env_width = _causal_env_width(all_prices, center)
         current_center = center[hlen:]
@@ -191,14 +248,17 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
 
     results: list[dict] = []
     valid_idx = 0
+    seen_count = hlen  # nº de preços já acumulados no eixo causal até este ponto
 
     for b in bars:
         open_price = b.get("win_open") or 1.0
         close = float(b["close"])
+        ready_before = seen_count >= NWE_MIN_READY  # prontidão ANTES desta barra (usada por ghosts)
 
         # Inicialização do carry-forward a partir do histórico, na 1ª barra
-        # processada quando há warm-up (App.jsx:400-409).
-        if valid_idx == 0 and hlen > 0 and last_center is None and nwe_ready:
+        # processada quando há warm-up (App.jsx:400-409). Independe do gate de
+        # prontidão: histórico > 0 já dá um centro/slope reais para carregar.
+        if valid_idx == 0 and hlen > 0 and last_center is None:
             hc = center[hlen - 1]
             he = env_width[hlen - 1]
             last_center = _as_pct(hc, open_price)
@@ -214,7 +274,7 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
             # Ghost: repete o último valor causal conhecido; não move o kernel,
             # não atualiza ATR/VWAP. Se nada foi visto ainda, cai no preço atual.
             fields = _empty_fields()
-            if nwe_ready and last_center_price is not None:
+            if ready_before and last_center_price is not None:
                 fields.update({
                     "nwe_center_price": last_center_price,
                     "nwe_upper_price": last_upper_price,
@@ -223,10 +283,10 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
                     "nwe_upper": last_upper,
                     "nwe_lower": last_lower,
                     "nwe_slope_price": last_slope,
-                    "nwe_direction": "up" if last_slope >= 0 else "down",
+                    "nwe_direction": _direction(last_slope),
                     "nwe_available": True,
                 })
-            elif nwe_ready:
+            elif ready_before:
                 # Ghost antes de qualquer centro conhecido: âncora no preço atual.
                 pct = _as_pct(close, open_price)
                 fields.update({
@@ -237,13 +297,13 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
                     "nwe_upper": pct,
                     "nwe_lower": pct,
                     "nwe_slope_price": 0.0,
-                    "nwe_direction": "up",
+                    "nwe_direction": "flat",
                     "nwe_available": True,
                 })
             # ATR/VWAP: carrega o último estado causal (não recalcula, não move).
             fields.update({
                 "atr_14": last_atr,
-                "atr_available": last_atr is not None,
+                "atr_available": last_atr is not None and last_atr > 0,
                 "session_vwap": last_vwap,
                 "vwap_available": last_vwap is not None,
                 "distance_to_nwe_atr": last_dist_nwe,
@@ -253,9 +313,11 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
             continue
 
         # ── Barra REAL ────────────────────────────────────────────────────
+        seen_count += 1
+        ready_after = seen_count >= NWE_MIN_READY  # prontidão INCLUINDO esta barra
         fields = _empty_fields()
 
-        if nwe_ready:
+        if ready_after and has_data:
             i = valid_idx
             c = current_center[i]
             e = current_env[i]
@@ -280,7 +342,7 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
                 "nwe_upper": _as_pct(upper_price, open_price),
                 "nwe_lower": _as_pct(lower_price, open_price),
                 "nwe_slope_price": slope_price,
-                "nwe_direction": "up" if slope_price >= 0 else "down",
+                "nwe_direction": _direction(slope_price),
                 "nwe_available": True,
             })
 
@@ -300,6 +362,12 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
         if high is not None and low is not None:
             high = float(high)
             low = float(low)
+            if not (math.isfinite(high) and math.isfinite(low)):
+                # high/low são opcionais (podem faltar em barras ghost já
+                # filtradas acima); um valor presente mas não-finito é dado
+                # malformado — trata como ausente em vez de propagar (B1#5).
+                high = low = None
+        if high is not None and low is not None:
             if prev_real_close is None:
                 tr = high - low
             else:
@@ -315,7 +383,10 @@ def compute_nwe_series(bars: Sequence[dict], history_closes: Optional[Sequence[f
         if len(true_ranges) >= ATR_PERIOD:
             atr_val = sum(true_ranges[-ATR_PERIOD:]) / ATR_PERIOD
         fields["atr_14"] = atr_val
-        fields["atr_available"] = atr_val is not None
+        # >0, não só "is not None": sessão sem volatilidade (atr_val==0.0) não
+        # é uma leitura utilizável — as distâncias abaixo já exigem >0, então
+        # a flag ficava inconsistente com o resto do contrato (B1#5).
+        fields["atr_available"] = atr_val is not None and atr_val > 0
         last_atr = atr_val
 
         # ── VWAP de sessão (typical × volume acumulado) ───────────────────
