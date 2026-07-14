@@ -27,6 +27,9 @@ from backend.irai.timezones import brt_to_tickmill_offset_hours
 
 DEFAULT_DB = "/tmp/claude-1000/-home-brenoperucchi-Devs-miqueias-rastro-irado/5492199e-05a7-45f3-bc41-2c65682106d5/scratchpad/irai_prod_snapshot.db"
 DEFAULT_TARGETS = ("WIN$N", "WDO$N")
+# O relógio gravado em ``timestamp_utc`` é o relógio histórico do servidor. O WIN
+# encerra cinco minutos antes do WDO no trecho sazonal antigo do snapshot.
+COMPLETE_SESSION_LAST_BAR = {"WIN$N": (17, 50), "WDO$N": (17, 55)}
 LATE_START_HOUR_BRT = 13
 FORWARD_HORIZONS = (3, 6, 20)
 BOOTSTRAP_ITERATIONS = 10_000
@@ -214,13 +217,18 @@ def candidate_sessions(db_path: str, target: str, limit: int) -> CandidateSessio
     selected = []
     discarded = {}
     latest = rows[0]["session_date"] if rows else None
+    expected_last_bar = COMPLETE_SESSION_LAST_BAR.get(target, (17, 55))
     for row in rows:
         date = row["session_date"]
         last_time = datetime.fromisoformat(row["last_timestamp"].replace("Z", "+00:00")).time()
         if date == latest:
             discarded[date] = "última data descartada (sessão potencialmente parcial)"
-        elif (last_time.hour, last_time.minute) < (17, 55):
-            discarded[date] = f"última barra real {last_time.strftime('%H:%M')} < 17:55 BRT"
+        elif (last_time.hour, last_time.minute) < expected_last_bar:
+            expected = f"{expected_last_bar[0]:02d}:{expected_last_bar[1]:02d}"
+            discarded[date] = (
+                f"última barra real {last_time.strftime('%H:%M')} < {expected} "
+                f"no relógio histórico do servidor ({target})"
+            )
         elif len(selected) < limit:
             selected.append(date)
         if len(selected) == limit:

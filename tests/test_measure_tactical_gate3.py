@@ -1,11 +1,14 @@
 """Regressões do Gate 3 discriminante do Tactical Layer."""
 
 from contextlib import contextmanager
+from datetime import date, timedelta
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
 
 import scripts.measure_tactical_gate3 as gate3
+from scripts.measure_d1_inflation import candidate_sessions
 from scripts.measure_tactical_gate3 import (
     GateBar,
     ForwardRow,
@@ -14,6 +17,7 @@ from scripts.measure_tactical_gate3 import (
     clustered_spearman,
     fit_hourly_platt,
     fit_nested_models,
+    hourly_incremental_delta,
     hourly_auc_comparison,
     select_evaluation_dates,
 )
@@ -232,6 +236,80 @@ def test_crossfit_temporal_nunca_calibra_com_a_propria_fold():
     assert [date for _, dates in folds for date in dates] == [
         f"2026-01-{day:02d}" for day in range(1, 13)
     ]
+
+
+def test_janela_crossfit_usa_as_n_sessoes_imediatamente_anteriores_ao_cutoff(tmp_path):
+    """WIN fecha cinco minutos antes do WDO e continua sendo uma sessão completa."""
+    db = tmp_path / "sessions.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """CREATE TABLE market_bars (
+               symbol TEXT, timeframe TEXT, timestamp_utc TEXT
+           )"""
+    )
+    sessions = []
+    current = date(2023, 1, 2)
+    while len(sessions) < 125:
+        if current.weekday() < 5:
+            sessions.append(current.isoformat())
+        current += timedelta(days=1)
+    conn.executemany(
+        "INSERT INTO market_bars VALUES ('WIN$N', 'M5', ?)",
+        [(f"{session}T17:50:00Z",) for session in sessions],
+    )
+    conn.commit()
+    conn.close()
+
+    cutoff = sessions[-2]  # a última data é descartada como potencialmente parcial
+    candidates = candidate_sessions(str(db), "WIN$N", limit=10_000)
+    training_dates = [item for item in candidates.dates if item <= cutoff][-120:]
+    folds = gate3.temporal_crossfit_slices(training_dates, n_splits=4)
+
+    assert training_dates == sessions[-121:-1]
+    oldest_allowed_cutoff = (date.fromisoformat(training_dates[0]) - timedelta(days=1)).isoformat()
+    assert all(fold_cutoff >= oldest_allowed_cutoff for fold_cutoff, _ in folds)
+
+
+def test_crossfit_informa_fold_data_fator_e_inicio_do_historico(monkeypatch):
+    class Connection:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(gate3, "readonly_connection", lambda _path: Connection())
+    monkeypatch.setattr(
+        gate3.calibrator,
+        "load_daily_returns",
+        lambda *_args: {
+            "DE40": gate3.calibrator.pd.Series([0.01], index=["2023-02-01"]),
+        },
+    )
+
+    with pytest.raises(RuntimeError, match=r"fold 1 cutoff 2023-01-01.*DE40.*2023-02-01"):
+        gate3.crossfit_replay_bars(
+            "unused.db", "WIN$N", ["2023-01-02", "2023-01-03"], {},
+            {"factors": ["DE40"]}, versions=("v1",), n_splits=1,
+        )
+
+
+def test_min_history_date_impede_fold_anterior_ao_limite():
+    selected = gate3.select_training_dates(
+        ["2023-01-02", "2023-01-03", "2023-01-04"],
+        cutoff="2023-01-04", train_sessions=2, min_history_date="2023-01-02",
+    )
+
+    assert selected == ["2023-01-03", "2023-01-04"]
+    assert gate3.temporal_crossfit_slices(selected, n_splits=2)[0][0] >= "2023-01-02"
+
+
+def test_hora_sem_barras_nao_aborta_o_teste_central():
+    baseline_auc, treatment_auc, delta = hourly_incremental_delta(
+        [], [], iterations=10, seed=1
+    )
+
+    assert gate3.math.isnan(baseline_auc)
+    assert gate3.math.isnan(treatment_auc)
+    assert gate3.math.isnan(delta.value)
+    assert delta.n_sessions == 0
 
 
 def test_residualizacao_e_ajustada_sem_observar_a_janela_oos():

@@ -36,7 +36,7 @@ como `AGUARDANDO_PULLBACK`, `ARMADO`, `CONFIRMADO` e `NAO_OPERAR` — sem execut
 |---|---|---|---|---|
 | BUG-01 | **BUG** | Alinhar fatores B3 sem lookahead de 6h | ✅ Concluído | Remove contaminação do histórico e do backtest. |
 | BUG-02 | **BUG** | Tornar o offset Tickmill/B3 sensível ao DST | ✅ Concluído | Evita desalinhamento sazonal no backend. |
-| BUG-03 | **BUG** | Remover `-6h` fixo do eixo BRT no frontend/Firebase | 🔜 Próximo | Evita rótulo incorreto a partir de 01/11/2026. |
+| BUG-03 | **BUG** | Remover `-6h` fixo do eixo BRT no frontend/Firebase | ✅ Concluído (caminho local) | Evita rótulo incorreto a partir de 01/11/2026. Firebase/mobile segue como Fase 7. |
 | BUG-04 | **BUG** | Eliminar NWE não causal e divergência browser/backend | 🔜 Próximo | Impede que barras futuras alterem sinais históricos. |
 | MEL-01 | **MELHORIA** | NWE/VWAP/ATR causal como fonte única no backend | 🔜 Próximo | Garante o mesmo número no replay, API, Firebase e UI. |
 | MEL-02 | **MELHORIA** | Bootstrap idempotente das migrações do banco | ⏳ Planejado | Permite criar e atualizar o schema tático com segurança. |
@@ -45,7 +45,7 @@ como `AGUARDANDO_PULLBACK`, `ARMADO`, `CONFIRMADO` e `NAO_OPERAR` — sem execut
 | NF-02 | **NOVA FUNCIONALIDADE** | Modelo micro de 15 minutos com walk-forward | ⏳ Planejado | Adiciona confirmação de curto prazo ao contexto macro. |
 | NF-03 | **NOVA FUNCIONALIDADE** | Máquina de estados e eventos táticos | ⏳ Planejado | Traduz probabilidades em estados compreensíveis. |
 | NF-04 | **NOVA FUNCIONALIDADE** | API, Firebase e UI Tactical por feature flag | ⏳ Planejado | Leva o sinal validado ao operador sem ativação prematura. |
-| VAL-01 | **VALIDAÇÃO** | Recalcular métricas de WIN/WDO após BUG-01 | ⚠️ Pendente | Os baselines históricos anteriores estão inflados. |
+| VAL-01 | **VALIDAÇÃO** | Recalcular métricas de WIN/WDO após BUG-01 | ✅ Concluído (§3.6/§3.7) | Contaminação real (7–17 pp); macro não agrega valor tático em h=3/h=6. |
 | VAL-02 | **VALIDAÇÃO** | Medir fuso Axi e conferir modelo macro do WDO | ⚠️ Pendente | Decide se o piloto pode avançar de WIN para WDO. |
 | VAL-03 | **VALIDAÇÃO** | Replay/live final no Windows com MT5 | ⚠️ Gate final | Linux não valida coleta nem comportamento live dos terminais. |
 
@@ -293,12 +293,16 @@ modelo: `RidgeClassifier` não emite probabilidades nativamente.
 **Emenda.** Calibração medida sobre **todas** as previsões OOS bar-a-bar; as 100 confirmações
 ficam só para o gate econômico; nomear estimador/solver/método de calibração e o baseline.
 
-#### D4 — Skew treino/serviço: calibrador e engine ancoram o fator em pontos diferentes · **SOLO** (deep) · ALTO
-Para alvos B3, o calibrador recorta os fatores globais em 09:00–18:00 **EEST**
-(`calibrate_universal.py:56-67`), enquanto a engine ancora o fator na **00:00** da janela
-(`engine.py:566-570`). Pesos e σ são ajustados sobre uma variável e aplicados sobre outra.
-Atinge **exclusivamente WIN$N e WDO$N** — os dois ativos do piloto.
-⚠️ **SOLO — não verifiquei.** Checar antes de agir.
+#### D4 — Skew treino/serviço: calibrador e engine ancoram o fator em pontos diferentes · **CONFIRMADO E CORRIGIDO** · era ALTO
+Para alvos B3, o calibrador recortava os fatores globais em 09:00–18:00 **EEST**
+(`calibrate_universal.py:56-67` na versão antiga), enquanto a engine ancorava o fator na
+**00:00** da janela (`engine.py:566-570`). Pesos e σ eram ajustados sobre uma variável e
+aplicados sobre outra. Atingia **exclusivamente WIN$N e WDO$N** — os dois ativos do piloto.
+✅ **Corrigido no commit `fd6ec34`** — `load_daily_returns` do calibrador agora delega a
+`serving_daily_returns` em `backend/irai/market_geometry.py`, o mesmo módulo que a engine
+usa (`align_market_bars`/`return_from_open`), fechando o skew. **Verificado**: `fd6ec34`
+precede `bcab7a1`/`03cc4ce`/`b93cbfe`/`4684797` na história — os Gates 2/3/3b e o
+walk-forward já rodaram com a geometria unificada, não estão contaminados por este item.
 
 #### D3 — A Frente 1 não é executável no Linux: o banco local está vazio · **CONFIRMADO** · ALTO
 `data/irai.db` local tem **0 bytes / 0 tabelas** (está no `.gitignore`). Paridade, ghost, gap,
@@ -403,6 +407,64 @@ Não replaneje a Frente 3 ainda. Condicione-a a três medições, nesta ordem:
 3. **IC (Spearman) e análise de decis** de `(P_up−50)`, `ΔP_up(k)` e da divergência contra o
    retorno forward, com IC clusterizado por sessão; e um **modelo aninhado** (momentum
    próprio vs. + features de P_up). Se ΔAUC ≈ 0, **aí** o macro sai do plano.
+
+### 3.7 VAL-01 (item 3) — walk-forward ancorado, veredito final · **MEDIDO E CONCLUÍDO**
+(`scripts/run_walkforward_macro.sh`, `scripts/measure_tactical_gate3.py`,
+`scripts/aggregate_walkforward_macro.py`)
+
+O Gate 3b (`b93cbfe`) tinha só 49 sessões OOS — sem poder estatístico para detectar
+ΔAUC=+0,02 a 80% (são precisas ~690 sessões em h=3). Cestas incumbentes nunca chegariam lá
+(o `iSharesCurrencyBond+` do WDO só existe desde 2025-05-27). A saída foi uma cesta de
+história longa (só fatores com ≥1000 sessões, sem iShares/USDCAD/USDCHF) com 8 folds
+ancorados (treino cresce, OOS avança), acumulando o modelo aninhado (momentum próprio vs. +
+features de P_up) via cross-fit.
+
+Uma primeira rodada tinha um bug real: `candidate_sessions()` exigia fechamento às 17:55,
+mas grandes trechos de `WIN$N` fecham às 17:50 entre 2021-2023 — sessões completas eram
+descartadas e as janelas de cada fold chegavam mutiladas ao Gate 3b (ex.: o fold de
+2023-10-25 usava `2022-01-24..2023-03-10` em vez de `2023-05-08..2023-10-25`). Corrigido;
+151 testes de regressão cobrindo a seleção de sessões, incluindo o caso 17:50 vs. 17:55.
+**Verificado: `03cc4ce` (Gate 2) não passa por esse código, e as sessões do Gate 3b
+(`b93cbfe`) coincidem exatamente entre a lógica antiga e a corrigida — nenhum resultado já
+commitado foi contaminado por este bug.**
+
+**Resultado final**, bootstrap pareado por sessão sobre o OOS acumulado dos 8 folds
+(2000 draws), 673 sessões comuns a WDO$N e 674 a WIN$N — pela primeira vez perto do poder
+estatístico necessário:
+
+| Alvo | Braço | h | ΔAUC | IC95% |
+|---|---|---:|---:|---|
+| WDO$N | v1 | 3 | -0,0026 | [-0,0103; +0,0044] |
+| WDO$N | v2 | 3 | -0,0023 | [-0,0102; +0,0058] |
+| WIN$N | v1 | 3 | +0,0067 | [-0,0016; +0,0157] |
+| WIN$N | v2 | 3 | +0,0057 | [-0,0029; +0,0146] |
+| WDO$N | v1 | 6 | -0,0101 | [-0,0225; +0,0016] |
+| WDO$N | v2 | 6 | -0,0072 | [-0,0196; +0,0058] |
+| WIN$N | v1 | 6 | -0,0123 | [-0,0245; +0,0009] |
+| WIN$N | v2 | 6 | -0,0115 | [-0,0239; +0,0006] |
+| WDO$N | v1 | 20 | +0,0012 | [-0,0208; +0,0229] |
+| WDO$N | v2 | 20 | +0,0026 | [-0,0186; +0,0238] |
+| WIN$N | v1 | 20 | -0,0033 | [-0,0273; +0,0202] |
+| WIN$N | v2 | 20 | -0,0038 | [-0,0292; +0,0200] |
+
+**Veredito: o macro não agrega valor tático útil em h=3/h=6 nesta cesta.** Todos os IC95%
+incluem zero e, mais importante, o teto superior fica abaixo do mínimo operacional
+pré-fixado de ΔAUC=+0,02 em praticamente todos os braços/horizontes — o único ponto
+positivo (WIN$N v1 h=3, +0,0067) fica longe do limiar. **O item 3 do gate acima está
+satisfeito: o macro sai do plano como fonte de sinal tático de médio prazo (h=3/h=6).**
+h=20 continua estruturalmente inconclusivo (o IC ainda permite ~+0,02, e está fora do
+horizonte decisório tático de qualquer forma — precisaria de ~22 anos de histórico para
+ter poder).
+
+**Implicação para a Etapa 3:** a Frente 3 (Tactical Layer, modelo micro de 15 minutos) não
+deve tratar o macro `P_up` como *feature* de médio prazo com edge preditivo próprio.
+Continua fazendo sentido como **contexto/filtro de regime** (ex.: gating de operar/não
+operar), não como sinal direcional aditivo — essa distinção deve entrar explicitamente no
+desenho do NF-02/NF-03 quando essa etapa começar.
+
+Artefato completo: `aggregate.json` (8 folds, 673/674 sessões, 2000 draws) —
+implementação: `codex` (worktree isolada, sem gravação em produção,
+`persist_state=False`).
 
 ---
 

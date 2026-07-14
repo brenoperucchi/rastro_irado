@@ -177,6 +177,27 @@ def temporal_crossfit_slices(dates: Iterable[str], n_splits: int = 4):
     return result
 
 
+def select_training_dates(
+    dates: Iterable[str], *, cutoff: str, train_sessions: int,
+    min_history_date: str | None = None,
+) -> list[str]:
+    """Seleciona exatamente as N últimas sessões elegíveis, em ordem temporal."""
+    if train_sessions <= 0:
+        raise ValueError("train_sessions deve ser positivo")
+    eligible = sorted({
+        value for value in dates
+        if value <= cutoff and (min_history_date is None or value > min_history_date)
+    })
+    selected = eligible[-train_sessions:]
+    if len(selected) != train_sessions:
+        boundary = f" após {min_history_date}" if min_history_date else ""
+        raise RuntimeError(
+            f"janela de treino incompleta: solicitadas {train_sessions} sessões <= {cutoff}"
+            f"{boundary}, disponíveis {len(selected)}"
+        )
+    return selected
+
+
 def multinomial_label(
     forward_return: float, *, close: float, atr14_points: float, cost_points: float
 ) -> int:
@@ -429,6 +450,7 @@ def replay_bars(db_path, target, dates, initial_states, calibration, *, version=
 def crossfit_replay_bars(
     db_path, target, training_dates, initial_states, final_calibration, *,
     versions=("v1", "v2"), n_splits=4, holdout_sessions=20,
+    min_history_date=None,
 ):
     """Gera macro de treino com parâmetros calibrados só antes de cada fold."""
     conn = readonly_connection(db_path)
@@ -438,9 +460,25 @@ def crossfit_replay_bars(
         conn.close()
     by_version = {version: {} for version in versions}
     metadata = []
-    for fold_index, (fold_cutoff, fold_dates) in enumerate(
-        temporal_crossfit_slices(training_dates, n_splits=n_splits), start=1
-    ):
+    folds = temporal_crossfit_slices(training_dates, n_splits=n_splits)
+    for fold_index, (fold_cutoff, fold_dates) in enumerate(folds, start=1):
+        if min_history_date is not None and fold_cutoff < min_history_date:
+            raise RuntimeError(
+                f"{target}: fold {fold_index} tem cutoff {fold_cutoff}, anterior a "
+                f"--min-history-date {min_history_date}"
+            )
+        unavailable = []
+        for factor in final_calibration["factors"]:
+            series = daily.get(factor)
+            available_dates = [] if series is None else [str(value)[:10] for value in series.index]
+            if not any(value <= fold_cutoff for value in available_dates):
+                first = min(available_dates) if available_dates else "sem dados"
+                unavailable.append(f"{factor} (início={first})")
+        if unavailable:
+            raise RuntimeError(
+                f"{target}: fold {fold_index} cutoff {fold_cutoff} sem histórico dos fatores: "
+                f"{', '.join(unavailable)}"
+            )
         captured = io.StringIO()
         with redirect_stdout(captured):
             fold_calibration = calibrator.calibrate_target(
@@ -630,6 +668,11 @@ def hourly_incremental_delta(
 ):
     """P_up residualizado contra retorno-so-far; tudo ajustado pré-janela."""
     training, evaluation = list(training), list(evaluation)
+    if not training or not evaluation:
+        return (
+            float("nan"), float("nan"),
+            bootstrap_auc_delta([], iterations=iterations, seed=seed),
+        )
     train_return = np.asarray([
         bar.close / float(bar.open_price) - 1.0 for bar in training
     ]).reshape(-1, 1)
@@ -776,7 +819,9 @@ def _legacy_main() -> int:
         if not calibration:
             raise ValueError(f"artefato sem calibração para {target}")
         candidates = candidate_sessions(args.db, target, limit=10_000)
-        training_dates = [date for date in candidates.dates if date <= args.cutoff][-args.train_sessions:]
+        training_dates = select_training_dates(
+            candidates.dates, cutoff=args.cutoff, train_sessions=args.train_sessions
+        )
         oos_dates = select_evaluation_dates(
             candidates.dates, cutoff=args.cutoff,
             eval_start=args.eval_start, eval_end=args.eval_end,
@@ -964,6 +1009,10 @@ def parse_args():
     parser.add_argument("--train-sessions", type=int, default=120)
     parser.add_argument("--crossfit-folds", type=int, default=4)
     parser.add_argument(
+        "--min-history-date", default=None, metavar="YYYY-MM-DD",
+        help="Não permite treino/folds com cutoff anterior a esta data.",
+    )
+    parser.add_argument(
         "--crossfit-holdout", type=int, default=10,
         help="Holdout diagnóstico dentro de cada calibração pré-fold (default: 10).",
     )
@@ -976,6 +1025,13 @@ def parse_args():
         parser.error("--eval-start deve ser anterior ou igual a --eval-end")
     if args.eval_start <= args.cutoff:
         parser.error("--eval-start deve ser posterior ao --cutoff")
+    if args.min_history_date is not None:
+        try:
+            datetime.strptime(args.min_history_date, "%Y-%m-%d")
+        except ValueError:
+            parser.error("--min-history-date deve usar YYYY-MM-DD")
+        if args.min_history_date >= args.cutoff:
+            parser.error("--min-history-date deve ser anterior ao --cutoff")
     return args
 
 
@@ -1011,6 +1067,7 @@ def main() -> int:
     initial_states = load_initial_states(args.db)
     versions = versions_to_replay(args.version)
     central, hourly, contract, power_rows, summaries, crossfit_rows = [], [], [], [], [], []
+    pooled_prediction_rows = []
 
     print(f"Gate 3b — {args.window_name}: macro incremental sobre preço próprio.")
     print(f"Treino <= {args.cutoff}; OOS {args.eval_start}..{args.eval_end}; braços={','.join(versions)}.")
@@ -1029,9 +1086,10 @@ def main() -> int:
         if not calibration:
             raise ValueError(f"artefatos sem calibração para {target}")
         candidates = candidate_sessions(args.db, target, limit=10_000)
-        training_dates = [date for date in candidates.dates if date <= args.cutoff][
-            -args.train_sessions:
-        ]
+        training_dates = select_training_dates(
+            candidates.dates, cutoff=args.cutoff, train_sessions=args.train_sessions,
+            min_history_date=args.min_history_date,
+        )
         evaluation_dates = select_evaluation_dates(
             candidates.dates, cutoff=args.cutoff,
             eval_start=args.eval_start, eval_end=args.eval_end,
@@ -1043,6 +1101,7 @@ def main() -> int:
             args.db, target, training_dates, initial_states, calibration,
             versions=versions, n_splits=args.crossfit_folds,
             holdout_sessions=args.crossfit_holdout,
+            min_history_date=args.min_history_date,
         )
         evaluation_by_arm = {}
         for version in versions:
@@ -1055,6 +1114,7 @@ def main() -> int:
 
         summaries.append({
             "target": target, "train_sessions": len(training_dates),
+            "training_start": min(training_dates), "training_end": max(training_dates),
             "evaluation_sessions": len(evaluation_dates),
             "evaluation_start": min(evaluation_dates), "evaluation_end": max(evaluation_dates),
             "calibration_sessions": calibration["n_sessions"],
@@ -1118,6 +1178,16 @@ def main() -> int:
                         **_estimate_dict(delta),
                     }
                     central.append(result)
+                    if scope == "OPEN_20":
+                        pooled_prediction_rows.extend([
+                            [
+                                target, version, horizon, scope, row.session_id,
+                                row.bar_index, bool(row.actual_up), float(bp), float(tp),
+                            ]
+                            for row, tp, bp in zip(
+                                scoped_eval, treatment_probability, baseline_probability
+                            )
+                        ])
                     if version == "v1" and scope == "OPEN_20":
                         power_rows.append({
                             "target": target, "horizon": horizon,
@@ -1218,7 +1288,13 @@ def main() -> int:
                 "eval_start": args.eval_start, "eval_end": args.eval_end,
                 "central": central, "hourly_residualized": hourly,
                 "multinomial_contract": contract, "power": power_rows,
-                "sessions": summaries,
+                "sessions": summaries, "crossfit": crossfit_rows,
+                "pooled_prediction_fields": [
+                    "target", "arm", "horizon", "scope", "session_id",
+                    "bar_index", "actual_up", "baseline_probability",
+                    "treatment_probability",
+                ],
+                "pooled_predictions": pooled_prediction_rows,
             }, output_file, indent=2, sort_keys=True)
         print(f"Resultados JSON: {args.output_json}")
     return 0
