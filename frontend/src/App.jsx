@@ -385,12 +385,28 @@ const padSeriesToFullDay = (series, isB3 = false, brtOffsetH = 6) => {
   return padded;
 };
 
+// URL <-> estado de navegação: ?target=WIN$N&date=2026-07-15
+// Sem date -> LIVE. Sem target -> overview. Sem router (projeto não usa
+// react-router-dom); só URLSearchParams + history, lido uma vez no mount e
+// sincronizado por um efeito depois (ver useEffect de sync mais abaixo).
+function readUrlState() {
+  const params = new URLSearchParams(window.location.search)
+  const target = params.get('target')
+  const date = params.get('date')
+  return {
+    page: target ? 'detail' : 'overview',
+    selectedTarget: target || 'WIN$N',
+    selectedDate: date || null,
+    liveMode: !date,
+  }
+}
+
 export default function App() {
-  const [page, setPage] = useState('overview')
+  const [page, setPage] = useState(() => readUrlState().page)
   const [dates, setDates] = useState([])
-  const [selectedDate, setSelectedDate] = useState(null)
-  const [liveMode, setLiveMode] = useState(true) // Start in LIVE mode
-  const [selectedTarget, setSelectedTarget] = useState('WIN$N')
+  const [selectedDate, setSelectedDate] = useState(() => readUrlState().selectedDate)
+  const [liveMode, setLiveMode] = useState(() => readUrlState().liveMode)
+  const [selectedTarget, setSelectedTarget] = useState(() => readUrlState().selectedTarget)
   const [targetsMeta, setTargetsMeta] = useState([]) // From /api/irai/targets
   const [seriesInfo, setSeriesInfo] = useState({}) // display_name, icon from series response
   const [gex, setGex] = useState(null)       // níveis de gamma walls (gex_worker, EOD D-1)
@@ -402,9 +418,46 @@ export default function App() {
   const [error, setError] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [rastroView, setRastroView] = useState('both') // 'v1', 'v2', 'both'
-  
+
   // The effective date: LIVE = today (from backend), or manually selected
   const effectiveDate = liveMode ? (dates.length > 0 ? dates[0] : selectedDate) : selectedDate
+
+  // Espelha page/selectedTarget/selectedDate/liveMode na URL. pushState só na
+  // transição overview<->detail (dá um "voltar" útil no navegador); demais
+  // mudanças (trocar ativo, trocar data) usam replaceState pra não empilhar
+  // uma entrada de histórico por swipe/seleção.
+  const prevPageRef = useRef(page)
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (page === 'detail') {
+      params.set('target', selectedTarget)
+      if (!liveMode && selectedDate) params.set('date', selectedDate)
+    }
+    const qs = params.toString()
+    const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+    const currentUrl = window.location.pathname + window.location.search
+    if (newUrl !== currentUrl) {
+      if (page !== prevPageRef.current) {
+        window.history.pushState(null, '', newUrl)
+      } else {
+        window.history.replaceState(null, '', newUrl)
+      }
+    }
+    prevPageRef.current = page
+  }, [page, selectedTarget, selectedDate, liveMode])
+
+  // Botão voltar/avançar do navegador -> reaplica o estado lido da URL.
+  useEffect(() => {
+    function onPopState() {
+      const s = readUrlState()
+      setPage(s.page)
+      setSelectedTarget(s.selectedTarget)
+      setLiveMode(s.liveMode)
+      if (s.selectedDate) setSelectedDate(s.selectedDate)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   // Swipe Handlers
   const handleNextTarget = useCallback(() => {
