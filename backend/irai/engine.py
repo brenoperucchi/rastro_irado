@@ -25,6 +25,7 @@ from backend.irai.market_geometry import (
     align_market_bars,
     return_from_open,
 )
+from backend.irai.nwe import compute_nwe_series, NWE_LOOKBACK
 from backend.irai.zscore import (
     DEFAULT_SIGMA, normalized_zscore,
     select_active_pair, pairwise_residual, pair_zscore, pair_signal,
@@ -101,6 +102,26 @@ class IRAISnapshot:
     pair_venda: Optional[float] = None    # transição -> "sell"
     z_compra_val: Optional[float] = None  # borda de subida da divergência altista
     z_venda_val: Optional[float] = None   # borda de subida da divergência baixista
+
+    # ── NWE (Nadaraya-Watson Envelope) — fonte causal no backend ──────────
+    # Preenchidos por backend/irai/nwe.compute_nwe_series() após a passagem
+    # principal. Espaço de preço absoluto + normalizado (% desde win_open).
+    # nwe_slope_price (NÃO "nwe_slope": ver A2 do plano) = center[t]-center[t-1].
+    nwe_center_price: Optional[float] = None
+    nwe_upper_price: Optional[float] = None
+    nwe_lower_price: Optional[float] = None
+    nwe_center: Optional[float] = None
+    nwe_upper: Optional[float] = None
+    nwe_lower: Optional[float] = None
+    nwe_slope_price: float = 0.0
+    nwe_direction: str = "up"             # "up" | "down" (causal, sem lookahead)
+    nwe_available: bool = False
+    atr_14: Optional[float] = None
+    atr_available: bool = False
+    session_vwap: Optional[float] = None
+    vwap_available: bool = False
+    distance_to_nwe_atr: Optional[float] = None
+    distance_to_vwap_atr: Optional[float] = None
 
 
 def sigmoid(x: float) -> float:
@@ -426,7 +447,7 @@ class IRAIEngine:
         all_symbols = list(set([data_target] + db_factors))
         placeholders = ",".join(["?"] * len(all_symbols))
         query = f"""
-            SELECT symbol, source, timestamp_utc, open, high, low, close, real_volume, delta
+            SELECT symbol, source, timestamp_utc, open, high, low, close, volume, real_volume, delta
             FROM market_bars
             WHERE timeframe = 'M5'
               AND symbol IN ({placeholders})
@@ -642,9 +663,23 @@ class IRAIEngine:
             WHERE symbol = ? AND timeframe = 'M5' AND timestamp_utc < ?
             ORDER BY timestamp_utc DESC LIMIT 1
         """, (data_target, f"{session_date}T00:00:00Z")).fetchone()
+        # Warm-up do kernel NWE: os últimos NWE_LOOKBACK closes ANTERIORES à
+        # sessão. Mesma fonte/limite que /api/irai/series usa hoje (main.py) para
+        # dar contexto ao kernel; a engine precisa carregar aqui para manter
+        # paridade com o cálculo atual do frontend. São só preços — entram como
+        # contexto, nunca como observação posterior ao timestamp calculado.
+        nwe_history_rows = conn_prev.execute("""
+            SELECT close FROM market_bars
+            WHERE symbol = ? AND timeframe = 'M5' AND timestamp_utc < ?
+            ORDER BY timestamp_utc DESC LIMIT ?
+        """, (data_target, f"{session_date}T00:00:00Z", NWE_LOOKBACK)).fetchall()
         conn_prev.close()
+        nwe_history_closes = [float(r["close"]) for r in reversed(nwe_history_rows)]
         pre_market_close = float(prev_close_row["close"]) if prev_close_row else opens.get(data_target, 0)
         pre_market_open = pre_market_close  # Open = last known close for ghost bars
+
+        # Barras cruas (eixo já alinhado) para o módulo NWE, 1:1 com snapshots.
+        nwe_bars: list[dict] = []
 
         for bar_idx, ts in enumerate(all_timestamps):
             while target_cursor < len(target_bars) - 1 and target_bars[target_cursor + 1]["timestamp"] <= ts:
@@ -777,6 +812,18 @@ class IRAIEngine:
             snap.timestamp = ts.isoformat()
             snap.is_ghost = is_ghost_bar
 
+            # Barra crua p/ o NWE (mesmo eixo já alinhado). Ghost/pré-mercado não
+            # têm OHLC/volume reais — passam None e ficam de fora do kernel/ATR/VWAP.
+            nwe_bars.append({
+                "close": float(row["close"]),
+                "high": float(row["high"]) if (not is_ghost_bar and row.get("high") is not None) else None,
+                "low": float(row["low"]) if (not is_ghost_bar and row.get("low") is not None) else None,
+                "volume": float(row["volume"]) if (not is_ghost_bar and row.get("volume") is not None) else None,
+                "real_volume": float(row.get("real_volume") or 0) if not is_ghost_bar else None,
+                "is_ghost": is_ghost_bar,
+                "win_open": pre_market_open if is_pre_market else opens[data_target],
+            })
+
             if pending_pair is not None:
                 snap.pair_z, snap.pair_factor, snap.pair_beta, snap.pair_signal = pending_pair
 
@@ -841,7 +888,17 @@ class IRAIEngine:
                 prev_div_dir = div_dir
 
             snapshots.append(snap)
-            
+
+        # ── Enriquecimento NWE (fonte causal única) ───────────────────────
+        # Passagem pura, determinística, sobre o MESMO eixo temporal já alinhado
+        # (nwe_bars segue all_timestamps 1:1 com snapshots). Ghost bars não
+        # entram no kernel; o warm-up dá contexto às primeiras barras.
+        if snapshots:
+            nwe_results = compute_nwe_series(nwe_bars, nwe_history_closes)
+            for snap, nres in zip(snapshots, nwe_results):
+                for key, value in nres.items():
+                    setattr(snap, key, value)
+
         # Salvar o último estado do Kalman no banco
         if snapshots and version == "v2" and kf is not None and persist_state and is_live_session:
             last_ts = snapshots[-1].timestamp
