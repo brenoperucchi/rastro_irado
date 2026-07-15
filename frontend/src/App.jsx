@@ -525,18 +525,30 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (FIREBASE_URL) {
-      const url = FIREBASE_URL.endsWith('.json') ? FIREBASE_URL : `${FIREBASE_URL.replace(/\/$/, '')}/db.json`
-      fetch(url)
-        .then(r => r.json())
-        .then(data => setTargetsMeta((data?.targets?.targets || []).filter(t => t.calibrated)))
-        .catch(() => {})
-    } else {
-      fetch(`${API}/api/irai/targets`)
-        .then(r => r.json())
-        .then(data => setTargetsMeta((data.targets || []).filter(t => t.calibrated)))
-        .catch(() => {})
+    // Poll (não só mount): os thresholds canônicos (pair_threshold,
+    // price_diverge_threshold) vêm daqui. Se o backend recalibrar e
+    // reiniciar enquanto a aba já está aberta, um fetch só-no-mount deixaria
+    // as linhas desenhadas nos charts presas no valor antigo indefinidamente
+    // — mesmo cadência de `loadDates` acima (60s), o suficiente pra um valor
+    // que só muda por recalibração manual (achado de revisão /codex-r do
+    // commit de thresholds canônicos).
+    function loadTargets() {
+      if (FIREBASE_URL) {
+        const url = FIREBASE_URL.endsWith('.json') ? FIREBASE_URL : `${FIREBASE_URL.replace(/\/$/, '')}/db.json`
+        fetch(url)
+          .then(r => r.json())
+          .then(data => setTargetsMeta((data?.targets?.targets || []).filter(t => t.calibrated)))
+          .catch(() => {})
+      } else {
+        fetch(`${API}/api/irai/targets`)
+          .then(r => r.json())
+          .then(data => setTargetsMeta((data.targets || []).filter(t => t.calibrated)))
+          .catch(() => {})
+      }
     }
+    loadTargets()
+    const poll = setInterval(loadTargets, 60_000)
+    return () => clearInterval(poll)
   }, [])
 
   // Fetch series data (silent = no loading spinner on auto-refresh)
@@ -1087,9 +1099,15 @@ export default function App() {
                       color: now.price_diverge_dir === 'buy' ? '#4ADE80' : now.price_diverge_dir === 'sell' ? '#F87171' : '#64748B',
                     }}>
                       {now.price_diverge_dir === 'buy' ? '🟢 COMPRA' : now.price_diverge_dir === 'sell' ? '🔴 VENDA' : '✓ ALINHADO'}
-                      <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
-                        z={now.price_diverge_z >= 0 ? '+' : ''}{now.price_diverge_z?.toFixed(2)}
-                      </span>
+                      {/* != null (não >=0, que coage null->0 e mostraria "z=+" sem
+                          número — achado de revisão /codex-r): price_diverge_z fica
+                          null em modo preview/pré-mercado (engine.py retorna antes
+                          do loop principal), não é "zero calculado". */}
+                      {now.price_diverge_z != null && (
+                        <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
+                          z={now.price_diverge_z >= 0 ? '+' : ''}{now.price_diverge_z.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <TVPriceDivergeZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} threshold={priceDivergeThreshold} />
