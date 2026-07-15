@@ -11,7 +11,6 @@ Endpoints:
 """
 
 import os
-import math
 import sys
 import asyncio
 import json
@@ -25,8 +24,12 @@ from fastapi.responses import JSONResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.db import get_connection, migrate_to_head, DB_PATH
-from backend.irai.engine import IRAIEngine, FACTOR_LABELS, TARGET
+from backend.irai.engine import (
+    IRAIEngine, FACTOR_LABELS, TARGET,
+    DEFAULT_DIV_THRESHOLD, DEFAULT_P_UP_GATE_HI, DEFAULT_P_UP_GATE_LO,
+)
 from backend.irai.timezones import brt_to_tickmill_offset_hours
+from backend.irai.zscore import PAIR_THRESHOLD
 
 # ── Engine singleton ──────────────────────────────────────
 engine: IRAIEngine = None
@@ -196,6 +199,19 @@ async def health():
     }
 
 
+def _target_thresholds(slug: str) -> dict:
+    """Thresholds efetivos (config + fallback) usados pelo engine pra este
+    target — mesma leitura de divergence_config que compute_from_db faz
+    (backend/irai/engine.py), pra nunca divergir do que o sinal usa de verdade."""
+    div_cfg = engine.models.get(slug, {}).get("divergence_config", {})
+    return {
+        "pair_threshold": float(div_cfg.get("pair_threshold", PAIR_THRESHOLD)),
+        "price_diverge_threshold": float(div_cfg.get("threshold", DEFAULT_DIV_THRESHOLD)),
+        "p_up_gate_hi": float(div_cfg.get("p_up_gate_hi", DEFAULT_P_UP_GATE_HI)),
+        "p_up_gate_lo": float(div_cfg.get("p_up_gate_lo", DEFAULT_P_UP_GATE_LO)),
+    }
+
+
 @app.get("/api/irai/targets")
 async def irai_targets():
     """Lista todos os targets disponíveis com status."""
@@ -210,6 +226,11 @@ async def irai_targets():
                 "r_squared": t.get("r_squared"),
                 "calibrated": t.get("accuracy") is not None,
                 "session_hours": f"{t['session_start_h']:02d}h-{t['session_end_h']:02d}h",
+                # Thresholds canônicos deste target (divergence_config, com os
+                # MESMOS defaults que o engine usa pra calcular pair_signal/
+                # price_diverges — backend/irai/engine.py). O frontend deve
+                # desenhar/decidir a partir daqui, não hardcodar ±2 ou 55/45.
+                **_target_thresholds(t["slug"]),
             }
             for t in engine.registered_targets
         ]
@@ -257,28 +278,6 @@ async def irai_overview(
             sparkline = [round(s.p_up, 1) for s in primary[-24:]] if primary else []
 
             flow_confirms = getattr(last, "flow_confirms", None)
-            
-            # Price diverges
-            price_diverges = False
-            price_diverge_z = None
-            try:
-                slug = t["slug"]
-                m = engine.models.get(slug, {})
-                div_cfg = m.get("divergence_config", {"sigma": 0.005, "threshold": 0.5})
-                target_div_sigma = div_cfg.get("sigma", 0.005)
-                target_div_threshold = div_cfg.get("threshold", 0.5)
-                
-                if target_div_sigma > 0 and last.t_frac > 0:
-                    ret_frac = last.win_return / 100.0
-                    ret_z = ret_frac / (target_div_sigma * math.sqrt(last.t_frac))
-                    price_diverge_z = round(ret_z, 2)
-                    
-                    if last.p_up > 55 and ret_z < -target_div_threshold:
-                        price_diverges = True
-                    elif last.p_up < 45 and ret_z > target_div_threshold:
-                        price_diverges = True
-            except Exception:
-                pass
 
             res_obj = {
                 "target": t["target"],
@@ -289,8 +288,14 @@ async def irai_overview(
                 "bars": len(primary),
                 "accuracy": t.get("accuracy"),
                 "flow_confirms": flow_confirms,
-                "price_diverges": price_diverges,
-                "price_diverge_z": price_diverge_z,
+                # price_diverges/price_diverge_z/price_diverge_dir vêm direto do
+                # snapshot já calculado pelo engine (compute_from_db acima) — não
+                # recalcular aqui. Antes disto, este endpoint tinha uma 2ª cópia
+                # independente da mesma fórmula (thresholds canônicos: unifica com
+                # o que a engine já decide, elimina o risco de as duas divergirem).
+                "price_diverges": getattr(last, "price_diverges", False),
+                "price_diverge_z": getattr(last, "price_diverge_z", None),
+                "price_diverge_dir": getattr(last, "price_diverge_dir", None),
                 # NWE causal do último snapshot (já enriquecido pela engine).
                 # NÃO reintroduzir "nwe_slope" sem sufixo (ver engine.py:109).
                 "nwe_direction": getattr(last, "nwe_direction", None),
@@ -485,6 +490,7 @@ def _snap_to_dict(snap) -> dict:
         "flow_confirms": snap.flow_confirms,
         "price_diverges": snap.price_diverges,
         "price_diverge_z": snap.price_diverge_z,
+        "price_diverge_dir": getattr(snap, "price_diverge_dir", None),
         # Pair z-score (sinal pairwise; só populado no v2, senão defaults)
         "pair_z": getattr(snap, "pair_z", 0.0),
         "pair_factor": getattr(snap, "pair_factor", None),

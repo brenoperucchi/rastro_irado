@@ -8,12 +8,18 @@ import { createChart, LineSeries, LineStyle } from 'lightweight-charts'
 import { baseChartOptions, buildSeriesData } from './tvShared'
 
 const TVPriceDivergeZScoreChart = forwardRef(function TVPriceDivergeZScoreChart(
-  { history = [], effectiveDate, hideXAxis = true },
+  // threshold: price_diverge_threshold real do backend (divergence_config,
+  // via /api/irai/targets) — thresholds canônicos. Default 0.5 só como
+  // fallback antes do primeiro fetch, igual ao DEFAULT_DIV_THRESHOLD do
+  // backend (backend/irai/engine.py); nunca hardcoded ±2 (doc §7.1/7.2).
+  { history = [], effectiveDate, hideXAxis = true, threshold = 0.5 },
   ref,
 ) {
   const containerRef = useRef()
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
+  const sellLineRef = useRef(null)
+  const buyLineRef = useRef(null)
 
   useImperativeHandle(ref, () => ({
     getChart: () => chartRef.current,
@@ -32,8 +38,8 @@ const TVPriceDivergeZScoreChart = forwardRef(function TVPriceDivergeZScoreChart(
       crosshairMarkerVisible: true,
       autoscaleInfoProvider: () => ({ priceRange: { minValue: -4, maxValue: 4 } }),
     })
-    series.createPriceLine({ price: 2, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'venda' })
-    series.createPriceLine({ price: -2, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'compra' })
+    sellLineRef.current = series.createPriceLine({ price: threshold, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'venda' })
+    buyLineRef.current = series.createPriceLine({ price: -threshold, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'compra' })
     series.createPriceLine({ price: 0, color: '#475569', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
     seriesRef.current = series
 
@@ -41,6 +47,8 @@ const TVPriceDivergeZScoreChart = forwardRef(function TVPriceDivergeZScoreChart(
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      sellLineRef.current = null
+      buyLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -48,6 +56,12 @@ const TVPriceDivergeZScoreChart = forwardRef(function TVPriceDivergeZScoreChart(
   useEffect(() => {
     if (chartRef.current) chartRef.current.timeScale().applyOptions({ visible: !hideXAxis })
   }, [hideXAxis])
+
+  useEffect(() => {
+    if (!sellLineRef.current || !buyLineRef.current) return
+    sellLineRef.current.applyOptions({ price: threshold })
+    buyLineRef.current.applyOptions({ price: -threshold })
+  }, [threshold])
 
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current || !history.length) return

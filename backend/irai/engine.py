@@ -46,6 +46,18 @@ TARGET = "WIN$N"
 FACTOR_LABELS = {}  # carregado do DB
 BARS_PER_SESSION = 108
 
+# Thresholds canônicos da divergência preço-vs-modelo (flow_confirms e
+# price_diverges). Nomeados (em vez do literal 55/45 espalhado pelo código)
+# pra serem a MESMA fonte usada pelo cálculo (abaixo) e pelo que a API expõe
+# em /api/irai/targets (backend/api/main.py) — o frontend não deve mais
+# adivinhar esses valores (App.jsx e Overview.jsx tratavam o mesmo dado com
+# thresholds diferentes: 55 num arquivo, 60 — o do gauge geral — no outro).
+DEFAULT_P_UP_GATE_HI = 55.0
+DEFAULT_P_UP_GATE_LO = 45.0
+# Default de target_div_threshold (magnitude de |ret_z| pra considerar
+# divergência) quando divergence_config não tem a chave "threshold".
+DEFAULT_DIV_THRESHOLD = 0.5
+
 # X3 (tri-review): idade máxima (relógio de parede, no MESMO eixo que as
 # barras B3 já usam) que a ÚLTIMA barra do target pode ter antes de deixar
 # de ser tratada como "pode estar em formação" pro gate de markers. Quarta
@@ -130,6 +142,7 @@ class IRAISnapshot:
     flow_confirms: Optional[bool] = None  # True=confirma, False=diverge, None=neutro
     price_diverges: bool = False
     price_diverge_z: Optional[float] = None
+    price_diverge_dir: Optional[str] = None  # "buy" | "sell" | None — direção de price_diverges
     is_preview: bool = False  # True = preview pré-abertura (sem dados do target)
     johansen_p_value: float = 1.0
     is_cointegrated: bool = True
@@ -681,10 +694,12 @@ class IRAIEngine:
 
         factor_cursors = {f: 0 for f in active_factors}
 
-        div_cfg = cfg.get("divergence_config", {"sigma": 0.005, "threshold": 0.5})
+        div_cfg = cfg.get("divergence_config", {"sigma": 0.005, "threshold": DEFAULT_DIV_THRESHOLD})
         use_johansen = cfg.get("use_johansen", True)
         target_div_sigma = div_cfg.get("sigma", 0.005)
-        target_div_threshold = div_cfg.get("threshold", 0.5)
+        target_div_threshold = div_cfg.get("threshold", DEFAULT_DIV_THRESHOLD)
+        p_up_gate_hi = float(div_cfg.get("p_up_gate_hi", DEFAULT_P_UP_GATE_HI))
+        p_up_gate_lo = float(div_cfg.get("p_up_gate_lo", DEFAULT_P_UP_GATE_LO))
 
         # Pair z-score (params via divergence_config; ver backend/irai/zscore.py).
         # Só computado no v2 (precisa dos betas do Kalman). Buffer de resíduos
@@ -908,31 +923,35 @@ class IRAIEngine:
             else:
                 snap.cum_delta_norm = 0.0
 
-            if snap.p_up > 55 and cum_delta > 0:
+            if snap.p_up > p_up_gate_hi and cum_delta > 0:
                 snap.flow_confirms = True
-            elif snap.p_up < 45 and cum_delta < 0:
+            elif snap.p_up < p_up_gate_lo and cum_delta < 0:
                 snap.flow_confirms = True
-            elif snap.p_up > 55 and cum_delta < 0:
+            elif snap.p_up > p_up_gate_hi and cum_delta < 0:
                 snap.flow_confirms = False
-            elif snap.p_up < 45 and cum_delta > 0:
+            elif snap.p_up < p_up_gate_lo and cum_delta > 0:
                 snap.flow_confirms = False
             else:
                 snap.flow_confirms = None
 
             # Price Divergence. O bool `price_diverges` colapsa dois casos OPOSTOS
             # (modelo altista com preço atrasado vs. modelo baixista com preço
-            # adiantado), então guardamos a direção p/ poder emitir o marker certo.
+            # adiantado), então guardamos a direção p/ poder emitir o marker certo
+            # E persistimos em snap.price_diverge_dir — o frontend não deve mais
+            # re-derivar essa direção sozinho (App.jsx e Overview.jsx faziam isso
+            # cada um com um threshold diferente, 55 vs 60 — thresholds canônicos).
             div_dir = None
             if target_div_sigma > 0 and snap.t_frac > 0:
                 ret_frac = snap.win_return / 100.0
                 ret_z = ret_frac / (target_div_sigma * math.sqrt(snap.t_frac))
                 snap.price_diverge_z = round(ret_z, 2)
-                if snap.p_up > 55 and ret_z < -target_div_threshold:
+                if snap.p_up > p_up_gate_hi and ret_z < -target_div_threshold:
                     snap.price_diverges = True
                     div_dir = "buy"    # modelo compra, preço não acompanhou
-                elif snap.p_up < 45 and ret_z > target_div_threshold:
+                elif snap.p_up < p_up_gate_lo and ret_z > target_div_threshold:
                     snap.price_diverges = True
                     div_dir = "sell"   # modelo vende, preço não acompanhou
+            snap.price_diverge_dir = div_dir
 
             # ── EVENTOS discretos (markers) ──────────────────────────────
             # Só em barra REAL: um marker sobre barra sintética/forward-fill seria

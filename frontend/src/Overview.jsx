@@ -420,13 +420,16 @@ function AssetCard({ card, onClick }) {
             border: `1px solid ${(isNweDivergentBuy || isNweDivergentSell) ? (isNweDivergentBuy ? 'rgba(74,222,128,0.4)' : 'rgba(248,113,113,0.4)') : 'rgba(148,163,184,0.1)'}`
           }}>P</div>
 
-          {/* Z: Z-Score (Blink) */}
+          {/* Z: Z-Score (Blink). Cor vem de card.price_diverge_dir (thresholds
+              canônicos do backend) — antes usava isBuy (pUp>=60, o threshold do
+              gauge geral), divergindo do que App.jsx mostrava pro MESMO campo
+              price_diverges (que usava p_up>55, o threshold real do backend). */}
           <div title="Z-Score" className={card.price_diverges ? 'badge-blink' : ''} style={{
             width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 4, fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-            background: card.price_diverges ? (isBuy ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)') : 'rgba(148,163,184,0.05)',
-            color: card.price_diverges ? (isBuy ? '#4ADE80' : '#F87171') : '#475569',
-            border: `1px solid ${card.price_diverges ? (isBuy ? 'rgba(74,222,128,0.4)' : 'rgba(248,113,113,0.4)') : 'rgba(148,163,184,0.1)'}`
+            background: card.price_diverge_dir === 'buy' ? 'rgba(74,222,128,0.2)' : card.price_diverge_dir === 'sell' ? 'rgba(248,113,113,0.2)' : 'rgba(148,163,184,0.05)',
+            color: card.price_diverge_dir === 'buy' ? '#4ADE80' : card.price_diverge_dir === 'sell' ? '#F87171' : '#475569',
+            border: `1px solid ${card.price_diverge_dir === 'buy' ? 'rgba(74,222,128,0.4)' : card.price_diverge_dir === 'sell' ? 'rgba(248,113,113,0.4)' : 'rgba(148,163,184,0.1)'}`
           }}>Z</div>
 
           {/* E: Exaustão NWE (Blink) */}

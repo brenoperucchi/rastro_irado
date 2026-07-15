@@ -422,6 +422,15 @@ export default function App() {
   // The effective date: LIVE = today (from backend), or manually selected
   const effectiveDate = liveMode ? (dates.length > 0 ? dates[0] : selectedDate) : selectedDate
 
+  // Thresholds canônicos do target selecionado (divergence_config, via
+  // /api/irai/targets — ver backend/api/main.py::_target_thresholds). Os
+  // charts de z-score usam isto pra desenhar a linha que o sinal de verdade
+  // usa, em vez de ±2 hardcoded (doc de divergência §7.1/7.2). Fallback só
+  // pra antes do 1º fetch de targetsMeta completar.
+  const currentTargetMeta = targetsMeta.find(t => t.target === selectedTarget)
+  const pairThreshold = currentTargetMeta?.pair_threshold ?? 1.5
+  const priceDivergeThreshold = currentTargetMeta?.price_diverge_threshold ?? 0.5
+
   // Espelha page/selectedTarget/selectedDate/liveMode na URL. pushState só na
   // transição overview<->detail (dá um "voltar" útil no navegador); demais
   // mudanças (trocar ativo, trocar data) usam replaceState pra não empilhar
@@ -1059,7 +1068,7 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    <TVPairwiseZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
+                    <TVPairwiseZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} threshold={pairThreshold} />
                   </div>
                 )}
                 <div>
@@ -1072,17 +1081,20 @@ export default function App() {
                     </div>
                     <div style={{
                       fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-                      color: now.price_diverges ? (now.p_up > 55 ? '#4ADE80' : '#F87171') : '#64748B',
+                      /* Consome price_diverge_dir do backend (thresholds canônicos) —
+                         antes re-derivava a direção aqui via `p_up > 55`, um 2º
+                         literal do mesmo threshold que o engine já decide. */
+                      color: now.price_diverge_dir === 'buy' ? '#4ADE80' : now.price_diverge_dir === 'sell' ? '#F87171' : '#64748B',
                     }}>
-                      {now.price_diverges ? (now.p_up > 55 ? '🟢 COMPRA' : '🔴 VENDA') : '✓ ALINHADO'}
+                      {now.price_diverge_dir === 'buy' ? '🟢 COMPRA' : now.price_diverge_dir === 'sell' ? '🔴 VENDA' : '✓ ALINHADO'}
                       <span style={{ fontSize: 9, color: '#475569', marginLeft: 6, fontWeight: 400 }}>
                         z={now.price_diverge_z >= 0 ? '+' : ''}{now.price_diverge_z?.toFixed(2)}
                       </span>
                     </div>
                   </div>
-                  <TVPriceDivergeZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} />
+                  <TVPriceDivergeZScoreChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={false} threshold={priceDivergeThreshold} />
                 </div>
-                
+
                 {/* BOTTOM: Dynamic Weights (Kalman) */}
                 {now.factors && Object.keys(now.factors).length > 0 && (
                   <div>

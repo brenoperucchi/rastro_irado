@@ -11,12 +11,18 @@ import { createChart, LineSeries, LineStyle } from 'lightweight-charts'
 import { baseChartOptions, buildSeriesData } from './tvShared'
 
 const TVPairwiseZScoreChart = forwardRef(function TVPairwiseZScoreChart(
-  { history = [], effectiveDate, hideXAxis = true },
+  // threshold: pair_threshold real do backend (divergence_config, via
+  // /api/irai/targets) — thresholds canônicos. Default 1.5 só como fallback
+  // antes do primeiro fetch, igual ao PAIR_THRESHOLD do backend
+  // (backend/irai/zscore.py); nunca hardcoded ±2 (doc de divergência §7.1).
+  { history = [], effectiveDate, hideXAxis = true, threshold = 1.5 },
   ref,
 ) {
   const containerRef = useRef()
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
+  const sellLineRef = useRef(null)
+  const buyLineRef = useRef(null)
 
   useImperativeHandle(ref, () => ({
     getChart: () => chartRef.current,
@@ -24,7 +30,10 @@ const TVPairwiseZScoreChart = forwardRef(function TVPairwiseZScoreChart(
   }))
 
   // Cria o chart uma vez. hideXAxis inicial entra nas opções; mudanças depois
-  // são tratadas pelo efeito abaixo (por isso não está nas deps).
+  // são tratadas pelo efeito abaixo (por isso não está nas deps). O valor
+  // inicial das price lines usa o `threshold` da 1ª renderização; o efeito
+  // de threshold logo abaixo mantém elas corretas se o valor mudar depois
+  // (ex: troca de target com um pair_threshold calibrado diferente).
   useEffect(() => {
     if (!containerRef.current) return
     const chart = createChart(containerRef.current, baseChartOptions(hideXAxis))
@@ -38,8 +47,8 @@ const TVPairwiseZScoreChart = forwardRef(function TVPairwiseZScoreChart(
       // Escala travada em ±4σ para o zero ficar centrado e as bandas fixas.
       autoscaleInfoProvider: () => ({ priceRange: { minValue: -4, maxValue: 4 } }),
     })
-    series.createPriceLine({ price: 2, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'venda' })
-    series.createPriceLine({ price: -2, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'compra' })
+    sellLineRef.current = series.createPriceLine({ price: threshold, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'venda' })
+    buyLineRef.current = series.createPriceLine({ price: -threshold, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'compra' })
     series.createPriceLine({ price: 0, color: '#475569', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
     seriesRef.current = series
 
@@ -47,6 +56,8 @@ const TVPairwiseZScoreChart = forwardRef(function TVPairwiseZScoreChart(
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      sellLineRef.current = null
+      buyLineRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -54,6 +65,14 @@ const TVPairwiseZScoreChart = forwardRef(function TVPairwiseZScoreChart(
   useEffect(() => {
     if (chartRef.current) chartRef.current.timeScale().applyOptions({ visible: !hideXAxis })
   }, [hideXAxis])
+
+  // Mantém as price lines em sincronia se `threshold` mudar (ex: troca de
+  // target) sem recriar o chart inteiro.
+  useEffect(() => {
+    if (!sellLineRef.current || !buyLineRef.current) return
+    sellLineRef.current.applyOptions({ price: threshold })
+    buyLineRef.current.applyOptions({ price: -threshold })
+  }, [threshold])
 
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current || !history.length) return
