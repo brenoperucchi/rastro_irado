@@ -517,16 +517,73 @@ discordou num ponto específico:
 
 Implementação em `scripts/pit_calibration.py` (novo) + mudanças cirúrgicas em
 `scripts/measure_pair_signal_value.py` (`chronological_replay` expõe o engine subjacente;
-`run()` ganha `pit_schedule=`) — commit pendente. Revisado via `/codex-r` (job
-`relay-mrmxnu54-iqj8x5`) antes de rodar contra produção: veredito inicial "NO-GO" apontou 2
-problemas reais (arredondamento do sigma divergindo de `calc_sigmas.py`, e cold-restart do
+`run()` ganha `pit_schedule=`) — commit `002b614`. Revisado via `/codex-r` em 2 rodadas antes
+de rodar contra produção: a 1ª (job `relay-mrmxnu54-iqj8x5`) deu veredito "NO-GO", apontando
+2 problemas reais (arredondamento do sigma divergindo de `calc_sigmas.py`, e cold-restart do
 Kalman no instante em que a calibração point-in-time "liga" pela primeira vez) — ambos
 corrigidos: `div_sigma_as_of` agora arredonda a 4 casas (igual à produção); `apply_for_session`
 agora aplica a calibração do 1º cutoff disponível retroativamente às sessões de aquecimento
-(nunca medidas), eliminando a troca de cesta na fronteira.
+(nunca medidas), eliminando a troca de cesta na fronteira. A 2ª rodada (job
+`relay-mrmy8vbr-rh6fq8`) confirmou as correções — GO.
 
 O braço "retrospectivo" (calibração atual de produção, já medido em §11.3/11.4) continua
 disponível e não é substituído — o braço point-in-time roda em paralelo, como comparação.
+
+### 11.6 Resultado do braço point-in-time contra produção — 2026-07-16
+
+Os 3 scripts rodados com `--point-in-time --limit 2000` (JSONs: `nf01_pair_signal_pit.json`,
+`nf02_price_divergence_pit.json`, `nf03_intersection_pit.json`, salvos fora do repo). Janela
+efetivamente medida: 12 cutoffs trimestrais, 2022-12-30 a 2026-02-27 (~880 sessões
+mensuráveis, 369 sessões pré-1º-cutoff replayadas só pra aquecer o Kalman, excluídas).
+
+```text
+                    WIN$N (custo 10 pts)                       WDO$N (custo 1 pt)
+Item 1 (Pair)       3693 eventos/881 sessões — GATE OK          3833 eventos/880 sessões — GATE OK
+  retrospectivo:    h=3/6/10/20 "all" ***NEGATIVO                h=3/6/10/20 "all" ***NEGATIVO
+  point-in-time:    só h=10 ***NEGATIVO (buy e all) — os         h=3/6/10/20 "all" ***NEGATIVO —
+                    outros horizontes perdem significância       TOTALMENTE ROBUSTO, praticamente
+                    (mas o ponto estimado continua negativo      idêntico ao retrospectivo (só
+                    em todos) — C1-a inflava boa parte do        sell h=20 deixa de ser ***)
+                    resultado retrospectivo aqui
+
+Item 2 (Z)          119 eventos/83 sessões — GATE OK             120 eventos/82 sessões — GATE OK
+  retrospectivo:    nenhum horizonte significante                h=3/6/10 compra e "all" ***NEGATIVO
+  point-in-time:    nenhum horizonte significante (igual)        NENHUM horizonte significante — o
+                                                                  edge negativo retrospectivo NÃO
+                                                                  sobrevive à correção point-in-time
+
+Item 3 (Pair∩Z)     93 eventos/65 sessões — INCONCLUSIVO          97 eventos/66 sessões — INCONCLUSIVO
+  (janela mais curta reduz ainda mais a amostra já escassa da interseção — abaixo do gate de
+   100 em AMBOS os alvos; rotulado INCONCLUSIVO, não tratado como "sem edge")
+```
+
+Conclusão suportada pela medição point-in-time:
+
+> **WDO$N, Pair Signal isolado**: o edge negativo é ROBUSTO à correção de C1-a — praticamente
+> idêntico ao braço retrospectivo. Esta é a conclusão mais confiável que todo o backtest NF-01
+> produziu: seguir o marker `P COMPRA`/`P VENDA` em WDO$N perde dinheiro líquido de custo, e
+> isso não é artefato de calibração in-sample.
+>
+> **WDO$N, marker Z e interseção**: o quadro muda bastante. O edge negativo do marker Z
+> isolado (§11.2/11.4) NÃO sobrevive point-in-time — some completamente. Isso é evidência de
+> que aquele achado específico era, ao menos em parte, um artefato de C1-a (a cesta/pesos
+> contaminados faziam o marker Z parecer pior do que era).
+>
+> **WIN$N, Pair Signal isolado**: o edge negativo enfraquece bastante point-in-time (de "quase
+> todos os horizontes ***" pra "só h=10 ***"), mas não desaparece — o ponto estimado continua
+> negativo em todos os horizontes/direções. Consistente com C1-a inflando parte, mas não todo,
+> do resultado retrospectivo.
+>
+> **Interseção (item 3)**: sem conclusão possível point-in-time — amostra insuficiente em
+> ambos os alvos nesta janela mais curta.
+
+Isso demonstra, com evidência empírica direta (não só teórica), que a ressalva C1-a era real e
+não uniforme: contaminou fortemente o achado do marker Z em WDO$N e parcialmente o Pair Signal
+em WIN$N, mas o achado mais forte de todo o backtest — Pair Signal negativo em WDO$N —
+sobrevive intacto à correção. A recomendação prática do backtest NF-01 (itens 1-3) fica:
+**tratar o Pair Signal de WDO$N como validado negativamente** (não seguir), e os demais
+achados (WIN$N Pair, Z isolado, interseção) como **preliminares/inconclusivos**, precisando de
+mais dados ou de uma janela point-in-time mais longa antes de qualquer decisão.
 
 ## 12. Estado verdadeiro do projeto em 2026-07-14
 
