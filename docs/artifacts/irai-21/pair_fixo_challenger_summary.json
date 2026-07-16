@@ -1,0 +1,2411 @@
+{
+  "schema_version": 1,
+  "artifact": "challenger-pair-fixo-win-wdo",
+  "generated_at": "2026-07-16T15:15:43+00:00",
+  "git": {
+    "commit": "5b671007c1ea32598909f2a83fd42441a599429e",
+    "origin_main": "5b671007c1ea32598909f2a83fd42441a599429e",
+    "head_in_origin_main": true,
+    "dirty": true
+  },
+  "command": "python3 -X utf8 scripts/build_challenger_artifact.py --db data/irai.db --targets WIN$N WDO$N --limit 2000 --dynamic-summary docs/artifacts/irai-4/nf01_executable_pit_summary.json --output docs/artifacts/irai-21/pair_fixo_challenger.json",
+  "methodology": "docs/plans/2026-07-16-challenger-pair-fixo-win-wdo.md (congelada antes dos resultados)",
+  "parameters": {
+    "db": "data/irai.db",
+    "targets": [
+      "WIN$N",
+      "WDO$N"
+    ],
+    "limit": 2000,
+    "bootstrap": 10000,
+    "beta": "OLS rolling 20 sem intercepto",
+    "threshold": 1.5,
+    "independent_of_calibration": true
+  },
+  "reference": {
+    "path": "docs/artifacts/irai-4/nf01_executable_pit_summary.json",
+    "generated_at": "2026-07-16T12:46:47+00:00",
+    "git_commit": "8b9ac122b086cd079833885233103b50c3a4c0c8",
+    "point_in_time": true,
+    "note": "Pair dinâmico + baselines são point-in-time (~2022-12+); o challenger mede toda a base (~2021+). Expectativa por sessão normaliza a FREQUÊNCIA, não a janela temporal — ver metodologia §3."
+  },
+  "comparison": {
+    "WIN$N": {
+      "pair_fixo": {
+        "sessions_measured": 1251,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -5.981,
+            "significant": false,
+            "ci_low": -11.9507,
+            "ci_high": 0.1265,
+            "events": 5097,
+            "events_per_session": 4.0743,
+            "expectancy_per_session": -24.3685,
+            "win_rate_pct": 47.93
+          },
+          "6": {
+            "mean_per_event": -10.8931,
+            "significant": true,
+            "ci_low": -19.3187,
+            "ci_high": -2.3548,
+            "events": 4966,
+            "events_per_session": 3.9696,
+            "expectancy_per_session": -43.2414,
+            "win_rate_pct": 47.95
+          },
+          "10": {
+            "mean_per_event": -10.3104,
+            "significant": false,
+            "ci_low": -21.8973,
+            "ci_high": 1.1594,
+            "events": 4817,
+            "events_per_session": 3.8505,
+            "expectancy_per_session": -39.7002,
+            "win_rate_pct": 48.68
+          },
+          "20": {
+            "mean_per_event": -0.3365,
+            "significant": false,
+            "ci_low": -16.9078,
+            "ci_high": 16.3433,
+            "events": 4353,
+            "events_per_session": 3.4796,
+            "expectancy_per_session": -1.1711,
+            "win_rate_pct": 49.48
+          }
+        }
+      },
+      "pair": {
+        "sessions_measured": 877,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -6.8242,
+            "significant": false,
+            "ci_low": -14.0178,
+            "ci_high": 0.2226,
+            "events": 3607,
+            "events_per_session": 4.1129,
+            "expectancy_per_session": -28.0673,
+            "win_rate_pct": 47.55
+          },
+          "6": {
+            "mean_per_event": -7.4674,
+            "significant": false,
+            "ci_low": -17.4845,
+            "ci_high": 2.4232,
+            "events": 3528,
+            "events_per_session": 4.0228,
+            "expectancy_per_session": -30.0399,
+            "win_rate_pct": 49.49
+          },
+          "10": {
+            "mean_per_event": -5.7101,
+            "significant": false,
+            "ci_low": -18.2737,
+            "ci_high": 6.8278,
+            "events": 3436,
+            "events_per_session": 3.9179,
+            "expectancy_per_session": -22.3717,
+            "win_rate_pct": 49.19
+          },
+          "20": {
+            "mean_per_event": -13.536,
+            "significant": false,
+            "ci_low": -32.3385,
+            "ci_high": 5.8484,
+            "events": 3108,
+            "events_per_session": 3.5439,
+            "expectancy_per_session": -47.9704,
+            "win_rate_pct": 48.46
+          }
+        }
+      },
+      "baseline_momentum": {
+        "sessions_measured": 877,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -12.1745,
+            "significant": true,
+            "ci_low": -19.3186,
+            "ci_high": -4.8132,
+            "events": 2435,
+            "events_per_session": 2.7765,
+            "expectancy_per_session": -33.8027,
+            "win_rate_pct": 43.61
+          },
+          "6": {
+            "mean_per_event": -12.3866,
+            "significant": true,
+            "ci_low": -22.8126,
+            "ci_high": -1.663,
+            "events": 2380,
+            "events_per_session": 2.7138,
+            "expectancy_per_session": -33.6146,
+            "win_rate_pct": 46.09
+          },
+          "10": {
+            "mean_per_event": -5.1432,
+            "significant": false,
+            "ci_low": -18.91,
+            "ci_high": 8.9119,
+            "events": 2270,
+            "events_per_session": 2.5884,
+            "expectancy_per_session": -13.3124,
+            "win_rate_pct": 48.06
+          },
+          "20": {
+            "mean_per_event": -4.5328,
+            "significant": false,
+            "ci_low": -24.259,
+            "ci_high": 15.4935,
+            "events": 2012,
+            "events_per_session": 2.2942,
+            "expectancy_per_session": -10.3991,
+            "win_rate_pct": 48.26
+          }
+        }
+      },
+      "baseline_reversao": {
+        "sessions_measured": 877,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -7.8255,
+            "significant": true,
+            "ci_low": -15.1868,
+            "ci_high": -0.6814,
+            "events": 2435,
+            "events_per_session": 2.7765,
+            "expectancy_per_session": -21.7275,
+            "win_rate_pct": 47.84
+          },
+          "6": {
+            "mean_per_event": -7.6134,
+            "significant": false,
+            "ci_low": -18.337,
+            "ci_high": 2.8126,
+            "events": 2380,
+            "events_per_session": 2.7138,
+            "expectancy_per_session": -20.6613,
+            "win_rate_pct": 48.32
+          },
+          "10": {
+            "mean_per_event": -14.8568,
+            "significant": true,
+            "ci_low": -28.9119,
+            "ci_high": -1.09,
+            "events": 2270,
+            "events_per_session": 2.5884,
+            "expectancy_per_session": -38.455,
+            "win_rate_pct": 48.15
+          },
+          "20": {
+            "mean_per_event": -15.4672,
+            "significant": false,
+            "ci_low": -35.4935,
+            "ci_high": 4.259,
+            "events": 2012,
+            "events_per_session": 2.2942,
+            "expectancy_per_session": -35.4846,
+            "win_rate_pct": 48.96
+          }
+        }
+      }
+    },
+    "WDO$N": {
+      "pair_fixo": {
+        "sessions_measured": 1250,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -0.8718,
+            "significant": true,
+            "ci_low": -1.0688,
+            "ci_high": -0.6738,
+            "events": 5145,
+            "events_per_session": 4.116,
+            "expectancy_per_session": -3.5884,
+            "win_rate_pct": 39.24
+          },
+          "6": {
+            "mean_per_event": -0.8372,
+            "significant": true,
+            "ci_low": -1.12,
+            "ci_high": -0.5524,
+            "events": 5019,
+            "events_per_session": 4.0152,
+            "expectancy_per_session": -3.3616,
+            "win_rate_pct": 43.08
+          },
+          "10": {
+            "mean_per_event": -0.8667,
+            "significant": true,
+            "ci_low": -1.2292,
+            "ci_high": -0.5007,
+            "events": 4857,
+            "events_per_session": 3.8856,
+            "expectancy_per_session": -3.3676,
+            "win_rate_pct": 45.03
+          },
+          "20": {
+            "mean_per_event": -0.946,
+            "significant": true,
+            "ci_low": -1.4702,
+            "ci_high": -0.4145,
+            "events": 4396,
+            "events_per_session": 3.5168,
+            "expectancy_per_session": -3.3268,
+            "win_rate_pct": 46.41
+          }
+        }
+      },
+      "pair": {
+        "sessions_measured": 876,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -0.9698,
+            "significant": true,
+            "ci_low": -1.1823,
+            "ci_high": -0.7572,
+            "events": 3758,
+            "events_per_session": 4.29,
+            "expectancy_per_session": -4.1604,
+            "win_rate_pct": 39.12
+          },
+          "6": {
+            "mean_per_event": -0.9984,
+            "significant": true,
+            "ci_low": -1.286,
+            "ci_high": -0.7086,
+            "events": 3665,
+            "events_per_session": 4.1838,
+            "expectancy_per_session": -4.1769,
+            "win_rate_pct": 42.89
+          },
+          "10": {
+            "mean_per_event": -1.1664,
+            "significant": true,
+            "ci_low": -1.552,
+            "ci_high": -0.7924,
+            "events": 3507,
+            "events_per_session": 4.0034,
+            "expectancy_per_session": -4.6695,
+            "win_rate_pct": 44.14
+          },
+          "20": {
+            "mean_per_event": -1.1185,
+            "significant": true,
+            "ci_low": -1.644,
+            "ci_high": -0.6062,
+            "events": 3168,
+            "events_per_session": 3.6164,
+            "expectancy_per_session": -4.0451,
+            "win_rate_pct": 46.28
+          }
+        }
+      },
+      "baseline_momentum": {
+        "sessions_measured": 876,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -0.9896,
+            "significant": true,
+            "ci_low": -1.1988,
+            "ci_high": -0.7818,
+            "events": 2492,
+            "events_per_session": 2.8447,
+            "expectancy_per_session": -2.8151,
+            "win_rate_pct": 36.0
+          },
+          "6": {
+            "mean_per_event": -0.9029,
+            "significant": true,
+            "ci_low": -1.1976,
+            "ci_high": -0.605,
+            "events": 2425,
+            "events_per_session": 2.7683,
+            "expectancy_per_session": -2.4994,
+            "win_rate_pct": 39.59
+          },
+          "10": {
+            "mean_per_event": -0.947,
+            "significant": true,
+            "ci_low": -1.3304,
+            "ci_high": -0.5637,
+            "events": 2332,
+            "events_per_session": 2.6621,
+            "expectancy_per_session": -2.5211,
+            "win_rate_pct": 42.02
+          },
+          "20": {
+            "mean_per_event": -0.8233,
+            "significant": true,
+            "ci_low": -1.4344,
+            "ci_high": -0.224,
+            "events": 2052,
+            "events_per_session": 2.3425,
+            "expectancy_per_session": -1.9287,
+            "win_rate_pct": 44.74
+          }
+        }
+      },
+      "baseline_reversao": {
+        "sessions_measured": 876,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "horizons": {
+          "3": {
+            "mean_per_event": -1.0104,
+            "significant": true,
+            "ci_low": -1.2182,
+            "ci_high": -0.8012,
+            "events": 2492,
+            "events_per_session": 2.8447,
+            "expectancy_per_session": -2.8744,
+            "win_rate_pct": 36.56
+          },
+          "6": {
+            "mean_per_event": -1.0971,
+            "significant": true,
+            "ci_low": -1.395,
+            "ci_high": -0.8024,
+            "events": 2425,
+            "events_per_session": 2.7683,
+            "expectancy_per_session": -3.0371,
+            "win_rate_pct": 39.46
+          },
+          "10": {
+            "mean_per_event": -1.053,
+            "significant": true,
+            "ci_low": -1.4363,
+            "ci_high": -0.6696,
+            "events": 2332,
+            "events_per_session": 2.6621,
+            "expectancy_per_session": -2.8031,
+            "win_rate_pct": 42.15
+          },
+          "20": {
+            "mean_per_event": -1.1767,
+            "significant": true,
+            "ci_low": -1.776,
+            "ci_high": -0.5656,
+            "events": 2052,
+            "events_per_session": 2.3425,
+            "expectancy_per_session": -2.7563,
+            "win_rate_pct": 44.88
+          }
+        }
+      }
+    }
+  },
+  "challenger": {
+    "targets": {
+      "WIN$N": {
+        "sessions_replayed": 1251,
+        "sessions_discarded": 1,
+        "sessions_burn_in": 0,
+        "cost_points": 10.0,
+        "pit_mode": false,
+        "sessions_before_first_pit_cutoff": 0,
+        "pit_cutoffs_used": null,
+        "data_quality": {
+          "signals_after_cooldown": 5314,
+          "events_emitted": 5207,
+          "rejected_no_next_bar": 107,
+          "missing_entry_open_pct_of_fill_candidates": 0.0
+        },
+        "by_direction": {
+          "buy": {
+            "n_events": 2586,
+            "n_sessions_with_events": 1175,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -5.414528227398342,
+                  "ci_low": -14.07058051568093,
+                  "ci_high": 2.9099581376675685,
+                  "n_sessions": 1173,
+                  "n_events": 2533,
+                  "significant": false,
+                  "standard_error": 4.3201369870533695
+                },
+                "win_rate_pct": 47.887879984208446,
+                "wins": 1213,
+                "total": 2533
+              },
+              "6": {
+                "estimate": {
+                  "value": -10.167609046849758,
+                  "ci_low": -22.293293948900665,
+                  "ci_high": 1.9303217059157167,
+                  "n_sessions": 1166,
+                  "n_events": 2476,
+                  "significant": false,
+                  "standard_error": 6.157959823841303
+                },
+                "win_rate_pct": 48.06138933764136,
+                "wins": 1190,
+                "total": 2476
+              },
+              "10": {
+                "estimate": {
+                  "value": -10.388773388773389,
+                  "ci_low": -26.219086833827458,
+                  "ci_high": 5.296077303875927,
+                  "n_sessions": 1161,
+                  "n_events": 2405,
+                  "significant": false,
+                  "standard_error": 8.009037354949038
+                },
+                "win_rate_pct": 48.981288981288984,
+                "wins": 1178,
+                "total": 2405
+              },
+              "20": {
+                "estimate": {
+                  "value": -2.281508739650414,
+                  "ci_low": -25.3143991455968,
+                  "ci_high": 19.795070325012208,
+                  "n_sessions": 1136,
+                  "n_events": 2174,
+                  "significant": false,
+                  "standard_error": 11.589628464843983
+                },
+                "win_rate_pct": 50.045998160073594,
+                "wins": 1088,
+                "total": 2174
+              }
+            },
+            "mfe_mean": 380.11,
+            "mae_mean": -374.98,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 5.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.4145282273983417,
+                      "ci_low": -9.07058051568093,
+                      "ci_high": 7.9099581376675685,
+                      "n_sessions": 1173,
+                      "n_events": 2533,
+                      "significant": false,
+                      "standard_error": 4.3201369870533695
+                    },
+                    "win_rate_pct": 49.309119621002765,
+                    "wins": 1249,
+                    "total": 2533
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -5.167609046849758,
+                      "ci_low": -17.293293948900665,
+                      "ci_high": 6.930321705915716,
+                      "n_sessions": 1166,
+                      "n_events": 2476,
+                      "significant": false,
+                      "standard_error": 6.157959823841303
+                    },
+                    "win_rate_pct": 49.03069466882068,
+                    "wins": 1214,
+                    "total": 2476
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -5.388773388773389,
+                      "ci_low": -21.219086833827458,
+                      "ci_high": 10.296077303875926,
+                      "n_sessions": 1161,
+                      "n_events": 2405,
+                      "significant": false,
+                      "standard_error": 8.009037354949038
+                    },
+                    "win_rate_pct": 49.48024948024948,
+                    "wins": 1190,
+                    "total": 2405
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": 2.718491260349586,
+                      "ci_low": -20.3143991455968,
+                      "ci_high": 24.795070325012208,
+                      "n_sessions": 1136,
+                      "n_events": 2174,
+                      "significant": false,
+                      "standard_error": 11.589628464843983
+                    },
+                    "win_rate_pct": 50.78196872125115,
+                    "wins": 1104,
+                    "total": 2174
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 10.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -5.414528227398342,
+                      "ci_low": -14.07058051568093,
+                      "ci_high": 2.9099581376675685,
+                      "n_sessions": 1173,
+                      "n_events": 2533,
+                      "significant": false,
+                      "standard_error": 4.3201369870533695
+                    },
+                    "win_rate_pct": 47.887879984208446,
+                    "wins": 1213,
+                    "total": 2533
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -10.167609046849758,
+                      "ci_low": -22.293293948900665,
+                      "ci_high": 1.9303217059157167,
+                      "n_sessions": 1166,
+                      "n_events": 2476,
+                      "significant": false,
+                      "standard_error": 6.157959823841303
+                    },
+                    "win_rate_pct": 48.06138933764136,
+                    "wins": 1190,
+                    "total": 2476
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -10.388773388773389,
+                      "ci_low": -26.219086833827458,
+                      "ci_high": 5.296077303875927,
+                      "n_sessions": 1161,
+                      "n_events": 2405,
+                      "significant": false,
+                      "standard_error": 8.009037354949038
+                    },
+                    "win_rate_pct": 48.981288981288984,
+                    "wins": 1178,
+                    "total": 2405
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -2.281508739650414,
+                      "ci_low": -25.3143991455968,
+                      "ci_high": 19.795070325012208,
+                      "n_sessions": 1136,
+                      "n_events": 2174,
+                      "significant": false,
+                      "standard_error": 11.589628464843983
+                    },
+                    "win_rate_pct": 50.045998160073594,
+                    "wins": 1088,
+                    "total": 2174
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 15.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -10.414528227398343,
+                      "ci_low": -19.07058051568093,
+                      "ci_high": -2.0900418623324315,
+                      "n_sessions": 1173,
+                      "n_events": 2533,
+                      "significant": true,
+                      "standard_error": 4.3201369870533695
+                    },
+                    "win_rate_pct": 46.78247137781287,
+                    "wins": 1185,
+                    "total": 2533
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -15.167609046849758,
+                      "ci_low": -27.293293948900665,
+                      "ci_high": -3.0696782940842833,
+                      "n_sessions": 1166,
+                      "n_events": 2476,
+                      "significant": true,
+                      "standard_error": 6.157959823841303
+                    },
+                    "win_rate_pct": 46.76898222940226,
+                    "wins": 1158,
+                    "total": 2476
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -15.388773388773389,
+                      "ci_low": -31.219086833827458,
+                      "ci_high": 0.29607730387592657,
+                      "n_sessions": 1161,
+                      "n_events": 2405,
+                      "significant": false,
+                      "standard_error": 8.009037354949038
+                    },
+                    "win_rate_pct": 48.648648648648646,
+                    "wins": 1170,
+                    "total": 2405
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -7.281508739650414,
+                      "ci_low": -30.3143991455968,
+                      "ci_high": 14.795070325012208,
+                      "n_sessions": 1136,
+                      "n_events": 2174,
+                      "significant": false,
+                      "standard_error": 11.589628464843983
+                    },
+                    "win_rate_pct": 49.72401103955842,
+                    "wins": 1081,
+                    "total": 2174
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 20.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -15.414528227398343,
+                      "ci_low": -24.07058051568093,
+                      "ci_high": -7.0900418623324315,
+                      "n_sessions": 1173,
+                      "n_events": 2533,
+                      "significant": true,
+                      "standard_error": 4.3201369870533695
+                    },
+                    "win_rate_pct": 45.67706277141729,
+                    "wins": 1157,
+                    "total": 2533
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -20.16760904684976,
+                      "ci_low": -32.29329394890067,
+                      "ci_high": -8.069678294084284,
+                      "n_sessions": 1166,
+                      "n_events": 2476,
+                      "significant": true,
+                      "standard_error": 6.157959823841303
+                    },
+                    "win_rate_pct": 45.880452342487885,
+                    "wins": 1136,
+                    "total": 2476
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -20.388773388773387,
+                      "ci_low": -36.21908683382746,
+                      "ci_high": -4.703922696124073,
+                      "n_sessions": 1161,
+                      "n_events": 2405,
+                      "significant": true,
+                      "standard_error": 8.009037354949038
+                    },
+                    "win_rate_pct": 47.817047817047815,
+                    "wins": 1150,
+                    "total": 2405
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -12.281508739650414,
+                      "ci_low": -35.314399145596795,
+                      "ci_high": 9.795070325012208,
+                      "n_sessions": 1136,
+                      "n_events": 2174,
+                      "significant": false,
+                      "standard_error": 11.589628464843983
+                    },
+                    "win_rate_pct": 49.03403863845446,
+                    "wins": 1066,
+                    "total": 2174
+                  }
+                }
+              }
+            }
+          },
+          "sell": {
+            "n_events": 2621,
+            "n_sessions_with_events": 1176,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -6.540561622464899,
+                  "ci_low": -14.46901917067719,
+                  "ci_high": 1.4006432790116996,
+                  "n_sessions": 1170,
+                  "n_events": 2564,
+                  "significant": false,
+                  "standard_error": 4.104706389709826
+                },
+                "win_rate_pct": 47.97191887675507,
+                "wins": 1230,
+                "total": 2564
+              },
+              "6": {
+                "estimate": {
+                  "value": -11.614457831325302,
+                  "ci_low": -23.564307471522064,
+                  "ci_high": 0.5296400645786491,
+                  "n_sessions": 1164,
+                  "n_events": 2490,
+                  "significant": false,
+                  "standard_error": 6.1641076257915
+                },
+                "win_rate_pct": 47.83132530120482,
+                "wins": 1191,
+                "total": 2490
+              },
+              "10": {
+                "estimate": {
+                  "value": -10.23217247097844,
+                  "ci_low": -26.635541049744354,
+                  "ci_high": 6.177367249669305,
+                  "n_sessions": 1159,
+                  "n_events": 2412,
+                  "significant": false,
+                  "standard_error": 8.389469422028062
+                },
+                "win_rate_pct": 48.38308457711443,
+                "wins": 1167,
+                "total": 2412
+              },
+              "20": {
+                "estimate": {
+                  "value": 1.603946764570904,
+                  "ci_low": -23.27719281117303,
+                  "ci_high": 26.7099903188665,
+                  "n_sessions": 1138,
+                  "n_events": 2179,
+                  "significant": false,
+                  "standard_error": 12.638634159968046
+                },
+                "win_rate_pct": 48.921523634694815,
+                "wins": 1066,
+                "total": 2179
+              }
+            },
+            "mfe_mean": 382.93,
+            "mae_mean": -376.95,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 5.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.5405616224648986,
+                      "ci_low": -9.46901917067719,
+                      "ci_high": 6.4006432790117,
+                      "n_sessions": 1170,
+                      "n_events": 2564,
+                      "significant": false,
+                      "standard_error": 4.104706389709826
+                    },
+                    "win_rate_pct": 49.49297971918877,
+                    "wins": 1269,
+                    "total": 2564
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -6.614457831325302,
+                      "ci_low": -18.564307471522064,
+                      "ci_high": 5.529640064578649,
+                      "n_sessions": 1164,
+                      "n_events": 2490,
+                      "significant": false,
+                      "standard_error": 6.1641076257915
+                    },
+                    "win_rate_pct": 48.95582329317269,
+                    "wins": 1219,
+                    "total": 2490
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -5.2321724709784405,
+                      "ci_low": -21.635541049744354,
+                      "ci_high": 11.177367249669306,
+                      "n_sessions": 1159,
+                      "n_events": 2412,
+                      "significant": false,
+                      "standard_error": 8.389469422028062
+                    },
+                    "win_rate_pct": 49.543946932006634,
+                    "wins": 1195,
+                    "total": 2412
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": 6.603946764570904,
+                      "ci_low": -18.27719281117303,
+                      "ci_high": 31.7099903188665,
+                      "n_sessions": 1138,
+                      "n_events": 2179,
+                      "significant": false,
+                      "standard_error": 12.638634159968046
+                    },
+                    "win_rate_pct": 49.19687930243231,
+                    "wins": 1072,
+                    "total": 2179
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 10.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -6.540561622464899,
+                      "ci_low": -14.46901917067719,
+                      "ci_high": 1.4006432790116996,
+                      "n_sessions": 1170,
+                      "n_events": 2564,
+                      "significant": false,
+                      "standard_error": 4.104706389709826
+                    },
+                    "win_rate_pct": 47.97191887675507,
+                    "wins": 1230,
+                    "total": 2564
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -11.614457831325302,
+                      "ci_low": -23.564307471522064,
+                      "ci_high": 0.5296400645786491,
+                      "n_sessions": 1164,
+                      "n_events": 2490,
+                      "significant": false,
+                      "standard_error": 6.1641076257915
+                    },
+                    "win_rate_pct": 47.83132530120482,
+                    "wins": 1191,
+                    "total": 2490
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -10.23217247097844,
+                      "ci_low": -26.635541049744354,
+                      "ci_high": 6.177367249669305,
+                      "n_sessions": 1159,
+                      "n_events": 2412,
+                      "significant": false,
+                      "standard_error": 8.389469422028062
+                    },
+                    "win_rate_pct": 48.38308457711443,
+                    "wins": 1167,
+                    "total": 2412
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": 1.603946764570904,
+                      "ci_low": -23.27719281117303,
+                      "ci_high": 26.7099903188665,
+                      "n_sessions": 1138,
+                      "n_events": 2179,
+                      "significant": false,
+                      "standard_error": 12.638634159968046
+                    },
+                    "win_rate_pct": 48.921523634694815,
+                    "wins": 1066,
+                    "total": 2179
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 15.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -11.5405616224649,
+                      "ci_low": -19.46901917067719,
+                      "ci_high": -3.5993567209883004,
+                      "n_sessions": 1170,
+                      "n_events": 2564,
+                      "significant": true,
+                      "standard_error": 4.104706389709826
+                    },
+                    "win_rate_pct": 46.48985959438377,
+                    "wins": 1192,
+                    "total": 2564
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -16.614457831325304,
+                      "ci_low": -28.564307471522064,
+                      "ci_high": -4.470359935421351,
+                      "n_sessions": 1164,
+                      "n_events": 2490,
+                      "significant": true,
+                      "standard_error": 6.1641076257915
+                    },
+                    "win_rate_pct": 47.18875502008032,
+                    "wins": 1175,
+                    "total": 2490
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -15.23217247097844,
+                      "ci_low": -31.635541049744354,
+                      "ci_high": 1.177367249669305,
+                      "n_sessions": 1159,
+                      "n_events": 2412,
+                      "significant": false,
+                      "standard_error": 8.389469422028062
+                    },
+                    "win_rate_pct": 47.30514096185738,
+                    "wins": 1141,
+                    "total": 2412
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -3.396053235429096,
+                      "ci_low": -28.27719281117303,
+                      "ci_high": 21.7099903188665,
+                      "n_sessions": 1138,
+                      "n_events": 2179,
+                      "significant": false,
+                      "standard_error": 12.638634159968046
+                    },
+                    "win_rate_pct": 48.50849013308857,
+                    "wins": 1057,
+                    "total": 2179
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 20.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -16.5405616224649,
+                      "ci_low": -24.46901917067719,
+                      "ci_high": -8.5993567209883,
+                      "n_sessions": 1170,
+                      "n_events": 2564,
+                      "significant": true,
+                      "standard_error": 4.104706389709826
+                    },
+                    "win_rate_pct": 45.124804992199685,
+                    "wins": 1157,
+                    "total": 2564
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -21.614457831325304,
+                      "ci_low": -33.56430747152206,
+                      "ci_high": -9.470359935421351,
+                      "n_sessions": 1164,
+                      "n_events": 2490,
+                      "significant": true,
+                      "standard_error": 6.1641076257915
+                    },
+                    "win_rate_pct": 46.10441767068273,
+                    "wins": 1148,
+                    "total": 2490
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -20.23217247097844,
+                      "ci_low": -36.635541049744354,
+                      "ci_high": -3.822632750330695,
+                      "n_sessions": 1159,
+                      "n_events": 2412,
+                      "significant": true,
+                      "standard_error": 8.389469422028062
+                    },
+                    "win_rate_pct": 46.475953565505804,
+                    "wins": 1121,
+                    "total": 2412
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -8.396053235429097,
+                      "ci_low": -33.27719281117303,
+                      "ci_high": 16.7099903188665,
+                      "n_sessions": 1138,
+                      "n_events": 2179,
+                      "significant": false,
+                      "standard_error": 12.638634159968046
+                    },
+                    "win_rate_pct": 48.04956402019275,
+                    "wins": 1047,
+                    "total": 2179
+                  }
+                }
+              }
+            }
+          },
+          "all": {
+            "n_events": 5207,
+            "n_sessions_with_events": 1251,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -5.980969197567196,
+                  "ci_low": -11.950721867342905,
+                  "ci_high": 0.12650656209706435,
+                  "n_sessions": 1251,
+                  "n_events": 5097,
+                  "significant": false,
+                  "standard_error": 3.062648411115246
+                },
+                "win_rate_pct": 47.930154993133215,
+                "wins": 2443,
+                "total": 5097
+              },
+              "6": {
+                "estimate": {
+                  "value": -10.893072895690697,
+                  "ci_low": -19.318700047627175,
+                  "ci_high": -2.354775813620334,
+                  "n_sessions": 1251,
+                  "n_events": 4966,
+                  "significant": true,
+                  "standard_error": 4.378638230713114
+                },
+                "win_rate_pct": 47.94603302456706,
+                "wins": 2381,
+                "total": 4966
+              },
+              "10": {
+                "estimate": {
+                  "value": -10.31035914469587,
+                  "ci_low": -21.89734163881305,
+                  "ci_high": 1.1593841435244452,
+                  "n_sessions": 1251,
+                  "n_events": 4817,
+                  "significant": false,
+                  "standard_error": 5.8429813658348015
+                },
+                "win_rate_pct": 48.68175212788042,
+                "wins": 2345,
+                "total": 4817
+              },
+              "20": {
+                "estimate": {
+                  "value": -0.3365495060877556,
+                  "ci_low": -16.907754748783546,
+                  "ci_high": 16.343338122961665,
+                  "n_sessions": 1251,
+                  "n_events": 4353,
+                  "significant": false,
+                  "standard_error": 8.512610958723467
+                },
+                "win_rate_pct": 49.48311509303928,
+                "wins": 2154,
+                "total": 4353
+              }
+            },
+            "mfe_mean": 381.53,
+            "mae_mean": -375.97,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 5.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.9809691975671964,
+                      "ci_low": -6.950721867342905,
+                      "ci_high": 5.126506562097064,
+                      "n_sessions": 1251,
+                      "n_events": 5097,
+                      "significant": false,
+                      "standard_error": 3.062648411115246
+                    },
+                    "win_rate_pct": 49.40160878948401,
+                    "wins": 2518,
+                    "total": 5097
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -5.893072895690697,
+                      "ci_low": -14.318700047627175,
+                      "ci_high": 2.645224186379666,
+                      "n_sessions": 1251,
+                      "n_events": 4966,
+                      "significant": false,
+                      "standard_error": 4.378638230713114
+                    },
+                    "win_rate_pct": 48.993153443415224,
+                    "wins": 2433,
+                    "total": 4966
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -5.31035914469587,
+                      "ci_low": -16.89734163881305,
+                      "ci_high": 6.159384143524445,
+                      "n_sessions": 1251,
+                      "n_events": 4817,
+                      "significant": false,
+                      "standard_error": 5.8429813658348015
+                    },
+                    "win_rate_pct": 49.51214448827071,
+                    "wins": 2385,
+                    "total": 4817
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": 4.6634504939122445,
+                      "ci_low": -11.907754748783546,
+                      "ci_high": 21.343338122961665,
+                      "n_sessions": 1251,
+                      "n_events": 4353,
+                      "significant": false,
+                      "standard_error": 8.512610958723467
+                    },
+                    "win_rate_pct": 49.98851366873421,
+                    "wins": 2176,
+                    "total": 4353
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 10.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -5.980969197567196,
+                      "ci_low": -11.950721867342905,
+                      "ci_high": 0.12650656209706435,
+                      "n_sessions": 1251,
+                      "n_events": 5097,
+                      "significant": false,
+                      "standard_error": 3.062648411115246
+                    },
+                    "win_rate_pct": 47.930154993133215,
+                    "wins": 2443,
+                    "total": 5097
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -10.893072895690697,
+                      "ci_low": -19.318700047627175,
+                      "ci_high": -2.354775813620334,
+                      "n_sessions": 1251,
+                      "n_events": 4966,
+                      "significant": true,
+                      "standard_error": 4.378638230713114
+                    },
+                    "win_rate_pct": 47.94603302456706,
+                    "wins": 2381,
+                    "total": 4966
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -10.31035914469587,
+                      "ci_low": -21.89734163881305,
+                      "ci_high": 1.1593841435244452,
+                      "n_sessions": 1251,
+                      "n_events": 4817,
+                      "significant": false,
+                      "standard_error": 5.8429813658348015
+                    },
+                    "win_rate_pct": 48.68175212788042,
+                    "wins": 2345,
+                    "total": 4817
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.3365495060877556,
+                      "ci_low": -16.907754748783546,
+                      "ci_high": 16.343338122961665,
+                      "n_sessions": 1251,
+                      "n_events": 4353,
+                      "significant": false,
+                      "standard_error": 8.512610958723467
+                    },
+                    "win_rate_pct": 49.48311509303928,
+                    "wins": 2154,
+                    "total": 4353
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 15.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -10.980969197567196,
+                      "ci_low": -16.950721867342907,
+                      "ci_high": -4.873493437902936,
+                      "n_sessions": 1251,
+                      "n_events": 5097,
+                      "significant": true,
+                      "standard_error": 3.062648411115246
+                    },
+                    "win_rate_pct": 46.63527565234452,
+                    "wins": 2377,
+                    "total": 5097
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -15.893072895690697,
+                      "ci_low": -24.318700047627175,
+                      "ci_high": -7.354775813620334,
+                      "n_sessions": 1251,
+                      "n_events": 4966,
+                      "significant": true,
+                      "standard_error": 4.378638230713114
+                    },
+                    "win_rate_pct": 46.97946033024567,
+                    "wins": 2333,
+                    "total": 4966
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -15.31035914469587,
+                      "ci_low": -26.89734163881305,
+                      "ci_high": -3.840615856475555,
+                      "n_sessions": 1251,
+                      "n_events": 4817,
+                      "significant": true,
+                      "standard_error": 5.8429813658348015
+                    },
+                    "win_rate_pct": 47.97591862154868,
+                    "wins": 2311,
+                    "total": 4817
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -5.3365495060877555,
+                      "ci_low": -21.907754748783546,
+                      "ci_high": 11.343338122961665,
+                      "n_sessions": 1251,
+                      "n_events": 4353,
+                      "significant": false,
+                      "standard_error": 8.512610958723467
+                    },
+                    "win_rate_pct": 49.11555249253389,
+                    "wins": 2138,
+                    "total": 4353
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 20.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -15.980969197567196,
+                      "ci_low": -21.950721867342907,
+                      "ci_high": -9.873493437902935,
+                      "n_sessions": 1251,
+                      "n_events": 5097,
+                      "significant": true,
+                      "standard_error": 3.062648411115246
+                    },
+                    "win_rate_pct": 45.39925446340985,
+                    "wins": 2314,
+                    "total": 5097
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -20.893072895690697,
+                      "ci_low": -29.318700047627175,
+                      "ci_high": -12.354775813620334,
+                      "n_sessions": 1251,
+                      "n_events": 4966,
+                      "significant": true,
+                      "standard_error": 4.378638230713114
+                    },
+                    "win_rate_pct": 45.99275070479259,
+                    "wins": 2284,
+                    "total": 4966
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -20.31035914469587,
+                      "ci_low": -31.89734163881305,
+                      "ci_high": -8.840615856475555,
+                      "n_sessions": 1251,
+                      "n_events": 4817,
+                      "significant": true,
+                      "standard_error": 5.8429813658348015
+                    },
+                    "win_rate_pct": 47.145526261158395,
+                    "wins": 2271,
+                    "total": 4817
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -10.336549506087756,
+                      "ci_low": -26.907754748783546,
+                      "ci_high": 6.343338122961665,
+                      "n_sessions": 1251,
+                      "n_events": 4353,
+                      "significant": false,
+                      "standard_error": 8.512610958723467
+                    },
+                    "win_rate_pct": 48.5412359292442,
+                    "wins": 2113,
+                    "total": 4353
+                  }
+                }
+              }
+            }
+          }
+        },
+        "min_events_for_gate": 100,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "by_year_h6_mean": {
+          "2021": {
+            "n": 468,
+            "mean": 3.78
+          },
+          "2022": {
+            "n": 977,
+            "mean": -17.45
+          },
+          "2023": {
+            "n": 988,
+            "mean": -14.78
+          },
+          "2024": {
+            "n": 996,
+            "mean": -12.49
+          },
+          "2025": {
+            "n": 1013,
+            "mean": -10.45
+          },
+          "2026": {
+            "n": 524,
+            "mean": -2.26
+          }
+        },
+        "by_hour_brt_h6_mean": {
+          "9": -3.03,
+          "10": -12.61,
+          "11": -22.01,
+          "12": 4.8,
+          "13": 2.14,
+          "14": -22.65,
+          "15": -27.01,
+          "16": -24.17,
+          "17": 12.25
+        },
+        "by_pair_factor_h6_mean": {
+          "wdo": {
+            "n": 4966,
+            "mean": -10.89
+          }
+        }
+      },
+      "WDO$N": {
+        "sessions_replayed": 1250,
+        "sessions_discarded": 2,
+        "sessions_burn_in": 0,
+        "cost_points": 1.0,
+        "pit_mode": false,
+        "sessions_before_first_pit_cutoff": 0,
+        "pit_cutoffs_used": null,
+        "data_quality": {
+          "signals_after_cooldown": 5345,
+          "events_emitted": 5257,
+          "rejected_no_next_bar": 88,
+          "missing_entry_open_pct_of_fill_candidates": 0.0
+        },
+        "by_direction": {
+          "buy": {
+            "n_events": 2624,
+            "n_sessions_with_events": 1181,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -0.6874756903928433,
+                  "ci_low": -0.9641908432879336,
+                  "ci_high": -0.4131165593267103,
+                  "n_sessions": 1178,
+                  "n_events": 2571,
+                  "significant": true,
+                  "standard_error": 0.14282348258656155
+                },
+                "win_rate_pct": 40.72345390898483,
+                "wins": 1047,
+                "total": 2571
+              },
+              "6": {
+                "estimate": {
+                  "value": -0.8553157474020784,
+                  "ci_low": -1.2598968871336025,
+                  "ci_high": -0.4437289849339728,
+                  "n_sessions": 1168,
+                  "n_events": 2502,
+                  "significant": true,
+                  "standard_error": 0.2089831525733499
+                },
+                "win_rate_pct": 43.60511590727418,
+                "wins": 1091,
+                "total": 2502
+              },
+              "10": {
+                "estimate": {
+                  "value": -1.0845390657296403,
+                  "ci_low": -1.601668008505192,
+                  "ci_high": -0.5662969055244698,
+                  "n_sessions": 1160,
+                  "n_events": 2419,
+                  "significant": true,
+                  "standard_error": 0.2656556462291417
+                },
+                "win_rate_pct": 45.01860272840017,
+                "wins": 1089,
+                "total": 2419
+              },
+              "20": {
+                "estimate": {
+                  "value": -1.1572673085740486,
+                  "ci_low": -1.9112214272583723,
+                  "ci_high": -0.41373271412541285,
+                  "n_sessions": 1135,
+                  "n_events": 2181,
+                  "significant": true,
+                  "standard_error": 0.38379889163552644
+                },
+                "win_rate_pct": 46.217331499312245,
+                "wins": 1008,
+                "total": 2181
+              }
+            },
+            "mfe_mean": 11.86,
+            "mae_mean": -11.86,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 0.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.18747569039284329,
+                      "ci_low": -0.4641908432879336,
+                      "ci_high": 0.08688344067328968,
+                      "n_sessions": 1178,
+                      "n_events": 2571,
+                      "significant": false,
+                      "standard_error": 0.14282348258656155
+                    },
+                    "win_rate_pct": 45.00194476857254,
+                    "wins": 1157,
+                    "total": 2571
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.3553157474020784,
+                      "ci_low": -0.7598968871336025,
+                      "ci_high": 0.05627101506602722,
+                      "n_sessions": 1168,
+                      "n_events": 2502,
+                      "significant": false,
+                      "standard_error": 0.2089831525733499
+                    },
+                    "win_rate_pct": 46.9224620303757,
+                    "wins": 1174,
+                    "total": 2502
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -0.5845390657296403,
+                      "ci_low": -1.101668008505192,
+                      "ci_high": -0.06629690552446976,
+                      "n_sessions": 1160,
+                      "n_events": 2419,
+                      "significant": true,
+                      "standard_error": 0.2656556462291417
+                    },
+                    "win_rate_pct": 47.66432410086813,
+                    "wins": 1153,
+                    "total": 2419
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.6572673085740486,
+                      "ci_low": -1.4112214272583723,
+                      "ci_high": 0.08626728587458715,
+                      "n_sessions": 1135,
+                      "n_events": 2181,
+                      "significant": false,
+                      "standard_error": 0.38379889163552644
+                    },
+                    "win_rate_pct": 47.82209995414947,
+                    "wins": 1043,
+                    "total": 2181
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 1.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.6874756903928433,
+                      "ci_low": -0.9641908432879336,
+                      "ci_high": -0.4131165593267103,
+                      "n_sessions": 1178,
+                      "n_events": 2571,
+                      "significant": true,
+                      "standard_error": 0.14282348258656155
+                    },
+                    "win_rate_pct": 40.72345390898483,
+                    "wins": 1047,
+                    "total": 2571
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.8553157474020784,
+                      "ci_low": -1.2598968871336025,
+                      "ci_high": -0.4437289849339728,
+                      "n_sessions": 1168,
+                      "n_events": 2502,
+                      "significant": true,
+                      "standard_error": 0.2089831525733499
+                    },
+                    "win_rate_pct": 43.60511590727418,
+                    "wins": 1091,
+                    "total": 2502
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.0845390657296403,
+                      "ci_low": -1.601668008505192,
+                      "ci_high": -0.5662969055244698,
+                      "n_sessions": 1160,
+                      "n_events": 2419,
+                      "significant": true,
+                      "standard_error": 0.2656556462291417
+                    },
+                    "win_rate_pct": 45.01860272840017,
+                    "wins": 1089,
+                    "total": 2419
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.1572673085740486,
+                      "ci_low": -1.9112214272583723,
+                      "ci_high": -0.41373271412541285,
+                      "n_sessions": 1135,
+                      "n_events": 2181,
+                      "significant": true,
+                      "standard_error": 0.38379889163552644
+                    },
+                    "win_rate_pct": 46.217331499312245,
+                    "wins": 1008,
+                    "total": 2181
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 1.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.1874756903928434,
+                      "ci_low": -1.4641908432879336,
+                      "ci_high": -0.9131165593267103,
+                      "n_sessions": 1178,
+                      "n_events": 2571,
+                      "significant": true,
+                      "standard_error": 0.14282348258656155
+                    },
+                    "win_rate_pct": 37.106184364060674,
+                    "wins": 954,
+                    "total": 2571
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.3553157474020785,
+                      "ci_low": -1.7598968871336025,
+                      "ci_high": -0.9437289849339727,
+                      "n_sessions": 1168,
+                      "n_events": 2502,
+                      "significant": true,
+                      "standard_error": 0.2089831525733499
+                    },
+                    "win_rate_pct": 40.36770583533173,
+                    "wins": 1010,
+                    "total": 2502
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.5845390657296403,
+                      "ci_low": -2.101668008505192,
+                      "ci_high": -1.0662969055244698,
+                      "n_sessions": 1160,
+                      "n_events": 2419,
+                      "significant": true,
+                      "standard_error": 0.2656556462291417
+                    },
+                    "win_rate_pct": 42.042166184373706,
+                    "wins": 1017,
+                    "total": 2419
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.6572673085740486,
+                      "ci_low": -2.411221427258372,
+                      "ci_high": -0.9137327141254128,
+                      "n_sessions": 1135,
+                      "n_events": 2181,
+                      "significant": true,
+                      "standard_error": 0.38379889163552644
+                    },
+                    "win_rate_pct": 45.20861989912884,
+                    "wins": 986,
+                    "total": 2181
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 2.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.6874756903928434,
+                      "ci_low": -1.9641908432879336,
+                      "ci_high": -1.4131165593267103,
+                      "n_sessions": 1178,
+                      "n_events": 2571,
+                      "significant": true,
+                      "standard_error": 0.14282348258656155
+                    },
+                    "win_rate_pct": 33.09996110462855,
+                    "wins": 851,
+                    "total": 2571
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.8553157474020785,
+                      "ci_low": -2.2598968871336025,
+                      "ci_high": -1.4437289849339727,
+                      "n_sessions": 1168,
+                      "n_events": 2502,
+                      "significant": true,
+                      "standard_error": 0.2089831525733499
+                    },
+                    "win_rate_pct": 37.76978417266187,
+                    "wins": 945,
+                    "total": 2502
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -2.0845390657296403,
+                      "ci_low": -2.601668008505192,
+                      "ci_high": -1.5662969055244698,
+                      "n_sessions": 1160,
+                      "n_events": 2419,
+                      "significant": true,
+                      "standard_error": 0.2656556462291417
+                    },
+                    "win_rate_pct": 39.97519636213311,
+                    "wins": 967,
+                    "total": 2419
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -2.1572673085740486,
+                      "ci_low": -2.911221427258372,
+                      "ci_high": -1.4137327141254128,
+                      "n_sessions": 1135,
+                      "n_events": 2181,
+                      "significant": true,
+                      "standard_error": 0.38379889163552644
+                    },
+                    "win_rate_pct": 43.099495644199905,
+                    "wins": 940,
+                    "total": 2181
+                  }
+                }
+              }
+            }
+          },
+          "sell": {
+            "n_events": 2633,
+            "n_sessions_with_events": 1176,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -1.055944055944056,
+                  "ci_low": -1.3165855061630685,
+                  "ci_high": -0.7885400120925449,
+                  "n_sessions": 1172,
+                  "n_events": 2574,
+                  "significant": true,
+                  "standard_error": 0.13455544463477978
+                },
+                "win_rate_pct": 37.76223776223776,
+                "wins": 972,
+                "total": 2574
+              },
+              "6": {
+                "estimate": {
+                  "value": -0.8192292411601112,
+                  "ci_low": -1.1908250810764747,
+                  "ci_high": -0.4502216959401365,
+                  "n_sessions": 1168,
+                  "n_events": 2517,
+                  "significant": true,
+                  "standard_error": 0.18946119741273723
+                },
+                "win_rate_pct": 42.55065554231228,
+                "wins": 1071,
+                "total": 2517
+              },
+              "10": {
+                "estimate": {
+                  "value": -0.6505332239540607,
+                  "ci_low": -1.1558030921452898,
+                  "ci_high": -0.14525701369656774,
+                  "n_sessions": 1162,
+                  "n_events": 2438,
+                  "significant": true,
+                  "standard_error": 0.25999714792074896
+                },
+                "win_rate_pct": 45.036915504511896,
+                "wins": 1098,
+                "total": 2438
+              },
+              "20": {
+                "estimate": {
+                  "value": -0.737923250564334,
+                  "ci_low": -1.4804248559262383,
+                  "ci_high": -0.009587086807623614,
+                  "n_sessions": 1134,
+                  "n_events": 2215,
+                  "significant": true,
+                  "standard_error": 0.374333467457531
+                },
+                "win_rate_pct": 46.591422121896166,
+                "wins": 1032,
+                "total": 2215
+              }
+            },
+            "mfe_mean": 12.0,
+            "mae_mean": -12.04,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 0.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.555944055944056,
+                      "ci_low": -0.8165855061630685,
+                      "ci_high": -0.2885400120925449,
+                      "n_sessions": 1172,
+                      "n_events": 2574,
+                      "significant": true,
+                      "standard_error": 0.13455544463477978
+                    },
+                    "win_rate_pct": 42.34654234654235,
+                    "wins": 1090,
+                    "total": 2574
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.3192292411601112,
+                      "ci_low": -0.6908250810764747,
+                      "ci_high": 0.0497783040598635,
+                      "n_sessions": 1168,
+                      "n_events": 2517,
+                      "significant": false,
+                      "standard_error": 0.18946119741273723
+                    },
+                    "win_rate_pct": 45.530393325387365,
+                    "wins": 1146,
+                    "total": 2517
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -0.15053322395406066,
+                      "ci_low": -0.6558030921452898,
+                      "ci_high": 0.35474298630343226,
+                      "n_sessions": 1162,
+                      "n_events": 2438,
+                      "significant": false,
+                      "standard_error": 0.25999714792074896
+                    },
+                    "win_rate_pct": 47.497949138638226,
+                    "wins": 1158,
+                    "total": 2438
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.23792325056433405,
+                      "ci_low": -0.9804248559262383,
+                      "ci_high": 0.4904129131923764,
+                      "n_sessions": 1134,
+                      "n_events": 2215,
+                      "significant": false,
+                      "standard_error": 0.374333467457531
+                    },
+                    "win_rate_pct": 47.99097065462754,
+                    "wins": 1063,
+                    "total": 2215
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 1.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.055944055944056,
+                      "ci_low": -1.3165855061630685,
+                      "ci_high": -0.7885400120925449,
+                      "n_sessions": 1172,
+                      "n_events": 2574,
+                      "significant": true,
+                      "standard_error": 0.13455544463477978
+                    },
+                    "win_rate_pct": 37.76223776223776,
+                    "wins": 972,
+                    "total": 2574
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.8192292411601112,
+                      "ci_low": -1.1908250810764747,
+                      "ci_high": -0.4502216959401365,
+                      "n_sessions": 1168,
+                      "n_events": 2517,
+                      "significant": true,
+                      "standard_error": 0.18946119741273723
+                    },
+                    "win_rate_pct": 42.55065554231228,
+                    "wins": 1071,
+                    "total": 2517
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -0.6505332239540607,
+                      "ci_low": -1.1558030921452898,
+                      "ci_high": -0.14525701369656774,
+                      "n_sessions": 1162,
+                      "n_events": 2438,
+                      "significant": true,
+                      "standard_error": 0.25999714792074896
+                    },
+                    "win_rate_pct": 45.036915504511896,
+                    "wins": 1098,
+                    "total": 2438
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.737923250564334,
+                      "ci_low": -1.4804248559262383,
+                      "ci_high": -0.009587086807623614,
+                      "n_sessions": 1134,
+                      "n_events": 2215,
+                      "significant": true,
+                      "standard_error": 0.374333467457531
+                    },
+                    "win_rate_pct": 46.591422121896166,
+                    "wins": 1032,
+                    "total": 2215
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 1.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.555944055944056,
+                      "ci_low": -1.8165855061630685,
+                      "ci_high": -1.288540012092545,
+                      "n_sessions": 1172,
+                      "n_events": 2574,
+                      "significant": true,
+                      "standard_error": 0.13455544463477978
+                    },
+                    "win_rate_pct": 34.38228438228438,
+                    "wins": 885,
+                    "total": 2574
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.3192292411601112,
+                      "ci_low": -1.6908250810764747,
+                      "ci_high": -0.9502216959401365,
+                      "n_sessions": 1168,
+                      "n_events": 2517,
+                      "significant": true,
+                      "standard_error": 0.18946119741273723
+                    },
+                    "win_rate_pct": 39.53118792212952,
+                    "wins": 995,
+                    "total": 2517
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.1505332239540607,
+                      "ci_low": -1.6558030921452898,
+                      "ci_high": -0.6452570136965677,
+                      "n_sessions": 1162,
+                      "n_events": 2438,
+                      "significant": true,
+                      "standard_error": 0.25999714792074896
+                    },
+                    "win_rate_pct": 42.41181296144381,
+                    "wins": 1034,
+                    "total": 2438
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.237923250564334,
+                      "ci_low": -1.9804248559262383,
+                      "ci_high": -0.5095870868076237,
+                      "n_sessions": 1134,
+                      "n_events": 2215,
+                      "significant": true,
+                      "standard_error": 0.374333467457531
+                    },
+                    "win_rate_pct": 44.966139954853276,
+                    "wins": 996,
+                    "total": 2215
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 2.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -2.055944055944056,
+                      "ci_low": -2.3165855061630687,
+                      "ci_high": -1.788540012092545,
+                      "n_sessions": 1172,
+                      "n_events": 2574,
+                      "significant": true,
+                      "standard_error": 0.13455544463477978
+                    },
+                    "win_rate_pct": 30.76923076923077,
+                    "wins": 792,
+                    "total": 2574
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.8192292411601112,
+                      "ci_low": -2.1908250810764747,
+                      "ci_high": -1.4502216959401366,
+                      "n_sessions": 1168,
+                      "n_events": 2517,
+                      "significant": true,
+                      "standard_error": 0.18946119741273723
+                    },
+                    "win_rate_pct": 36.7103694874851,
+                    "wins": 924,
+                    "total": 2517
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.6505332239540607,
+                      "ci_low": -2.1558030921452898,
+                      "ci_high": -1.1452570136965678,
+                      "n_sessions": 1162,
+                      "n_events": 2438,
+                      "significant": true,
+                      "standard_error": 0.25999714792074896
+                    },
+                    "win_rate_pct": 40.278917145200985,
+                    "wins": 982,
+                    "total": 2438
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.737923250564334,
+                      "ci_low": -2.4804248559262385,
+                      "ci_high": -1.0095870868076235,
+                      "n_sessions": 1134,
+                      "n_events": 2215,
+                      "significant": true,
+                      "standard_error": 0.374333467457531
+                    },
+                    "win_rate_pct": 43.70203160270881,
+                    "wins": 968,
+                    "total": 2215
+                  }
+                }
+              }
+            }
+          },
+          "all": {
+            "n_events": 5257,
+            "n_sessions_with_events": 1250,
+            "horizons": {
+              "3": {
+                "estimate": {
+                  "value": -0.8718172983479106,
+                  "ci_low": -1.0688440491556415,
+                  "ci_high": -0.6738183757259495,
+                  "n_sessions": 1250,
+                  "n_events": 5145,
+                  "significant": true,
+                  "standard_error": 0.10044571778560382
+                },
+                "win_rate_pct": 39.24198250728863,
+                "wins": 2019,
+                "total": 5145
+              },
+              "6": {
+                "estimate": {
+                  "value": -0.8372185694361427,
+                  "ci_low": -1.1199991207120106,
+                  "ci_high": -0.5524342932900055,
+                  "n_sessions": 1250,
+                  "n_events": 5019,
+                  "significant": true,
+                  "standard_error": 0.14496223557356774
+                },
+                "win_rate_pct": 43.07631002191672,
+                "wins": 2162,
+                "total": 5019
+              },
+              "10": {
+                "estimate": {
+                  "value": -0.8666872555075149,
+                  "ci_low": -1.2292195531172203,
+                  "ci_high": -0.5007223052012256,
+                  "n_sessions": 1250,
+                  "n_events": 4857,
+                  "significant": true,
+                  "standard_error": 0.18910964918762038
+                },
+                "win_rate_pct": 45.02779493514515,
+                "wins": 2187,
+                "total": 4857
+              },
+              "20": {
+                "estimate": {
+                  "value": -0.9459736123748863,
+                  "ci_low": -1.4701756212654324,
+                  "ci_high": -0.4144939314257743,
+                  "n_sessions": 1250,
+                  "n_events": 4396,
+                  "significant": true,
+                  "standard_error": 0.26662033293625265
+                },
+                "win_rate_pct": 46.40582347588717,
+                "wins": 2040,
+                "total": 4396
+              }
+            },
+            "mfe_mean": 11.93,
+            "mae_mean": -11.95,
+            "cost_sensitivity": {
+              "0.5x": {
+                "cost_points": 0.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.37181729834791055,
+                      "ci_low": -0.5688440491556415,
+                      "ci_high": -0.1738183757259495,
+                      "n_sessions": 1250,
+                      "n_events": 5145,
+                      "significant": true,
+                      "standard_error": 0.10044571778560382
+                    },
+                    "win_rate_pct": 43.673469387755105,
+                    "wins": 2247,
+                    "total": 5145
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.3372185694361427,
+                      "ci_low": -0.6199991207120106,
+                      "ci_high": -0.052434293290005485,
+                      "n_sessions": 1250,
+                      "n_events": 5019,
+                      "significant": true,
+                      "standard_error": 0.14496223557356774
+                    },
+                    "win_rate_pct": 46.2243474795776,
+                    "wins": 2320,
+                    "total": 5019
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -0.3666872555075149,
+                      "ci_low": -0.7292195531172203,
+                      "ci_high": -0.0007223052012256259,
+                      "n_sessions": 1250,
+                      "n_events": 4857,
+                      "significant": true,
+                      "standard_error": 0.18910964918762038
+                    },
+                    "win_rate_pct": 47.58081120032942,
+                    "wins": 2311,
+                    "total": 4857
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.4459736123748863,
+                      "ci_low": -0.9701756212654324,
+                      "ci_high": 0.08550606857422571,
+                      "n_sessions": 1250,
+                      "n_events": 4396,
+                      "significant": false,
+                      "standard_error": 0.26662033293625265
+                    },
+                    "win_rate_pct": 47.90718835304823,
+                    "wins": 2106,
+                    "total": 4396
+                  }
+                }
+              },
+              "1.0x": {
+                "cost_points": 1.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -0.8718172983479106,
+                      "ci_low": -1.0688440491556415,
+                      "ci_high": -0.6738183757259495,
+                      "n_sessions": 1250,
+                      "n_events": 5145,
+                      "significant": true,
+                      "standard_error": 0.10044571778560382
+                    },
+                    "win_rate_pct": 39.24198250728863,
+                    "wins": 2019,
+                    "total": 5145
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -0.8372185694361427,
+                      "ci_low": -1.1199991207120106,
+                      "ci_high": -0.5524342932900055,
+                      "n_sessions": 1250,
+                      "n_events": 5019,
+                      "significant": true,
+                      "standard_error": 0.14496223557356774
+                    },
+                    "win_rate_pct": 43.07631002191672,
+                    "wins": 2162,
+                    "total": 5019
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -0.8666872555075149,
+                      "ci_low": -1.2292195531172203,
+                      "ci_high": -0.5007223052012256,
+                      "n_sessions": 1250,
+                      "n_events": 4857,
+                      "significant": true,
+                      "standard_error": 0.18910964918762038
+                    },
+                    "win_rate_pct": 45.02779493514515,
+                    "wins": 2187,
+                    "total": 4857
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -0.9459736123748863,
+                      "ci_low": -1.4701756212654324,
+                      "ci_high": -0.4144939314257743,
+                      "n_sessions": 1250,
+                      "n_events": 4396,
+                      "significant": true,
+                      "standard_error": 0.26662033293625265
+                    },
+                    "win_rate_pct": 46.40582347588717,
+                    "wins": 2040,
+                    "total": 4396
+                  }
+                }
+              },
+              "1.5x": {
+                "cost_points": 1.5,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.3718172983479104,
+                      "ci_low": -1.5688440491556415,
+                      "ci_high": -1.1738183757259495,
+                      "n_sessions": 1250,
+                      "n_events": 5145,
+                      "significant": true,
+                      "standard_error": 0.10044571778560382
+                    },
+                    "win_rate_pct": 35.74344023323615,
+                    "wins": 1839,
+                    "total": 5145
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.3372185694361427,
+                      "ci_low": -1.6199991207120106,
+                      "ci_high": -1.0524342932900055,
+                      "n_sessions": 1250,
+                      "n_events": 5019,
+                      "significant": true,
+                      "standard_error": 0.14496223557356774
+                    },
+                    "win_rate_pct": 39.94819685196254,
+                    "wins": 2005,
+                    "total": 5019
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.366687255507515,
+                      "ci_low": -1.7292195531172203,
+                      "ci_high": -1.0007223052012257,
+                      "n_sessions": 1250,
+                      "n_events": 4857,
+                      "significant": true,
+                      "standard_error": 0.18910964918762038
+                    },
+                    "win_rate_pct": 42.22771257978176,
+                    "wins": 2051,
+                    "total": 4857
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.4459736123748863,
+                      "ci_low": -1.9701756212654324,
+                      "ci_high": -0.9144939314257743,
+                      "n_sessions": 1250,
+                      "n_events": 4396,
+                      "significant": true,
+                      "standard_error": 0.26662033293625265
+                    },
+                    "win_rate_pct": 45.08644222020018,
+                    "wins": 1982,
+                    "total": 4396
+                  }
+                }
+              },
+              "2.0x": {
+                "cost_points": 2.0,
+                "horizons": {
+                  "3": {
+                    "estimate": {
+                      "value": -1.8718172983479104,
+                      "ci_low": -2.0688440491556417,
+                      "ci_high": -1.6738183757259495,
+                      "n_sessions": 1250,
+                      "n_events": 5145,
+                      "significant": true,
+                      "standard_error": 0.10044571778560382
+                    },
+                    "win_rate_pct": 31.933916423712343,
+                    "wins": 1643,
+                    "total": 5145
+                  },
+                  "6": {
+                    "estimate": {
+                      "value": -1.8372185694361427,
+                      "ci_low": -2.1199991207120106,
+                      "ci_high": -1.5524342932900055,
+                      "n_sessions": 1250,
+                      "n_events": 5019,
+                      "significant": true,
+                      "standard_error": 0.14496223557356774
+                    },
+                    "win_rate_pct": 37.23849372384937,
+                    "wins": 1869,
+                    "total": 5019
+                  },
+                  "10": {
+                    "estimate": {
+                      "value": -1.866687255507515,
+                      "ci_low": -2.22921955311722,
+                      "ci_high": -1.5007223052012257,
+                      "n_sessions": 1250,
+                      "n_events": 4857,
+                      "significant": true,
+                      "standard_error": 0.18910964918762038
+                    },
+                    "win_rate_pct": 40.127650813259216,
+                    "wins": 1949,
+                    "total": 4857
+                  },
+                  "20": {
+                    "estimate": {
+                      "value": -1.9459736123748863,
+                      "ci_low": -2.470175621265432,
+                      "ci_high": -1.4144939314257743,
+                      "n_sessions": 1250,
+                      "n_events": 4396,
+                      "significant": true,
+                      "standard_error": 0.26662033293625265
+                    },
+                    "win_rate_pct": 43.40309372156506,
+                    "wins": 1908,
+                    "total": 4396
+                  }
+                }
+              }
+            }
+          }
+        },
+        "min_events_for_gate": 100,
+        "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+        "by_year_h6_mean": {
+          "2021": {
+            "n": 469,
+            "mean": -1.33
+          },
+          "2022": {
+            "n": 998,
+            "mean": -1.04
+          },
+          "2023": {
+            "n": 986,
+            "mean": -0.63
+          },
+          "2024": {
+            "n": 1008,
+            "mean": -0.47
+          },
+          "2025": {
+            "n": 1021,
+            "mean": -0.9
+          },
+          "2026": {
+            "n": 537,
+            "mean": -0.99
+          }
+        },
+        "by_hour_brt_h6_mean": {
+          "9": -0.62,
+          "10": -0.01,
+          "11": -1.22,
+          "12": -0.87,
+          "13": -0.69,
+          "14": -0.77,
+          "15": -1.04,
+          "16": -1.03,
+          "17": -1.05
+        },
+        "by_pair_factor_h6_mean": {
+          "win": {
+            "n": 5019,
+            "mean": -0.84
+          }
+        }
+      }
+    },
+    "limitations": [
+      "Challenger Pair FIXO WIN↔WDO: par sempre WIN-WDO (nunca escolhido pelo Kalman), computado INDEPENDENTE do engine/calibração (market_bars, β OLS rolling 20 sem intercepto). Não sofre de C1-a — é uma régua limpa contra o Pair dinâmico calibrado, no espírito da regra de negócio 8 (regra simples vs modelo complexo). β OLS é parâmetro de convenção, não otimizado; não reproduz o encadeamento do Kalman nem o warm-up de σ do par que o dinâmico tem no início da sessão (intencional).",
+      "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+      "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+      "MFE/MAE usam HIGH/LOW M5 desde a barra de entrada, mas OHLC não informa a ordem intrabarra. Se stop e alvo forem tocados na mesma M5, a sequência é ambígua e exige política conservadora ou replay de ticks no IRAI-4.",
+      "Ausência de OHLC pode ser não aleatória (leilão, halt ou queda de feed). Sem OPEN da barra de entrada, o trade é excluído da amostra, mas o sinal consome cooldown; se faltar HIGH/LOW no caminho, o retorno por CLOSE é preservado e MFE/MAE ficam ausentes. Essa política é conservadora, porém a exclusão do trade ainda pode introduzir viés de seleção.",
+      "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+      "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+      "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas.",
+      "Sem calibração point-in-time (ver ressalva C1-a específica de cada marker acima), isto é sempre um REPLAY RETROSPECTIVO com os parâmetros ATUAIS de produção aplicados a todo o histórico — não um teste out-of-sample no sentido estrito, mesmo quando a janela de replay cobre anos anteriores à calibração mais recente."
+    ],
+    "challenger": "pair_fixo_win_wdo",
+    "events_moved_to": "pair_fixo_challenger.json.gz",
+    "event_counts": {
+      "WIN$N": 5207,
+      "WDO$N": 5257
+    }
+  }
+}

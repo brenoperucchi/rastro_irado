@@ -108,3 +108,24 @@ confirmatório (até 24 combinações horizonte×direção por sinal).
 - Artefato SEPARADO `docs/artifacts/irai-21/` (comando, git hash, parâmetros, sessões,
   eventos, limitações, resultados + tabela comparativa bruta e por-sessão).
 - IRAI-21 → Review.
+
+## 6. Resultado (2026-07-16, após a metodologia congelada)
+
+Rodado contra produção (`--limit 2000`, commit `5b67100`). Artefato:
+`docs/artifacts/irai-21/` (README com a tabela completa). Resumo h=6, retorno
+líquido de custo por evento (`***` = IC95% exclui zero):
+
+```
+                     WIN$N méd/ev   exp/sessão   WDO$N méd/ev  exp/sessão
+pair_fixo (chall.)   -10.89 ***     -43.24       -0.84 ***     -3.36
+pair (dinâmico PIT)   -7.47         -30.04       -1.00 ***     -4.18
+baseline_momentum    -12.39 ***     -33.61       -0.90 ***     -2.50
+baseline_reversao     -7.61         -20.66       -1.10 ***     -3.04
+```
+
+Conclusão: TODOS os sinais são negativos em ambos os alvos. Fixar o par WIN-WDO
+NÃO recupera edge — em WIN$N é mais negativo que o dinâmico, em WDO$N são
+parecidos e adversos. A regra simples (par fixo) não vence a complexa: as duas
+perdem, e os baselines também. Reforça, com um controle limpo (sem C1-a), que os
+markers de distorção não têm valor econômico como estão. Ver README do artefato
+para a ressalva de janela (challenger mede toda a base; dinâmico é PIT ~2022-12+).
