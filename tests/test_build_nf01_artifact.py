@@ -77,6 +77,18 @@ def test_metadata_reprodutivel_presente():
     assert a["parameters"]["targets"] == ["WIN$N", "WDO$N"]
 
 
+def test_git_state_registra_head_e_origin_main():
+    """_git_state deve expor tanto o HEAD do host quanto origin/main (o
+    localizável) e se o HEAD já está publicado — corrige o achado de que o
+    host de execução pode ter commits locais por cima."""
+    g = art._git_state()
+    # Este próprio repo tem git; as chaves devem existir (valores podem variar).
+    assert "commit" in g
+    assert "origin_main" in g
+    assert "head_in_origin_main" in g
+    assert "dirty" in g
+
+
 def test_politicas_provisorias_documentadas():
     a = _build(point_in_time=False)
     pol = a["provisional_policies"]

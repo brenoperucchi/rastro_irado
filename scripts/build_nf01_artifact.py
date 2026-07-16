@@ -67,19 +67,33 @@ PROVISIONAL_POLICIES = {
 
 
 def _git_state() -> dict:
-    """Hash do commit + se a árvore está suja, pra localizar exatamente o
-    código que gerou o artefato. Tolera ausência de git (retorna None)."""
+    """Estado do git pra localizar EXATAMENTE o código que gerou o artefato.
+    Registra o HEAD do host de execução E o hash de origin/main — o segundo é
+    localizável por quem clonar o repo, mesmo que o host tenha commits locais
+    por cima (ex.: registros de deployment que não tocam os scripts do NF-01).
+    `head_in_origin_main` diz se o HEAD é ancestral de origin/main (i.e. o
+    código que rodou já está publicado). Tolera ausência de git."""
     root = str(Path(__file__).resolve().parents[1])
     def _run(args):
         return subprocess.run(["git", "-C", root, *args],
                               capture_output=True, text=True, timeout=10)
     try:
         commit = _run(["rev-parse", "HEAD"])
-        status = _run(["status", "--porcelain"])
         if commit.returncode != 0:
             return {"commit": None, "dirty": None, "note": "git indisponível"}
+        head = commit.stdout.strip()
+        status = _run(["status", "--porcelain"])
+        origin = _run(["rev-parse", "origin/main"])
+        origin_main = origin.stdout.strip() if origin.returncode == 0 else None
+        # HEAD é ancestral de origin/main? (código que rodou está publicado)
+        head_in_origin = None
+        if origin_main:
+            anc = _run(["merge-base", "--is-ancestor", head, "origin/main"])
+            head_in_origin = anc.returncode == 0
         return {
-            "commit": commit.stdout.strip(),
+            "commit": head,
+            "origin_main": origin_main,
+            "head_in_origin_main": head_in_origin,
             "dirty": bool(status.stdout.strip()),
         }
     except Exception as exc:  # noqa: BLE001 — reprodutibilidade não pode derrubar o build
