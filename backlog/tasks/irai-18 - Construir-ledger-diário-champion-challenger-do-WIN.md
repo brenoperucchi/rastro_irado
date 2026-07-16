@@ -1,11 +1,11 @@
 ---
 id: IRAI-18
 title: Construir ledger diário champion-challenger do WIN
-status: In Progress
+status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:10'
+updated_date: '2026-07-16 05:11'
 labels:
   - validation
   - win
@@ -74,6 +74,8 @@ Validação pós-correção no Ryzen5WSL (`444cc00`): regressão engine OHLC 2 p
 Correção do NO-GO: fallback de `brt_offset_h` agora usa a regra sazonal compartilhada quando o envelope local não informa offset; o manifesto registra status de fechamento por fonte e só fecha com todas as fontes capturadas completas e ao menos uma local. O loader recalcula o fechamento dos documentos e rejeita manifesto antigo/corrompido com outcome parcial. Duas regressões novas falharam antes (janeiro +5h; v2 parando 17:30) e agora passam. Suíte mantida: 209 passed, 17 skipped.
 
 Validação systemd revelou que o novo import de timezone dependia do cwd. Regressão subprocess fora da raiz falhou antes com `ModuleNotFoundError: backend`; o CLI agora adiciona explicitamente a raiz do repositório ao `sys.path`. Suíte mantida atual: 210 passed, 17 skipped.
+
+Validação final no Ryzen5WSL após `13334ef`: 19 testes específicos passaram; serviço systemd executou com Result=success/ExecMainStatus=0; bundle `2026-07-16T051102Z` registrou offset 6 e status separado de Miqueias/v1/v2, todos corretamente incompletos no pré-mercado.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -118,5 +120,11 @@ author: @codex
 created: 2026-07-16 05:07
 ---
 NO-GO do reviewer aceito. Reabrindo para corrigir offset sazonal no fallback e exigir fechamento consistente das fontes locais usadas para outcome antes de selecionar o bundle.
+---
+
+author: @codex
+created: 2026-07-16 05:11
+---
+Correções do NO-GO prontas para re-review: commits 81d11cf e 13334ef. Favor repetir as duas reproduções originais e tentar adulterar `manifest.session.closed=true`; esperado: janeiro usa +5, fonte local parcial bloqueia fechamento e loader rejeita manifesto adulterado.
 ---
 <!-- COMMENTS:END -->
