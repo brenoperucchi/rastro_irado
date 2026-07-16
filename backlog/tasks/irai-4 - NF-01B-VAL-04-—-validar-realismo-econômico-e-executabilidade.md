@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 14:24'
+updated_date: '2026-07-16 14:26'
 labels:
   - tactical
   - validation
@@ -81,5 +81,11 @@ author: @codex
 created: 2026-07-16 14:24
 ---
 Regressão permanente test_sinal_sem_open_executavel_ainda_consume_cooldown falhou antes da correção: o segundo sinal era aceito quando faltava open no primeiro. Após mover o consumo do cooldown para antes da validação do fill, passou. Acrescentados testes para gap intra-sessão (signal_available_at < entry_at), OHLC parcial com fwd preservado/MFE-MAE ausentes, contrato de média aritmética e CI/significância/win-rate dos quatro custos. Validação: 60 testes NF-01 relacionados passaram; suíte mantida pytest -q tests --ignore=tests/test_measure_tactical_gate3.py => 254 passed, 18 skipped. pytest -q global continua inadequado no Linux por coletar scripts/archive dependentes de MT5 e sklearn ausente.
+---
+
+author: @codex
+created: 2026-07-16 14:26
+---
+Publicação e validação Windows concluídas no commit 014f160. origin/main atualizado; Ryzen5WSL avançou por fast-forward após preservar em /tmp as duas cópias locais dos artefatos com hashes idênticos aos publicados. Windows Python 3.12: 39 testes passaram em test_measure_pair_signal_value.py + test_build_nf01_artifact.py.
 ---
 <!-- COMMENTS:END -->
