@@ -632,11 +632,25 @@ export default function App() {
   useEffect(() => {
     if (!API) return  // modo Firebase: gex permanece null (estado inicial)
     let mounted = true
-    fetch(`${API}/api/irai/gex?target=${encodeURIComponent(selectedTarget)}`)
-      .then(r => r.json())
-      .then(d => { if (mounted) setGex(d && d.walls && d.walls.length ? d : null) })  // d.target vem do endpoint
-      .catch(() => { if (mounted) setGex(null) })
-    return () => { mounted = false }
+    const refreshGex = () => {
+      fetch(`${API}/api/irai/gex?target=${encodeURIComponent(selectedTarget)}`)
+        .then(r => r.json())
+        .then(d => {
+          if (!mounted) return
+          setGex(d && d.walls && d.walls.length ? d : null)  // d.target vem do endpoint
+          if (!d?.active) {
+            setShowGex(false)
+            setShowMid(false)
+          }
+        })
+        .catch(() => { if (mounted) setGex(null) })
+    }
+    refreshGex()
+    const timer = setInterval(refreshGex, 60_000)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+    }
   }, [selectedTarget])
 
   // Initial load on date/target/liveMode change + polling
@@ -997,6 +1011,7 @@ export default function App() {
                         fresco (D-1). Envelhecido fica desabilitado com o as-of. */}
                     {gex && gex.target === selectedTarget && (
                       <button
+                        disabled={!gex.active}
                         onClick={() => gex.active && setShowGex(v => !v)}
                         title={gex.active
                           ? `gamma walls do fechamento de ${gex.as_of}`
