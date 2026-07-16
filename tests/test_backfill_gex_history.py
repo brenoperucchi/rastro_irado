@@ -21,6 +21,7 @@ from scripts.backfill_gex_history import (
     audit_existing_sessions,
     decide_persistence,
     gex_validity_reasons,
+    ensure_history_schema,
     ensure_safe_sqlite_runtime,
     next_effective_win_session,
     parse_equity_premiums,
@@ -28,6 +29,7 @@ from scripts.backfill_gex_history import (
     parse_ibov_spot,
     parse_win_front_settle,
     rate_at_or_before,
+    save_history_result,
     open_backfill_database,
 )
 
@@ -134,7 +136,7 @@ def test_backfill_recusa_sqlite_sem_tabelas_de_producao(tmp_path):
     empty = tmp_path / "vazia.db"
     sqlite3.connect(empty).close()
 
-    with pytest.raises(ValueError, match="market_bars.*gex_levels"):
+    with pytest.raises(ValueError, match="market_bars"):
         open_backfill_database(empty)
 
 
@@ -189,13 +191,7 @@ def test_auditoria_gex_valido_nao_inventa_motivo():
 def test_auditoria_existente_consolida_proveniencia_sem_recalcular():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    conn.execute(
-        """CREATE TABLE gex_levels(
-               session_date TEXT, target TEXT, valid INTEGER,
-               gamma_max REAL, gamma_flip REAL, gamma_min REAL,
-               walls TEXT, meta TEXT
-           )"""
-    )
+    ensure_history_schema(conn)
     meta = {
         "effective_session_date": "2026-07-16",
         "validity_reasons": [],
@@ -208,9 +204,12 @@ def test_auditoria_existente_consolida_proveniencia_sem_recalcular():
     }
     walls = [{"type": "wall"}, {"type": "mid_wall"}]
     conn.execute(
-        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?)",
-        ("2026-07-15", "WIN$N", 1, 190000, 185000, 175000,
-         json.dumps(walls), json.dumps(meta)),
+        """INSERT INTO gex_history_levels
+           (source_session_date, effective_session_date, target, valid,
+            gamma_max, gamma_flip, gamma_min, walls, meta)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        ("2026-07-15", "2026-07-16", "WIN$N", 1, 190000, 185000,
+         175000, json.dumps(walls), json.dumps(meta)),
     )
 
     rows = audit_existing_sessions(conn, [("2026-07-15", "2026-07-16")])
@@ -230,6 +229,45 @@ def test_auditoria_existente_consolida_proveniencia_sem_recalcular():
         "win_contract": "WINQ26",
         "provenance_complete": True,
     }]
+
+
+def test_backfill_historico_nunca_sobrescreve_tabela_gex_live():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, valid INTEGER,
+               gamma_max REAL, gamma_flip REAL, gamma_min REAL,
+               PRIMARY KEY(session_date, target)
+           )"""
+    )
+    conn.execute(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?)",
+        ("2026-07-15", "WIN$N", 0, 182497.0, 186421.0, 171806.0),
+    )
+    historical = {
+        "gamma_max": 191863.0, "gamma_min": 171806.0, "gamma_flip": 186364.0,
+        "gamma_max_ibov": 189885.0, "gamma_min_ibov": 170034.0,
+        "gamma_flip_ibov": 184443.0, "spot": 176010.9,
+        "future_settle": 177844.0, "conv_factor": 1.0104,
+        "n_strikes": 97, "valid": True, "walls": [],
+        "meta": {"source_session_date": "2026-07-15",
+                 "effective_session_date": "2026-07-16"},
+    }
+
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", historical, target="WIN$N",
+    )
+
+    live = conn.execute(
+        "SELECT valid, gamma_max, gamma_flip FROM gex_levels"
+    ).fetchone()
+    history = conn.execute(
+        """SELECT valid, gamma_max, gamma_flip, effective_session_date
+           FROM gex_history_levels"""
+    ).fetchone()
+    assert tuple(live) == (0, 182497.0, 186421.0)
+    assert tuple(history) == (1, 191863.0, 186364.0, "2026-07-16")
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():

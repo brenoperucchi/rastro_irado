@@ -9,8 +9,8 @@ Fontes por pregão D:
   * BCB SGS 1178: Selic anualizada vigente em D.
 
 O snapshot fechado em D só é associado ao próximo pregão WIN existente no
-banco. ``gex_levels.session_date`` continua guardando D para preservar o
-contrato da API; ``effective_session_date`` fica explícito em ``meta``.
+banco. O histórico é persistido em ``gex_history_levels``, separado de
+``gex_levels`` — esta última é exclusiva do cálculo LIVE consumido pela API.
 """
 
 from __future__ import annotations
@@ -43,6 +43,29 @@ B3_DOWNLOAD_BASE = "https://www.b3.com.br/pesquisapregao/download"
 BCB_SELIC_BASE = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados"
 DEFAULT_CACHE_DIR = Path("data/gex_history_cache")
 WIN_CONTRACT_RE = re.compile(r"^WIN[A-Z]\d{2}$")
+
+GEX_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS gex_history_levels (
+    source_session_date TEXT NOT NULL,
+    effective_session_date TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT 'WIN$N',
+    gamma_max REAL,
+    gamma_min REAL,
+    gamma_flip REAL,
+    gamma_max_ibov REAL,
+    gamma_min_ibov REAL,
+    gamma_flip_ibov REAL,
+    spot REAL,
+    future_settle REAL,
+    conv_factor REAL,
+    n_strikes INTEGER,
+    valid INTEGER NOT NULL DEFAULT 0,
+    walls TEXT,
+    meta TEXT,
+    computed_at TEXT,
+    PRIMARY KEY (source_session_date, target)
+)
+"""
 
 
 def _local(tag: str) -> str:
@@ -362,11 +385,11 @@ def open_backfill_database(db_path: str | Path):
     if not path.is_file():
         raise ValueError(f"base IRAI não existe: {path}")
     conn = get_connection(os.fspath(path))
-    required = {"market_bars", "gex_levels"}
+    required = {"market_bars"}
     present = {
         row[0]
         for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             tuple(sorted(required)),
         )
     }
@@ -374,15 +397,56 @@ def open_backfill_database(db_path: str | Path):
     if missing:
         conn.close()
         raise ValueError(
-            "base IRAI sem tabelas obrigatórias market_bars/gex_levels: "
+            "base IRAI sem tabela obrigatória market_bars: "
             + ", ".join(missing)
         )
+    ensure_history_schema(conn)
     return conn
 
 
+def ensure_history_schema(conn) -> None:
+    conn.execute(GEX_HISTORY_SCHEMA)
+    conn.commit()
+
+
+def save_history_result(
+    conn,
+    source_session_date: str,
+    effective_session_date: str,
+    result: dict,
+    *,
+    target: str = "WIN$N",
+) -> None:
+    """Persiste reconstrução PIT sem jamais alterar a tabela LIVE."""
+    ensure_history_schema(conn)
+    conn.execute(
+        """INSERT OR REPLACE INTO gex_history_levels
+           (source_session_date, effective_session_date, target,
+            gamma_max, gamma_min, gamma_flip,
+            gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
+            spot, future_settle, conv_factor, n_strikes, valid,
+            walls, meta, computed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            source_session_date, effective_session_date, target,
+            result.get("gamma_max"), result.get("gamma_min"), result.get("gamma_flip"),
+            result.get("gamma_max_ibov"), result.get("gamma_min_ibov"),
+            result.get("gamma_flip_ibov"), result.get("spot"),
+            result.get("future_settle"), result.get("conv_factor"),
+            result.get("n_strikes"), int(bool(result.get("valid"))),
+            json.dumps(result.get("walls", []), ensure_ascii=False),
+            json.dumps(result.get("meta", {}), ensure_ascii=False),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+
+
 def existing_validity(conn, source_session_date: str) -> bool | None:
+    ensure_history_schema(conn)
     row = conn.execute(
-        "SELECT valid FROM gex_levels WHERE session_date=? AND target='WIN$N'",
+        """SELECT valid FROM gex_history_levels
+           WHERE source_session_date=? AND target='WIN$N'""",
         (source_session_date,),
     ).fetchone()
     return bool(row[0]) if row is not None else None
@@ -449,7 +513,9 @@ def process_session(
     action = decide_persistence(previous, bool(result["valid"]), replace=replace)
     should_write = action.startswith("insert") or action.startswith("replace")
     if should_write and not dry_run:
-        gex.save(conn, source_session_date, result, target="WIN$N")
+        save_history_result(
+            conn, source_session_date, effective_session_date, result, target="WIN$N",
+        )
     return {
         "source_session_date": source_session_date,
         "effective_session_date": effective_session_date,
@@ -470,11 +536,13 @@ def process_session(
 
 def audit_existing_sessions(conn, pairs: Iterable[tuple[str, str]]) -> list[dict]:
     """Consolida cobertura/proveniência já persistida sem recalcular o GEX."""
+    ensure_history_schema(conn)
     rows = []
     for source, effective in pairs:
         stored = conn.execute(
             """SELECT valid, gamma_max, gamma_flip, gamma_min, walls, meta
-               FROM gex_levels WHERE session_date=? AND target='WIN$N'""",
+               FROM gex_history_levels
+               WHERE source_session_date=? AND target='WIN$N'""",
             (source,),
         ).fetchone()
         if stored is None:
@@ -545,7 +613,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--audit-only", action="store_true",
-                        help="não baixa/recalcula; audita somente gex_levels existente")
+                        help="não baixa/recalcula; audita somente gex_history_levels")
     parser.add_argument("--output-json")
     return parser.parse_args()
 
