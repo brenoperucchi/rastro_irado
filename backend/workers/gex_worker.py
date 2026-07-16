@@ -422,10 +422,16 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
     imin = min(range(len(vals)), key=lambda j: vals[j])
     gmax, gmin = refine(imax), refine(imin)
 
-    # gates de validade
+    # Gates de validade. `flip` é o zero do GEX ACUMULADO, enquanto gmax/gmin
+    # são as coordenadas dos extremos PONTUAIS de netGEX por strike. Portanto,
+    # não há invariante que obrigue gmin < flip < gmax; essa relação é somente
+    # diagnóstica e não pode esconder uma grade líquida/próxima do mercado.
     liquid = sum(1 for k in Ks if abs(k - spot) <= 5 * grid_step and netgex[k] != 0)
-    valid = (flip is not None and gmax > flip > gmin
-             and liquid >= 8 and abs(flip - spot) < 15 * grid_step)
+    diagnostic_warnings = []
+    if flip is not None and not (gmax > flip > gmin):
+        diagnostic_warnings.append("gamma_flip_not_between_pointwise_extrema")
+    valid = (flip is not None and liquid >= 8
+             and abs(flip - spot) < 15 * grid_step)
 
     # aviso de possível bug de escala (deep-reasoner, Task #15, Q3): se NENHUM
     # strike cai nem perto do spot, é mais provável um fator 1000 perdido no
@@ -468,7 +474,8 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
         "walls": walls,
         "meta": {"iv_by_exp": {k: round(v, 4) for k, v in iv_exp.items()},
                  "iv_fallback": round(iv_fallback, 4) if iv_fallback is not None else None,
-                 "iv_source": iv_source, "grid_step": grid_step, "risk_free": risk_free},
+                 "iv_source": iv_source, "grid_step": grid_step, "risk_free": risk_free,
+                 "diagnostic_warnings": diagnostic_warnings},
     }
 
 

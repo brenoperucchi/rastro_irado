@@ -21,6 +21,7 @@ from scripts.backfill_gex_history import (
     audit_existing_sessions,
     decide_persistence,
     gex_validity_reasons,
+    gex_diagnostic_warnings,
     ensure_history_schema,
     ensure_safe_sqlite_runtime,
     next_effective_win_session,
@@ -172,8 +173,25 @@ def test_auditoria_gex_explica_todos_os_gates_reprovados():
 
     result.update(gamma_flip_ibov=190_000.0, liquid_strikes=12)
     assert gex_validity_reasons(result, grid_step=1_000.0) == [
-        "gamma_flip_not_between_extrema",
         "gamma_flip_too_far_from_spot",
+    ]
+    assert gex_diagnostic_warnings(result) == [
+        "gamma_flip_not_between_pointwise_extrema",
+    ]
+
+
+def test_flip_fora_dos_extremos_nao_e_motivo_de_rejeicao_do_backfill():
+    result = {
+        "spot": 176_000.0,
+        "gamma_min_ibov": 170_000.0,
+        "gamma_flip_ibov": 184_000.0,
+        "gamma_max_ibov": 180_000.0,
+        "liquid_strikes": 12,
+    }
+
+    assert gex_validity_reasons(result, grid_step=1_000.0) == []
+    assert gex_diagnostic_warnings(result) == [
+        "gamma_flip_not_between_pointwise_extrema",
     ]
 
 

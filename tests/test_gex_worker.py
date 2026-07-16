@@ -599,6 +599,39 @@ def test_compute_gex_grid_step_alimenta_o_gate_liquid_strikes():
         largo["liquid_strikes"], apertado["liquid_strikes"])
 
 
+def test_flip_fora_dos_extremos_pontuais_e_alerta_mas_nao_invalida_gex():
+    """Flip é zero do acumulado; max/min são extremos pontuais por strike.
+
+    Não existe invariante matemática que obrigue a coordenada do cruzamento
+    acumulado a ficar entre as coordenadas dos extremos pontuais.
+    """
+    options = []
+    for strike in range(100, 112):
+        options.append({
+            "ticker": f"O{strike}",
+            "oi": 100.0 if strike == 100 else 10.0,
+            "strike": float(strike),
+            "is_call": strike == 100,
+            "expiry": "2026-08-21",
+            "premium": None,
+        })
+    original_gamma = gw._bsm_gamma
+    gw._bsm_gamma = lambda *_args: 1.0
+    try:
+        result = gw.compute_gex(
+            105.0, 105.0, options, "2026-07-13", grid_step=1.0,
+        )
+    finally:
+        gw._bsm_gamma = original_gamma
+
+    assert result["gamma_flip_ibov"] > result["gamma_max_ibov"]
+    assert result["liquid_strikes"] >= 8
+    assert result["valid"] is True
+    assert "gamma_flip_not_between_pointwise_extrema" in (
+        result["meta"]["diagnostic_warnings"]
+    )
+
+
 # ── Slice 3: orquestração de main() (painel Task #15) ───────────────────────
 
 def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():

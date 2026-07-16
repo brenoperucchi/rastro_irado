@@ -340,13 +340,21 @@ def gex_validity_reasons(result: dict, *, grid_step: float) -> list[str]:
     if flip is None:
         reasons.append("missing_gamma_flip")
     else:
-        if not result["gamma_max_ibov"] > flip > result["gamma_min_ibov"]:
-            reasons.append("gamma_flip_not_between_extrema")
         if abs(flip - result["spot"]) >= 15 * grid_step:
             reasons.append("gamma_flip_too_far_from_spot")
     if result.get("liquid_strikes", 0) < 8:
         reasons.append("insufficient_liquid_strikes")
     return reasons
+
+
+def gex_diagnostic_warnings(result: dict) -> list[str]:
+    """Condições informativas que não reprovam a qualidade do snapshot."""
+    flip = result.get("gamma_flip_ibov")
+    if flip is not None and not (
+        result["gamma_max_ibov"] > flip > result["gamma_min_ibov"]
+    ):
+        return ["gamma_flip_not_between_pointwise_extrema"]
+    return []
 
 
 def ensure_safe_sqlite_runtime(db_path: str | Path, *, platform: str | None = None) -> None:
@@ -523,6 +531,7 @@ def process_session(
         }
 
     validity_reasons = gex_validity_reasons(result, grid_step=gex.GRID_STEP)
+    diagnostic_warnings = gex_diagnostic_warnings(result)
     result["meta"].update({
         "source_session_date": source_session_date,
         "effective_session_date": effective_session_date,
@@ -546,6 +555,7 @@ def process_session(
         },
         "liquid_strikes": result["liquid_strikes"],
         "validity_reasons": validity_reasons,
+        "diagnostic_warnings": diagnostic_warnings,
     })
 
     try:
@@ -564,6 +574,7 @@ def process_session(
         "action": f"dry_run_{action}" if dry_run and should_write else action,
         "valid": bool(result["valid"]),
         "validity_reasons": validity_reasons,
+        "diagnostic_warnings": diagnostic_warnings,
         "gamma_max": result["gamma_max"],
         "gamma_flip": result["gamma_flip"],
         "gamma_min": result["gamma_min"],
