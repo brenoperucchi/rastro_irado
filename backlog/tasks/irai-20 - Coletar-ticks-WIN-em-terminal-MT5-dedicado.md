@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 06:20'
-updated_date: '2026-07-16 14:12'
+updated_date: '2026-07-16 15:05'
 labels:
   - collection
   - mt5
@@ -37,7 +37,7 @@ ordinal: 20000
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Implementar primitivas testáveis de descoberta do contrato, deduplicação e cursor. 2. Persistir chunks Parquet atômicos e health/state JSON. 3. Criar launcher que inicia o terminal /portable antes do Python. 4. Instalar dependência analítica e unidade systemd --user. 5. Validar isolamento, conexão e persistência.
+1. Reproduzir o zero-tick em sessão aberta e comparar terminal dedicado versus terminal XP principal: terminal_info, account_info, symbol_info, symbol_info_tick, copy_ticks_from/range e last_error. 2. Identificar se a causa é login/feed/Market Watch, faixa temporal/UTC ou contrato, sem interromper o collector M5 além do estritamente necessário. 3. Antes da correção, adicionar regressão permanente para o comportamento observável incorreto quando aplicável (inclusive health não pode declarar ok indefinidamente sem ticks durante sessão). 4. Corrigir launcher/coletor/configuração no menor escopo, validar WIN e WINQ26 com ticks reais e Parquet, reiniciar serviço. 5. Confirmar que o collector M5 continua ativo e registrar comandos/evidências no backlog.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -48,6 +48,8 @@ Implementação autorizada explicitamente pelo usuário em 2026-07-16. Terminal 
 Implementação local test-first concluída: descoberta do contrato vigente, cursor atômico por time_msc+identidade, chunks Parquet content-addressed, health JSON, conexão MT5 persistente entre ciclos e launcher PowerShell com /portable. Teste de conexão persistente falhou antes da correção (2 initialize por 2 ciclos) e passou após manter uma única sessão MT5.
 
 O requisito de performance foi incorporado antes do deploy: polling continua em 2s para não perder mercado, mas a persistência acumula até 5 minutos ou 250 mil linhas e só então grava Parquet ZSTD atômico. Isso evita milhares de arquivos minúsculos e deixa o dataset adequado a DuckDB/Polars. O cursor persistido só avança após o flush; queda do processo reconsulta o buffer perdido.
+
+Causa raiz confirmada em produção: o feed XP codifica timestamps de tick no relógio local BRT como epoch. Às 15:00 UTC, o último tick aparece como 12:00 UTC bruto. A consulta UTC de 15 minutos retornava 0; a mesma janela deslocada -3h retornou 71.477 ticks. A persistência mantém o epoch bruto para paridade com market_bars BR e registra explicitamente a semântica no health.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -63,5 +65,17 @@ author: @codex
 created: 2026-07-16 14:12
 ---
 Verificação em sessão B3 aberta em 2026-07-16 ~10:06 BRT: serviço permaneceu active/running e ciclos reportaram status ok, porém received/written/buffered=0 tanto para WIN quanto WINQ26. Não há Parquet porque nenhum tick chegou ao Python. O problema está antes da persistência, provavelmente login/feed/Market Watch do terminal dedicado; AC2 permanece aberto e exige diagnóstico no MT5 Windows.
+---
+
+author: @codex
+created: 2026-07-16 15:00
+---
+Diagnóstico retomado por autorização do usuário após restart do stack. Em sessão B3 aberta, serviço dedicado permanece active, porém received/accepted/written/buffered=0; health atual ainda informa status=ok. Próxima ação é comparar diretamente a sessão MT5 dedicada com o terminal XP principal.
+---
+
+author: @codex
+created: 2026-07-16 15:05
+---
+Regressões permanentes adicionadas antes da correção: test_consulta_ticks_no_relogio_brt_codificado_pelo_broker_xp e test_health_fica_degraded_sem_ticks_durante_pregao_b3 falharam no código anterior. Após tornar o offset do servidor configurável (-3h) e consultar no eixo bruto XP, 9 testes passaram e 1 foi ignorado localmente (pyarrow). O health agora não declara ok durante B3 aberta quando received=0.
 ---
 <!-- COMMENTS:END -->

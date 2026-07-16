@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -154,6 +155,81 @@ def test_coletor_mantem_uma_conexao_mt5_entre_ciclos(tmp_path, monkeypatch):
 
     collector.flush_pending()
     assert sorted(writes) == [("WIN$N", 2), ("WINQ26", 2)]
+
+
+def test_consulta_ticks_no_relogio_brt_codificado_pelo_broker_xp(tmp_path):
+    """A XP devolve epoch no relógio BRT: 12:00 BRT aparece como 12:00 UTC
+    no campo bruto, embora o instante real seja 15:00 UTC. Consultar a janela
+    UTC atual pergunta pelo futuro do feed e retorna vazio."""
+    class FakeMT5:
+        COPY_TICKS_ALL = 0
+
+        def __init__(self):
+            self.window = None
+
+        def copy_ticks_range(self, _symbol, start, end, _flags):
+            self.window = (start, end)
+            return []
+
+    fake = FakeMT5()
+    collector = TickCollector(
+        fake,
+        terminal_path=r"E:\MetaTradersWSL\wdowin\ira_ticks\terminal64.exe",
+        output_root=tmp_path,
+        initial_backfill_minutes=15,
+    )
+    now = datetime(2026, 7, 16, 15, 0, tzinfo=timezone.utc)
+
+    collector.collect_symbol("WIN$N", now)
+
+    assert fake.window == (
+        now - timedelta(hours=3, minutes=15),
+        now - timedelta(hours=3),
+    )
+
+
+def test_health_fica_degraded_sem_ticks_durante_pregao_b3(tmp_path):
+    class FakeMT5:
+        COPY_TICKS_ALL = 0
+
+        def initialize(self, **_kwargs):
+            return True
+
+        def terminal_info(self):
+            return {
+                "data_path": r"E:\MetaTradersWSL\wdowin\ira_ticks",
+                "connected": True,
+            }
+
+        def symbol_select(self, _symbol, _selected):
+            return True
+
+        def symbol_info(self, _symbol):
+            return {"description": "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes"}
+
+        def copy_ticks_range(self, *_args):
+            return []
+
+        def shutdown(self):
+            pass
+
+        def last_error(self):
+            return (1, "Success")
+
+    collector = TickCollector(
+        FakeMT5(),
+        terminal_path=r"E:\MetaTradersWSL\wdowin\ira_ticks\terminal64.exe",
+        output_root=tmp_path,
+        initial_backfill_minutes=15,
+    )
+
+    health = collector.cycle(
+        now=datetime(2026, 7, 16, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert health["b3_session_open"] is True
+    assert health["status"] == "degraded"
+    assert health["degraded_reason"] == "no_ticks_during_b3_session"
 
 
 def test_parquet_preserva_schema_e_conteudo(tmp_path):

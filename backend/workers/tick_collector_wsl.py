@@ -36,6 +36,12 @@ DEFAULT_TERMINAL = r"E:\MetaTradersWSL\wdowin\ira_ticks\terminal64.exe"
 DEFAULT_OUTPUT_ROOT = "data/ticks/win"
 CONTINUOUS_SYMBOL = "WIN$N"
 WIN_CONTRACT_RE = re.compile(r"\b(WIN[A-Z]\d{2})\b", re.IGNORECASE)
+# O terminal XP codifica o relógio local BRT diretamente no epoch dos ticks:
+# um negócio das 12:00 BRT chega com epoch que datetime interpreta como 12:00
+# UTC, embora o instante de parede seja 15:00 UTC. A consulta MT5 precisa usar
+# o mesmo eixo bruto do broker; persistimos esse timestamp sem alteração para
+# manter paridade com as barras BR de market_bars.
+DEFAULT_BROKER_SERVER_OFFSET_HOURS = -3.0
 
 log = logging.getLogger("irai.tick_collector")
 
@@ -273,6 +279,7 @@ class TickCollector:
         terminal_path: str,
         output_root: Path,
         initial_backfill_minutes: int,
+        broker_server_offset_hours: float = DEFAULT_BROKER_SERVER_OFFSET_HOURS,
         flush_interval_seconds: float = 300.0,
         max_buffer_rows: int = 250_000,
     ):
@@ -280,6 +287,7 @@ class TickCollector:
         self.terminal_path = terminal_path
         self.output_root = output_root
         self.initial_backfill_minutes = initial_backfill_minutes
+        self.broker_server_offset_hours = broker_server_offset_hours
         self.flush_interval_seconds = flush_interval_seconds
         self.max_buffer_rows = max_buffer_rows
         self.state_path = output_root / "state.json"
@@ -318,18 +326,21 @@ class TickCollector:
             self.mt5.shutdown()
             self._connected = False
 
+    def _broker_time(self, now: datetime) -> datetime:
+        return now + timedelta(hours=self.broker_server_offset_hours)
+
     def _from_time(self, symbol: str, now: datetime) -> datetime:
         cursor = self.read_cursors.get(symbol, self.state.get(symbol, TickCursor()))
         if cursor.last_time_msc:
             return datetime.fromtimestamp(max(0, cursor.last_time_msc - 1) / 1000, timezone.utc)
-        return now - timedelta(minutes=self.initial_backfill_minutes)
+        return self._broker_time(now) - timedelta(minutes=self.initial_backfill_minutes)
 
     def collect_symbol(self, symbol: str, now: datetime) -> tuple[int, int]:
         collected_at = now.isoformat(timespec="milliseconds")
         raw = self.mt5.copy_ticks_range(
             symbol,
             self._from_time(symbol, now),
-            now,
+            self._broker_time(now),
             self.mt5.COPY_TICKS_ALL,
         )
         normalized = normalize_ticks(raw, symbol, collected_at)
@@ -369,8 +380,10 @@ class TickCollector:
         self._last_flush = time.monotonic()
         return flushed
 
-    def cycle(self, *, force_flush: bool = False) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+    def cycle(
+        self, *, force_flush: bool = False, now: datetime | None = None,
+    ) -> dict[str, Any]:
+        now = now or datetime.now(timezone.utc)
         terminal, symbols = self.connect()
         results = {}
         for symbol in symbols:
@@ -387,14 +400,26 @@ class TickCollector:
         for symbol, flush in flushed.items():
             results.setdefault(symbol, {}).update(flush)
             results[symbol]["buffered"] = len(self.pending.get(symbol, []))
+        brt_now = self._broker_time(now)
+        b3_session_open = (
+            brt_now.weekday() < 5
+            and (brt_now.hour, brt_now.minute) >= (9, 0)
+            and (brt_now.hour, brt_now.minute) <= (18, 15)
+        )
+        received_total = sum(row["received"] for row in results.values())
+        degraded = b3_session_open and received_total == 0
         health = {
             "schema_version": SCHEMA_VERSION,
-            "status": "ok",
+            "status": "degraded" if degraded else "ok",
+            "degraded_reason": "no_ticks_during_b3_session" if degraded else None,
             "started_at": self.started_at,
             "checked_at": now.isoformat(timespec="seconds"),
             "terminal_path": self.terminal_path,
             "terminal_data_path": terminal.get("data_path"),
             "portable_validated": True,
+            "broker_server_offset_hours": self.broker_server_offset_hours,
+            "timestamp_semantics": "raw_broker_brt_encoded_epoch",
+            "b3_session_open": b3_session_open,
             "symbols": symbols,
             "cycle": results,
             "total_written_since_start": self.total_written,
@@ -420,6 +445,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--initial-backfill-minutes", type=int, default=15)
+    parser.add_argument(
+        "--broker-server-offset-hours", type=float,
+        default=DEFAULT_BROKER_SERVER_OFFSET_HOURS,
+    )
     parser.add_argument("--flush-interval-seconds", type=float, default=300.0)
     parser.add_argument("--max-buffer-rows", type=int, default=250_000)
     parser.add_argument("--once", action="store_true")
@@ -452,6 +481,7 @@ def main() -> int:
         terminal_path=args.terminal,
         output_root=Path(args.output_root),
         initial_backfill_minutes=args.initial_backfill_minutes,
+        broker_server_offset_hours=args.broker_server_offset_hours,
         flush_interval_seconds=args.flush_interval_seconds,
         max_buffer_rows=args.max_buffer_rows,
     )
