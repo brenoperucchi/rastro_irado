@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 15:11'
+updated_date: '2026-07-16 15:58'
 labels:
   - tactical
   - validation
@@ -41,7 +41,7 @@ Completar a aceitação econômica do NF-01 sem misturar pesquisa exploratória 
 <!-- AC:BEGIN -->
 - [x] #1 Registra observation_bar_end, confirmation_bar_end, signal_available_at, entry_at e entry_price
 - [x] #2 Fill usa o primeiro preço realmente negociável após a disponibilidade do sinal
-- [ ] #3 Compara Pair dinâmico, Pair fixo e baselines simples com frequência comparável
+- [x] #3 Compara Pair dinâmico, Pair fixo e baselines simples com frequência comparável
 - [x] #4 Reporta custos em 0,5x, 1,0x, 1,5x e 2,0x do cenário principal
 - [ ] #5 Separa hipótese confirmatória, análises condicionais e achados exploratórios
 - [x] #6 Resultado fica provisório enquanto rollover contínuo não estiver auditado
@@ -99,5 +99,11 @@ author: @codex
 created: 2026-07-16 15:11
 ---
 Correção de coordenação: o pré-registro beta-Kalman do comentário anterior foi supersedido antes de qualquer resultado pela tarefa dedicada IRAI-21, já commitada em origin/main. O contrato autoritativo do challenger é o de `docs/plans/2026-07-16-challenger-pair-fixo-win-wdo.md`: par WIN–WDO fixo, beta OLS rolling e independência do engine/Kalman/calibração. A variante beta-Kalman não será executada nem publicada.
+---
+
+author: codex
+created: 2026-07-16 15:58
+---
+AC3 aceito via IRAI-21 após revisão independente: Pair fixo OLS rolling WIN-WDO comparado ao Pair dinâmico e baselines, incluindo recorte na mesma janela PIT e expectativa por sessão. 19 testes específicos passaram; tarefa IRAI-21 encerrada como Done. Resultado: nenhum braço recupera edge líquido; Pair fixo não será promovido.
 ---
 <!-- COMMENTS:END -->
