@@ -273,14 +273,24 @@ class TickCollector:
         terminal_path: str,
         output_root: Path,
         initial_backfill_minutes: int,
+        flush_interval_seconds: float = 300.0,
+        max_buffer_rows: int = 250_000,
     ):
         self.mt5 = mt5
         self.terminal_path = terminal_path
         self.output_root = output_root
         self.initial_backfill_minutes = initial_backfill_minutes
+        self.flush_interval_seconds = flush_interval_seconds
+        self.max_buffer_rows = max_buffer_rows
         self.state_path = output_root / "state.json"
         self.health_path = output_root / "health.json"
         self.state = load_state(self.state_path)
+        self.read_cursors = {
+            symbol: TickCursor(cursor.last_time_msc, set(cursor.last_keys or set()))
+            for symbol, cursor in self.state.items()
+        }
+        self.pending: dict[str, list[dict[str, Any]]] = {}
+        self._last_flush = time.monotonic()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.total_written = 0
         self._connected = False
@@ -309,12 +319,12 @@ class TickCollector:
             self._connected = False
 
     def _from_time(self, symbol: str, now: datetime) -> datetime:
-        cursor = self.state.get(symbol, TickCursor())
+        cursor = self.read_cursors.get(symbol, self.state.get(symbol, TickCursor()))
         if cursor.last_time_msc:
             return datetime.fromtimestamp(max(0, cursor.last_time_msc - 1) / 1000, timezone.utc)
         return now - timedelta(minutes=self.initial_backfill_minutes)
 
-    def collect_symbol(self, symbol: str, now: datetime) -> tuple[int, int, list[str]]:
+    def collect_symbol(self, symbol: str, now: datetime) -> tuple[int, int]:
         collected_at = now.isoformat(timespec="milliseconds")
         raw = self.mt5.copy_ticks_range(
             symbol,
@@ -323,26 +333,60 @@ class TickCollector:
             self.mt5.COPY_TICKS_ALL,
         )
         normalized = normalize_ticks(raw, symbol, collected_at)
-        selected, cursor = deduplicate_ticks(normalized, self.state.get(symbol, TickCursor()))
-        files = write_parquet(self.output_root, symbol, selected)
+        current_cursor = self.read_cursors.get(symbol, self.state.get(symbol, TickCursor()))
+        selected, cursor = deduplicate_ticks(normalized, current_cursor)
         if selected:
-            self.state[symbol] = cursor
-            save_state(self.state_path, self.state)
-            self.total_written += len(selected)
-        return len(normalized), len(selected), [str(path) for path in files]
+            self.pending.setdefault(symbol, []).extend(selected)
+            self.read_cursors[symbol] = cursor
+        return len(normalized), len(selected)
 
-    def cycle(self) -> dict[str, Any]:
+    def _flush_due(self) -> bool:
+        buffered = sum(len(rows) for rows in self.pending.values())
+        return (
+            buffered >= self.max_buffer_rows
+            or (
+                buffered > 0
+                and time.monotonic() - self._last_flush >= self.flush_interval_seconds
+            )
+        )
+
+    def flush_pending(self) -> dict[str, dict[str, Any]]:
+        """Persiste buffers grandes; cursor só avança depois do Parquet atômico."""
+        flushed = {}
+        for symbol, rows in list(self.pending.items()):
+            if not rows:
+                continue
+            files = write_parquet(self.output_root, symbol, rows)
+            self.state[symbol] = self.read_cursors[symbol]
+            self.total_written += len(rows)
+            flushed[symbol] = {
+                "written": len(rows),
+                "files": [str(path) for path in files],
+            }
+            self.pending[symbol] = []
+        if flushed:
+            save_state(self.state_path, self.state)
+        self._last_flush = time.monotonic()
+        return flushed
+
+    def cycle(self, *, force_flush: bool = False) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         terminal, symbols = self.connect()
         results = {}
         for symbol in symbols:
-            received, written, files = self.collect_symbol(symbol, now)
+            received, accepted = self.collect_symbol(symbol, now)
             results[symbol] = {
                 "received": received,
-                "written": written,
-                "files": files,
-                "last_time_msc": self.state.get(symbol, TickCursor()).last_time_msc,
+                "accepted": accepted,
+                "written": 0,
+                "files": [],
+                "buffered": len(self.pending.get(symbol, [])),
+                "last_time_msc": self.read_cursors.get(symbol, TickCursor()).last_time_msc,
             }
+        flushed = self.flush_pending() if force_flush or self._flush_due() else {}
+        for symbol, flush in flushed.items():
+            results.setdefault(symbol, {}).update(flush)
+            results[symbol]["buffered"] = len(self.pending.get(symbol, []))
         health = {
             "schema_version": SCHEMA_VERSION,
             "status": "ok",
@@ -376,6 +420,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     parser.add_argument("--initial-backfill-minutes", type=int, default=15)
+    parser.add_argument("--flush-interval-seconds", type=float, default=300.0)
+    parser.add_argument("--max-buffer-rows", type=int, default=250_000)
     parser.add_argument("--once", action="store_true")
     return parser.parse_args()
 
@@ -406,13 +452,17 @@ def main() -> int:
         terminal_path=args.terminal,
         output_root=Path(args.output_root),
         initial_backfill_minutes=args.initial_backfill_minutes,
+        flush_interval_seconds=args.flush_interval_seconds,
+        max_buffer_rows=args.max_buffer_rows,
     )
     log.info("coletor iniciado: terminal=%s output=%s", args.terminal, args.output_root)
     while not stop_requested:
         try:
-            health = collector.cycle()
+            health = collector.cycle(force_flush=args.once)
             summary = ", ".join(
-                f"{symbol}=+{row['written']}" for symbol, row in health["cycle"].items()
+                f"{symbol}=accepted:{row['accepted']} written:{row['written']} "
+                f"buffered:{row['buffered']}"
+                for symbol, row in health["cycle"].items()
             )
             log.info("ciclo ok: %s", summary)
         except Exception as exc:  # noqa: BLE001 — serviço deve registrar e tentar novamente
@@ -426,7 +476,10 @@ def main() -> int:
         deadline = time.monotonic() + max(0.25, args.poll_seconds)
         while not stop_requested and time.monotonic() < deadline:
             time.sleep(min(0.25, deadline - time.monotonic()))
-    collector.disconnect()
+    try:
+        collector.flush_pending()
+    finally:
+        collector.disconnect()
     log.info("coletor encerrado")
     return 0
 

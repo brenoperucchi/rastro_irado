@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 06:20'
-updated_date: '2026-07-16 06:25'
+updated_date: '2026-07-16 06:31'
 labels:
   - collection
   - mt5
@@ -46,4 +46,6 @@ ordinal: 20000
 Implementação autorizada explicitamente pelo usuário em 2026-07-16. Terminal dedicado confirmado existente e ocioso em E:/MetaTradersWSL/wdowin/ira_ticks/terminal64.exe.
 
 Implementação local test-first concluída: descoberta do contrato vigente, cursor atômico por time_msc+identidade, chunks Parquet content-addressed, health JSON, conexão MT5 persistente entre ciclos e launcher PowerShell com /portable. Teste de conexão persistente falhou antes da correção (2 initialize por 2 ciclos) e passou após manter uma única sessão MT5.
+
+O requisito de performance foi incorporado antes do deploy: polling continua em 2s para não perder mercado, mas a persistência acumula até 5 minutos ou 250 mil linhas e só então grava Parquet ZSTD atômico. Isso evita milhares de arquivos minúsculos e deixa o dataset adequado a DuckDB/Polars. O cursor persistido só avança após o flush; queda do processo reconsulta o buffer perdido.
 <!-- SECTION:NOTES:END -->

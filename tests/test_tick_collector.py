@@ -133,9 +133,10 @@ def test_coletor_mantem_uma_conexao_mt5_entre_ciclos(tmp_path, monkeypatch):
             return (0, "ok")
 
     fake = FakeMT5()
+    writes = []
     monkeypatch.setattr(
         "backend.workers.tick_collector_wsl.write_parquet",
-        lambda *_args, **_kwargs: [],
+        lambda _root, symbol, ticks: writes.append((symbol, len(ticks))) or [],
     )
     collector = TickCollector(
         fake,
@@ -149,6 +150,10 @@ def test_coletor_mantem_uma_conexao_mt5_entre_ciclos(tmp_path, monkeypatch):
 
     assert fake.initialize_calls == 1
     assert fake.shutdown_calls == 0
+    assert writes == []  # não cria um arquivo minúsculo a cada poll de 2s
+
+    collector.flush_pending()
+    assert sorted(writes) == [("WIN$N", 2), ("WINQ26", 2)]
 
 
 def test_parquet_preserva_schema_e_conteudo(tmp_path):

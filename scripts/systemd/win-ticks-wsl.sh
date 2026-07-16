@@ -27,5 +27,6 @@ exec "${PYTHON_BIN}" ${PYTHON_VERSION_FLAG} -X utf8 backend/workers/tick_collect
     --terminal "${TERMINAL_PATH}" \
     --output-root "${OUTPUT_ROOT}" \
     --poll-seconds "${IRAI_TICKS_POLL_SECONDS:-2}" \
-    --initial-backfill-minutes "${IRAI_TICKS_INITIAL_BACKFILL_MINUTES:-15}"
-
+    --initial-backfill-minutes "${IRAI_TICKS_INITIAL_BACKFILL_MINUTES:-15}" \
+    --flush-interval-seconds "${IRAI_TICKS_FLUSH_INTERVAL_SECONDS:-300}" \
+    --max-buffer-rows "${IRAI_TICKS_MAX_BUFFER_ROWS:-250000}"
