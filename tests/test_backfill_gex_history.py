@@ -19,6 +19,7 @@ from scripts.backfill_gex_history import (
     assemble_ibov_options,
     decide_persistence,
     gex_validity_reasons,
+    ensure_safe_sqlite_runtime,
     next_effective_win_session,
     parse_equity_premiums,
     parse_ibov_open_interest,
@@ -133,6 +134,21 @@ def test_backfill_recusa_sqlite_sem_tabelas_de_producao(tmp_path):
 
     with pytest.raises(ValueError, match="market_bars.*gex_levels"):
         open_backfill_database(empty)
+
+
+def test_backfill_linux_recusa_sqlite_hospedado_em_drvfs_windows():
+    with pytest.raises(ValueError, match="Python do Windows"):
+        ensure_safe_sqlite_runtime(
+            Path("/mnt/c/Users/teste/rastro_irado/data/irai.db"),
+            platform="linux",
+        )
+
+
+def test_backfill_windows_aceita_sqlite_no_volume_windows():
+    ensure_safe_sqlite_runtime(
+        Path("C:/Users/teste/rastro_irado/data/irai.db"),
+        platform="win32",
+    )
 
 
 def test_auditoria_gex_explica_todos_os_gates_reprovados():

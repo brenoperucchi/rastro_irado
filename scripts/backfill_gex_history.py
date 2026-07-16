@@ -326,6 +326,25 @@ def gex_validity_reasons(result: dict, *, grid_step: float) -> list[str]:
     return reasons
 
 
+def ensure_safe_sqlite_runtime(db_path: str | Path, *, platform: str | None = None) -> None:
+    """Impede escritor SQLite Linux sobre arquivo hospedado no DrvFS/Windows.
+
+    WAL e locks não são interoperáveis entre o SQLite Linux e processos
+    Windows no mesmo arquivo em ``/mnt/<drive>``. O backfill deve usar o mesmo
+    runtime dos serviços que escrevem a base: Python do Windows.
+    """
+    platform = platform or sys.platform
+    if platform == "win32":
+        return
+    resolved = Path(db_path).expanduser().resolve(strict=False)
+    parts = resolved.parts
+    if len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt" and len(parts[2]) == 1:
+        raise ValueError(
+            f"SQLite hospedado no Windows ({resolved}) não pode ser escrito pelo "
+            "Python Linux/WSL; execute este backfill com o Python do Windows"
+        )
+
+
 def open_backfill_database(db_path: str | Path):
     """Abre somente uma base IRAI existente e com as tabelas exigidas.
 
@@ -333,6 +352,7 @@ def open_backfill_database(db_path: str | Path):
     comportamento útil na inicialização da aplicação, mas perigoso em backfill.
     Aqui falhamos antes de criar ou escrever qualquer SQLite acidental.
     """
+    ensure_safe_sqlite_runtime(db_path)
     path = Path(db_path).expanduser()
     if not path.is_file():
         raise ValueError(f"base IRAI não existe: {path}")
