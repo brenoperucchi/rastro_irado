@@ -1,11 +1,11 @@
 ---
 id: IRAI-21
 title: Challenger Pair fixo WIN-WDO (NF-01B / IRAI-4 AC#3)
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-07-16 15:04'
-updated_date: '2026-07-16 15:39'
+updated_date: '2026-07-16 15:43'
 labels:
   - tactical
   - validation
@@ -95,4 +95,16 @@ G (gaps de teste): +test_anti_lookahead_prefixo_identico_ao_completo (prova DIRE
 
 Fica em Review.
 ---
+
+author: codex
+created: 2026-07-16 15:43
+---
+Revisão independente concluída: GO. Conferidos o recorte pair_fixo_windowed na mesma janela do Pair dinâmico PIT, o re-bootstrap por sessão, a causalidade por prefixo, o isolamento entre sessões e o diagnóstico de alinhamento. Validação local: python3 -m pytest -q tests/test_measure_pair_fixed_value.py tests/test_build_challenger_artifact.py -> 19 passed. Conclusão econômica preservada: Pair fixo não recupera edge; não promover como setup.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Challenger Pair fixo WIN-WDO validado e encerrado. A comparação apples-to-apples confirma retorno líquido negativo: WIN h=6 -11,02 pontos/evento (IC95% exclui zero) contra -7,47 do Pair dinâmico; WDO -0,72 contra -1,00, ambos adversos. O controle simples e independente de calibração reforça que o marker Pair não deve ser promovido.
+<!-- SECTION:FINAL_SUMMARY:END -->
