@@ -1,11 +1,11 @@
 ---
 id: IRAI-2
 title: NF-01A — concluir extrator e backtester point-in-time Pair/Z
-status: Review
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 08:26'
+updated_date: '2026-07-16 12:38'
 labels:
   - tactical
   - validation
@@ -106,4 +106,16 @@ created: 2026-07-16 05:28
 ---
 Gate de prontidão antes de abrir IRAI-3 (auditoria em 2026-07-16): NF-01A ainda NÃO está entregável. Evidências: (1) scripts dizem explicitamente que não implementam baselines momentum/reversão, mas AC #3 os exige; (2) não existe artefato JSON NF-01 versionado/localizável no repo — os JSONs reportados ficaram em scratchpad /tmp; (3) TradeOutcome não registra observation_bar_end, confirmation_bar_end, signal_available_at e entry_at; (4) _hour_brt ainda subtrai 5h aproximado em vez do helper sazonal; (5) entry_price continua sendo close da próxima M5 e precisa ser rotulado como política hipotética, deixando primeiro preço executável para VAL-04; (6) MFE/MAE usa apenas closes apesar de OHLC agora existir. Para fechar IRAI-2 sem invadir VAL-04: corrigir relógio e contrato temporal, gerar baselines como eventos reproduzíveis, publicar 1 artefato PIT com comando/hash/limitações, manter fill e MFE/MAE atuais explicitamente como provisórios. Fill executável, custos completos e MFE/MAE OHLC ficam em IRAI-4. Marcar ACs e mover para Review somente depois disso.
 ---
+
+author: @codex
+created: 2026-07-16 12:38
+---
+Revisão independente IRAI-3 aprovada sem bloqueadores ou bugs. Verificados 17.983 eventos, ordem causal completa, fronteira de sessão/cooldown, conexão somente leitura, persist_state=False, integridade e consistência dos artefatos e 243 testes mantidos (18 skipped). NF-01A encerrado; limitações econômicas permanecem corretamente atribuídas ao IRAI-4/VAL-04.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+NF-01A concluído e aprovado por revisão independente. Entrega: replay PIT causal, Pair/Z/interseção, baselines, 4 timestamps por evento e artefato versionado. Próximo gate: realismo econômico IRAI-4/VAL-04.
+<!-- SECTION:FINAL_SUMMARY:END -->
