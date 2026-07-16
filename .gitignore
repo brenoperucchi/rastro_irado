@@ -19,6 +19,7 @@ data/*.db-wal
 data/*.db-shm
 data/p_dynamic_parity/
 data/ticks/
+data/gex_history_cache/
 
 # IDE
 .idea/
