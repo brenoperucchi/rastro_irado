@@ -540,6 +540,22 @@ def test_run_reporta_by_year_h6_mean():
     assert by_year["2026"]["n"] == 1
 
 
+def test_run_reporta_sensibilidade_a_quatro_cenarios_de_custo():
+    """Na trajetória sintética, entrada=105 e h3 fecha em 115: retorno
+    bruto=10. Para WIN (custo-base=10), as médias devem ser +5, 0, -5 e
+    -10 nos cenários 0,5x/1x/1,5x/2x."""
+    report = _fake_run_com_n_sessoes(["2026-07-10"])
+    sensitivity = report["targets"]["WIN$N"]["by_direction"]["all"][
+        "cost_sensitivity"
+    ]
+
+    assert set(sensitivity) == {"0.5x", "1.0x", "1.5x", "2.0x"}
+    assert sensitivity["0.5x"]["horizons"]["3"]["estimate"]["value"] == 5.0
+    assert sensitivity["1.0x"]["horizons"]["3"]["estimate"]["value"] == 0.0
+    assert sensitivity["1.5x"]["horizons"]["3"]["estimate"]["value"] == -5.0
+    assert sensitivity["2.0x"]["horizons"]["3"]["estimate"]["value"] == -10.0
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

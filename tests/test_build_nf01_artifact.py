@@ -8,6 +8,8 @@ si já tem cobertura nos testes dos 5 módulos de sinal.
 Roda sem pytest:  python3 tests/test_build_nf01_artifact.py
 Ou com pytest:    pytest tests/test_build_nf01_artifact.py
 """
+import gzip
+import json
 import os
 import sys
 import types
@@ -75,6 +77,7 @@ def test_metadata_reprodutivel_presente():
     assert a["generated_at"] == "2026-07-16T00:00:00+00:00"
     assert a["parameters"]["point_in_time"] is True
     assert a["parameters"]["targets"] == ["WIN$N", "WDO$N"]
+    assert a["parameters"]["cost_multipliers"] == [0.5, 1.0, 1.5, 2.0]
 
 
 def test_git_state_registra_head_e_origin_main():
@@ -143,6 +146,23 @@ def test_limitacoes_diferem_entre_modo_retro_e_pit():
     retro_pair_lims = retro["signals"]["pair"]["limitations"]
     assert any("cesta de fatores é FIXA" in x for x in pit_pair_lims)
     assert not any("cesta de fatores é FIXA" in x for x in retro_pair_lims)
+
+
+def test_escreve_gzip_e_summary_reproduziveis(tmp_path):
+    artifact = _build(point_in_time=True)
+    full = tmp_path / "nf01.json.gz"
+    summary_path = tmp_path / "nf01_summary.json"
+
+    art.write_json_artifact(full, artifact)
+    summary = art.summarize_artifact(artifact, events_moved_to=full.name)
+    art.write_json_artifact(summary_path, summary)
+
+    with gzip.open(full, "rt", encoding="utf-8") as stream:
+        assert json.load(stream) == json.loads(json.dumps(artifact))
+    stored_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert stored_summary["events_moved_to"] == "nf01.json.gz"
+    assert stored_summary["event_counts"]["pair"]["WIN$N"] == 1
+    assert "events" not in stored_summary["signals"]["pair"]["targets"]["WIN$N"]
 
 
 if __name__ == "__main__":

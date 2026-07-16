@@ -27,6 +27,7 @@ Uso (rodar no host com sklearn/pykalman — ex.: ryzen5wsl):
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import subprocess
 import sys
@@ -175,10 +176,36 @@ def build_artifact(db_path: str, targets, limit: int, bootstrap: int,
             "burn_in_sessions": burn_in_sessions,
             "point_in_time": point_in_time,
             "min_events_for_gate": pair.MIN_EVENTS_FOR_GATE,
+            "cost_multipliers": list(pair.COST_MULTIPLIERS),
         },
         "provisional_policies": PROVISIONAL_POLICIES,
         "signals": signals,
     }
+
+
+def summarize_artifact(artifact: dict, *, events_moved_to: str) -> dict:
+    """Copia o artefato sem o ledger pesado e preserva contagens auditáveis."""
+    summary = json.loads(json.dumps(artifact))
+    counts = {}
+    for signal_name, signal in summary["signals"].items():
+        counts[signal_name] = {}
+        for target_name, target in signal["targets"].items():
+            counts[signal_name][target_name] = len(target.pop("events", []))
+    summary["events_moved_to"] = events_moved_to
+    summary["event_counts"] = counts
+    return summary
+
+
+def write_json_artifact(path: Path, payload: dict) -> None:
+    """Grava JSON puro ou gzip determinístico quando o nome termina em .gz."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    if path.suffix == ".gz":
+        with path.open("wb") as raw:
+            with gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as compressed:
+                compressed.write(serialized)
+        return
+    path.write_bytes(serialized)
 
 
 def parse_args() -> argparse.Namespace:
@@ -192,6 +219,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--point-in-time", action="store_true")
     parser.add_argument("--output", required=True,
                          help="Caminho versionado do artefato (ex.: docs/artifacts/irai-2/nf01_pit.json).")
+    parser.add_argument(
+        "--summary-output",
+        help="JSON legível sem eventos; registra contagens e aponta para --output.",
+    )
     return parser.parse_args()
 
 
@@ -206,13 +237,20 @@ def main() -> int:
         args.point_in_time, command=command, generated_at=generated_at,
     )
     out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_artifact(out, artifact)
+    if args.summary_output:
+        summary_out = Path(args.summary_output)
+        write_json_artifact(
+            summary_out,
+            summarize_artifact(artifact, events_moved_to=out.name),
+        )
     total_events = sum(
         sum(t.get("events", []).__len__() for t in sig["targets"].values())
         for sig in artifact["signals"].values()
     )
     print(f"Artefato gravado em {out} — {len(artifact['signals'])} sinais, {total_events} eventos totais")
+    if args.summary_output:
+        print(f"Resumo sem eventos gravado em {args.summary_output}")
     print(f"git commit: {artifact['git'].get('commit')} (dirty={artifact['git'].get('dirty')})")
     return 0
 

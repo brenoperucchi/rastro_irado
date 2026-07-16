@@ -121,6 +121,7 @@ from scripts.measure_d1_inflation import (
 
 
 DEFAULT_TARGETS = ("WIN$N", "WDO$N")
+COST_MULTIPLIERS = (0.5, 1.0, 1.5, 2.0)
 # Mesma fonte que scripts/measure_tactical_gate3.py:61 — não importada de lá
 # pra não puxar sklearn/scipy (este script não treina nenhum modelo).
 # Origem documentada em docs/adr/ADR-002-minimum-useful-delta-auc.md.
@@ -484,6 +485,55 @@ def win_rate(outcomes: list[TradeOutcome], horizon: int) -> tuple[int, int, floa
     return wins, total, (100.0 * wins / total if total else float("nan"))
 
 
+def _cost_sensitivity_report(
+    outcomes: list[TradeOutcome],
+    horizons_report: dict[str, dict],
+    base_cost: float,
+) -> dict:
+    """Reprecifica o MESMO ledger em 0,5x/1x/1,5x/2x do custo-base.
+
+    O relatório principal já contém ``net = gross - base_cost``. Mudar o
+    custo desloca todo retorno medido do horizonte pela constante
+    ``base_cost * (1 - multiplier)``. Por isso média e IC bootstrap mudam
+    pela mesma constante, sem repetir 10 mil reamostragens idênticas; erro
+    padrão e contagens não mudam. A win-rate é recalculada evento a evento.
+    """
+    sensitivity = {}
+    for multiplier in COST_MULTIPLIERS:
+        delta = base_cost * (1.0 - multiplier)
+        adjusted_horizons = {}
+        for horizon in FORWARD_HORIZONS:
+            main = horizons_report[str(horizon)]
+            estimate = main["estimate"]
+            adjusted_estimate = None
+            if estimate is not None:
+                adjusted_estimate = dict(estimate)
+                adjusted_estimate["value"] = estimate["value"] + delta
+                adjusted_estimate["ci_low"] = estimate["ci_low"] + delta
+                adjusted_estimate["ci_high"] = estimate["ci_high"] + delta
+                adjusted_estimate["significant"] = (
+                    adjusted_estimate["ci_low"] > 0
+                    or adjusted_estimate["ci_high"] < 0
+                )
+            values = [
+                o.fwd[horizon] + delta
+                for o in outcomes
+                if o.fwd.get(horizon) is not None
+            ]
+            wins = sum(value > 0 for value in values)
+            adjusted_horizons[str(horizon)] = {
+                "estimate": adjusted_estimate,
+                "win_rate_pct": 100.0 * wins / len(values) if values else float("nan"),
+                "wins": wins,
+                "total": len(values),
+            }
+        sensitivity[f"{multiplier:.1f}x"] = {
+            "cost_points": base_cost * multiplier,
+            "horizons": adjusted_horizons,
+        }
+    return sensitivity
+
+
 # ── Orquestração ────────────────────────────────────────────────────────────
 
 def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
@@ -577,6 +627,9 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
                 # calculados e nunca apareciam no relatório.
                 "mfe_mean": round(sum(mfes) / len(mfes), 2) if mfes else None,
                 "mae_mean": round(sum(maes) / len(maes), 2) if maes else None,
+                "cost_sensitivity": _cost_sensitivity_report(
+                    subset, horizons_report, TARGET_COST_POINTS.get(target, 0.0)
+                ),
             }
 
         # Gate de amostra mínima — docs/plans/2026-07-13-irai-tactical-layer-
