@@ -135,6 +135,14 @@ DEFAULT_SESSION_LIMIT = 300  # ~14 meses das sessões mais recentes; ajustável 
 # da medição — nunca silenciosamente: `sessions_burn_in` sempre aparece no
 # relatório.
 DEFAULT_BURN_IN_SESSIONS = 5
+# Amostra mínima pro "gate de aprovação" econômico — não um limiar inventado
+# aqui: docs/plans/2026-07-13-irai-tactical-layer-win-wdo.md:281 ("pelo
+# menos 100 eventos confirmados para o gate econômico"), §7.3. Abaixo disso
+# o alvo é rotulado INCONCLUSIVO no relatório, nunca silenciosamente tratado
+# como "sem edge" ou "com edge" — pedido explícito do usuário ao expandir o
+# escopo pro item 3 (interseção Pair+Z, cuja amostra é necessariamente menor
+# que a de qualquer um dos dois markers isolados).
+MIN_EVENTS_FOR_GATE = 100
 
 
 # ── Replay cronológico com Kalman encadeado (achado C1-b) ──────────────────
@@ -384,10 +392,18 @@ def win_rate(outcomes: list[TradeOutcome], horizon: int) -> tuple[int, int, floa
 def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
         burn_in_sessions: int = DEFAULT_BURN_IN_SESSIONS,
         *, direction_of: Optional[Callable] = None,
-        limitations: Optional[list] = None) -> dict:
+        limitations: Optional[list] = None,
+        preprocess: Optional[Callable] = None,
+        min_events_for_gate: int = MIN_EVENTS_FOR_GATE) -> dict:
     """`direction_of`/`limitations` default ao Pair Signal (marker `P`) —
-    scripts/measure_price_divergence_value.py reusa esta função passando as
-    suas próprias (marker `Z`) em vez de duplicar orquestração/relatório."""
+    scripts/measure_price_divergence_value.py e
+    scripts/measure_intersection_value.py reusam esta função passando as
+    suas próprias (markers `Z` e interseção Pair∩Z) em vez de duplicar
+    orquestração/relatório. `preprocess(snapshots)`, se dado, roda logo
+    após `compute()` de cada sessão (antes da extração de eventos) — usado
+    por measure_intersection_value.py pra estampar os campos sintéticos que
+    seu `direction_of` lê (não há campo pronto no engine pra "interseção",
+    diferente de pair_compra/z_compra_val)."""
     direction_of = direction_of or _pair_direction
     report: dict = {"targets": {}}
     for target in targets:
@@ -399,6 +415,8 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
                 snapshots = compute(date, target)
                 if not snapshots:
                     continue
+                if preprocess is not None:
+                    preprocess(snapshots)
                 if idx < burn_in_sessions:
                     # Sessão ainda replayada (o Kalman precisa esquentar pra
                     # sessão seguinte encadear corretamente), mas seus
@@ -432,6 +450,12 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
             maes = [o.mae for o in subset if o.mae is not None]
             target_report["by_direction"][label] = {
                 "n_events": len(subset),
+                # Sessões DISTINTAS que contribuíram pelo menos 1 evento —
+                # diferente de sessions_replayed (total processado). Pedido
+                # explícito do usuário ao expandir o escopo pro item 3:
+                # "sessões independentes" precisa ser visível pra julgar se
+                # um horizonte com poucas sessões é confiável.
+                "n_sessions_with_events": len({o.session_date for o in subset}),
                 "horizons": horizons_report,
                 # Descritivo, não bootstrapado (mesmo espírito de by_hour/
                 # by_pair_factor abaixo) — achado do /codex-r: MFE/MAE eram
@@ -439,6 +463,33 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
                 "mfe_mean": round(sum(mfes) / len(mfes), 2) if mfes else None,
                 "mae_mean": round(sum(maes) / len(maes), 2) if maes else None,
             }
+
+        # Gate de amostra mínima — docs/plans/2026-07-13-irai-tactical-layer-
+        # win-wdo.md §7.3 ("pelo menos 100 eventos confirmados"). Abaixo do
+        # mínimo, o alvo é rotulado INCONCLUSIVO em vez de silenciosamente
+        # reportar médias/IC de uma amostra fina como se fossem confiáveis.
+        n_events_all = target_report["by_direction"]["all"]["n_events"]
+        target_report["min_events_for_gate"] = min_events_for_gate
+        target_report["gate_verdict"] = (
+            "INCONCLUSIVO (amostra abaixo do mínimo)"
+            if n_events_all < min_events_for_gate
+            else "AMOSTRA_SUFICIENTE_PARA_GATE"
+        )
+
+        # Quebra por ano — pedido explícito do usuário ao expandir a janela de
+        # replay pra vários anos: "verificar estabilidade por período"
+        # (mesmo espírito de "estabilidade mínima por fold" do gate de
+        # aprovação, docs/plans/2026-07-13-irai-tactical-layer-win-wdo.md
+        # §7.3). Descritivo, não bootstrapado, mesmo padrão de by_pair_factor.
+        by_year: dict[str, list[float]] = defaultdict(list)
+        for o in outcomes:
+            v = o.fwd.get(6)
+            if v is not None:
+                by_year[o.session_date[:4]].append(v)
+        target_report["by_year_h6_mean"] = {
+            year: {"n": len(vs), "mean": round(sum(vs) / len(vs), 2)}
+            for year, vs in sorted(by_year.items())
+        }
 
         # Quebra por hora do dia (BRT aproximado) — só contagem + retorno médio h=6,
         # pra não inflar o relatório com bootstrap por hora (amostra fica pequena).
@@ -468,22 +519,14 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
     return report
 
 
-# Limitações conhecidas e deliberadamente NÃO resolvidas neste escopo mínimo
-# (achados do /codex-r sobre a 1ª versão deste script) — sempre incluídas no
-# relatório de saída (JSON e texto) pra nenhuma leitura do número tratar isto
-# como confirmação de edge econômico sem essas ressalvas.
-LIMITATIONS = [
-    "C1-a (calibração in-sample): a cesta de fatores é selecionada por "
-    "scripts/calibrate_universal.py num split treino/holdout temporal "
-    "(holdout fica fora da escolha), mas os pesos finais usados em "
-    "produção são refeitos sobre TODO o histórico (`merged_all`, incluindo "
-    "o próprio holdout) — é esse artefato final que este script aplica "
-    "retroativamente a cada sessão do replay. Isso pode, "
-    "retrospectivamente, favorecer um fator cujo resíduo pareça mais "
-    "mean-reverting contra o alvo do que seria observável em tempo real — "
-    "um viés otimista que este script NÃO isola nem quantifica. Um "
-    "resultado positivo aqui é evidência preliminar, não confirmação de "
-    "edge OOS genuíno.",
+# Limitações COMPARTILHADAS entre os 3 scripts NF-01 (Pair, Z, interseção) —
+# nenhuma depende de qual marker dispara o evento. measure_price_divergence_
+# value.py e measure_intersection_value.py importam e estendem esta lista com
+# suas próprias ressalvas de C1-a (mecanismo de contaminação difere por
+# marker) em vez de duplicá-la. Sempre incluídas no relatório de saída (JSON
+# e texto) pra nenhuma leitura do número tratar isto como confirmação de edge
+# econômico sem essas ressalvas.
+COMMON_LIMITATIONS = [
     "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L "
     "executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. "
     "Assume-se custo único (round-trip) por evento, coerente com o uso do "
@@ -499,7 +542,39 @@ LIMITATIONS = [
     "(pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado "
     "inicial frio não reflete o que existiria em produção (achado do "
     "/codex-r, 2ª rodada: risco de maior prioridade apontado).",
+    "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 "
+    "agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações "
+    "simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem "
+    "correção pra comparações múltiplas (ex: Bonferroni implícito); é mais "
+    "informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ "
+    "direções do que qualquer `***` isolado.",
+    "Sem calibração point-in-time (ver ressalva C1-a específica de cada "
+    "marker acima), isto é sempre um REPLAY RETROSPECTIVO com os parâmetros "
+    "ATUAIS de produção aplicados a todo o histórico — não um teste "
+    "out-of-sample no sentido estrito, mesmo quando a janela de replay "
+    "cobre anos anteriores à calibração mais recente.",
+    "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a "
+    "ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento "
+    "esperado — não valida contagem mínima de barras nem gaps internos. "
+    "Numa janela de replay que cubra vários anos, uma sessão esparsa (dados "
+    "faltando no meio, mas presente no fechamento) passa como 'completa'; "
+    "nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem "
+    "cobrir mais de 30 minutos de relógio (achado do /codex-r, job "
+    "relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão "
+    "antes de confiar em quebras por ano/período de janelas expandidas.",
 ]
+
+LIMITATIONS = [
+    "C1-a (calibração in-sample): a cesta de fatores é selecionada por "
+    "scripts/calibrate_universal.py num split treino/holdout temporal "
+    "(holdout fica fora da escolha), mas os pesos finais usados em "
+    "produção são refeitos sobre TODO o histórico (`merged_all`, incluindo "
+    "o próprio holdout) — é esse artefato final que este script aplica "
+    "retroativamente a cada sessão do replay. Isso pode, "
+    "retrospectivamente, favorecer um fator cujo resíduo pareça mais "
+    "mean-reverting contra o alvo do que seria observável em tempo real — "
+    "um viés otimista que este script NÃO isola nem quantifica.",
+] + COMMON_LIMITATIONS
 
 
 def _print_report(report: dict) -> None:
@@ -507,12 +582,14 @@ def _print_report(report: dict) -> None:
         print(f"\n=== {target} — {t['sessions_replayed']} sessões replayadas "
               f"({t['sessions_discarded']} descartadas, {t['sessions_burn_in']} "
               f"de burn-in excluídas da medição), custo={t['cost_points']} pts ===")
+        print(f"  GATE: {t['gate_verdict']} (mínimo {t['min_events_for_gate']} eventos, "
+              f"docs/plans/2026-07-13-irai-tactical-layer-win-wdo.md §7.3)")
         for label, d in t["by_direction"].items():
             if d["n_events"] == 0:
                 print(f"  [{label}] nenhum evento")
                 continue
-            print(f"  [{label}] {d['n_events']} eventos — "
-                  f"MFE médio: {d['mfe_mean']}, MAE médio: {d['mae_mean']}")
+            print(f"  [{label}] {d['n_events']} eventos em {d['n_sessions_with_events']} "
+                  f"sessões — MFE médio: {d['mfe_mean']}, MAE médio: {d['mae_mean']}")
             rows = []
             for h in FORWARD_HORIZONS:
                 hr = d["horizons"][str(h)]
@@ -529,6 +606,7 @@ def _print_report(report: dict) -> None:
                     f"{est['n_sessions']} sessões",
                 ))
             print(_table(("horizonte", "média líq. custo", "IC95%", "win-rate", "amostra"), rows))
+        print(f"  by_year (h=6, retorno médio líq.): {t['by_year_h6_mean']}")
         print(f"  by_hour_brt (h=6, retorno médio líq.): {t['by_hour_brt_h6_mean']}")
         print(f"  by_pair_factor (h=6, retorno médio líq.): {t['by_pair_factor_h6_mean']}")
 

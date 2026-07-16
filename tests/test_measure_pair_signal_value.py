@@ -358,6 +358,63 @@ def test_run_exclui_eventos_das_sessoes_de_burn_in():
     assert t["by_direction"]["all"]["n_events"] == 3  # 5 sessões - 2 de burn-in
 
 
+# ── 5. run() / gate de amostra mínima e quebra por ano ──────────────────────
+
+def _fake_run_com_n_sessoes(dates, *, min_events_for_gate=None):
+    """3 datas -> 1 evento de compra por sessão (bar 0), sem burn-in."""
+    class _FakeCandidates:
+        pass
+    _FakeCandidates.dates = dates
+    _FakeCandidates.discarded = []
+
+    @contextmanager
+    def fake_replay(db_path):
+        def compute(date, target):
+            return [_snap(0, 100.0, pair_compra=100.0)] + [
+                _snap(j, 100.0 + j * 5.0) for j in range(1, 25)
+            ]
+        yield compute
+
+    kwargs = {}
+    if min_events_for_gate is not None:
+        kwargs["min_events_for_gate"] = min_events_for_gate
+    with patch.object(psv, "candidate_sessions", lambda db, target, limit: _FakeCandidates), \
+         patch.object(psv, "chronological_replay", fake_replay):
+        return psv.run("unused.db", ["WIN$N"], limit=len(dates), iterations=50,
+                        burn_in_sessions=0, **kwargs)
+
+
+def test_run_marca_gate_inconclusivo_abaixo_do_minimo():
+    """Só 3 eventos, bem abaixo do default MIN_EVENTS_FOR_GATE=100 -> alvo
+    rotulado INCONCLUSIVO, não silenciosamente tratado como sem edge."""
+    report = _fake_run_com_n_sessoes(["2026-07-08", "2026-07-09", "2026-07-10"])
+    t = report["targets"]["WIN$N"]
+    assert t["by_direction"]["all"]["n_events"] == 3
+    assert t["gate_verdict"] == "INCONCLUSIVO (amostra abaixo do mínimo)"
+    assert t["min_events_for_gate"] == psv.MIN_EVENTS_FOR_GATE
+
+
+def test_run_marca_gate_suficiente_quando_atinge_o_minimo():
+    """Mesmos 3 eventos, mas com min_events_for_gate=2 (abaixo da amostra) ->
+    AMOSTRA_SUFICIENTE_PARA_GATE."""
+    report = _fake_run_com_n_sessoes(
+        ["2026-07-08", "2026-07-09", "2026-07-10"], min_events_for_gate=2)
+    t = report["targets"]["WIN$N"]
+    assert t["gate_verdict"] == "AMOSTRA_SUFICIENTE_PARA_GATE"
+
+
+def test_run_reporta_by_year_h6_mean():
+    """Sessões em anos diferentes -> by_year_h6_mean quebra por ano, cada um
+    com sua contagem e média — pedido do usuário pra 'verificar
+    estabilidade por período' ao expandir a janela de replay."""
+    report = _fake_run_com_n_sessoes(["2025-07-08", "2025-07-09", "2026-07-10"])
+    t = report["targets"]["WIN$N"]
+    by_year = t["by_year_h6_mean"]
+    assert set(by_year.keys()) == {"2025", "2026"}
+    assert by_year["2025"]["n"] == 2
+    assert by_year["2026"]["n"] == 1
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

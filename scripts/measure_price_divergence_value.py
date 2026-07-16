@@ -67,6 +67,7 @@ from scripts.measure_pair_signal_value import (
     DEFAULT_SESSION_LIMIT,
     DEFAULT_TARGETS,
     BOOTSTRAP_ITERATIONS,
+    COMMON_LIMITATIONS,
     FORWARD_HORIZONS,
     run,
     _print_report,
@@ -85,14 +86,15 @@ def _divergence_direction(snap) -> Optional[str]:
     return None
 
 
-# Limitações conhecidas — os itens 2-5 são idênticos aos de
-# measure_pair_signal_value.py (mesmo Kalman encadeado, mesmo custo, mesmo
-# burn-in, mesma limitação de MFE/MAE por fechamento); os itens C1-a são
-# reescritos/adicionados porque o mecanismo de contaminação é diferente
-# aqui (ver docstring do módulo, corrigida via /codex-r job
-# relay-mrmta8qe-g59z0c) — sempre incluídas no relatório de saída (JSON e
-# texto), nunca uma leitura do número deve tratar isto como confirmação de
-# edge econômico sem essas ressalvas.
+# Limitações — 2 itens de C1-a próprios do marker Z (mecanismo de
+# contaminação diferente do Pair Signal, ver docstring do módulo, corrigida
+# via /codex-r job relay-mrmta8qe-g59z0c) + COMMON_LIMITATIONS (idênticas às
+# de measure_pair_signal_value.py: custo, Kalman encadeado, MFE/MAE só
+# fechamento, burn-in, comparações múltiplas, replay retrospectivo != OOS) +
+# 1 item específico sobre a semântica de by_pair_factor neste script.
+# Sempre incluídas no relatório de saída (JSON e texto), nunca uma leitura
+# do número deve tratar isto como confirmação de edge econômico sem essas
+# ressalvas.
 LIMITATIONS = [
     "C1-a (calibração in-sample) pro marker Z, lado P_up: quem depende de "
     "`p_up` é a direção discreta `price_diverge_dir` (não `price_diverge_z` "
@@ -101,30 +103,14 @@ LIMITATIONS = [
     "(v2) tem os pesos atualizados causalmente pelo Kalman a partir de uma "
     "cesta selecionada por acurácia/R² e pesos/sigmas/calibração logística "
     "iniciais refeitos sobre TODO o histórico (`scripts/"
-    "calibrate_universal.py`, sem corte point-in-time). Um resultado "
-    "positivo aqui é evidência preliminar, não confirmação de edge OOS "
-    "genuíno — mais precisamente, um replay retrospectivo com parâmetros "
-    "atuais de produção, não um teste OOS no sentido estrito.",
+    "calibrate_universal.py`, sem corte point-in-time).",
     "C1-a pro marker Z, lado preço (mecanismo que o Pair Signal NÃO tem): "
     "`target_div_sigma`, denominador de `price_diverge_z`, vem de "
     "`scripts/calc_sigmas.py`, calculado sobre TODO o histórico disponível "
     "em `market_bars` (sem filtro de data) e aplicado retroativamente a "
     "cada sessão do replay — uma segunda fonte de contaminação in-sample "
     "independente da de `p_up`.",
-    "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L "
-    "executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. "
-    "Assume-se custo único (round-trip) por evento, coerente com o uso do "
-    "mesmo valor no plano tático, mas não validado independentemente.",
-    "O encadeamento cronológico do Kalman (achado C1-b) pula sessões "
-    "descartadas por candidate_sessions() sem processá-las: o estado NÃO é "
-    "atualizado nesses dias, diferente do que aconteceria ao vivo (que "
-    "processaria qualquer dado parcial disponível). Introduz uma "
-    "descontinuidade pequena, porém real, entre este replay e produção.",
-    "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os "
-    "extremos intrabarra (H/L) — podem subestimar a excursão real.",
-    "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas "
-    "(pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado "
-    "inicial frio não reflete o que existiria em produção.",
+] + COMMON_LIMITATIONS + [
     "by_pair_factor no relatório reflete qual fator do PAIR SIGNAL estava "
     "ativo no momento do evento de divergência Z — é metadado descritivo "
     "(o Pair e o Z podem estar ativos ao mesmo tempo sem relação causal "
