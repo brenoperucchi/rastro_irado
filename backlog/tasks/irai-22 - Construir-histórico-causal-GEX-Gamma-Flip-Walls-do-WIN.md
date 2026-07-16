@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 16:56'
+updated_date: '2026-07-16 17:04'
 labels:
   - gex
   - validation
@@ -83,6 +83,11 @@ Bug LIVE reproduzido em 2026-07-16: o backfill histórico reutilizava gex_levels
 created: 2026-07-16 16:56
 ---
 Correção LIVE concluída (commits 1d5452e/eb76c80). Causa: o backfill gravava em gex_levels e contaminava a fonte consumida pela API. Implementado gex_history_levels exclusivo, save_history_result e migração transacional identificada por meta.source_files. Regressões: teste novo falhou inicialmente na importação de save_history_result; testes finais 55 passed local e 55 passed no Python 3.12 Windows/Ryzen. Produção: backup consistente irai_pre_gex_live_fix_20260716_135413.db (quick_check=ok); 200 linhas movidas, 73 válidas, proveniência 200/200, quick_check=ok. Worker oficial reexecutado: WIN 2026-07-15 GammaMax=182497, Flip=186421, Min=171874, valid=false; API active=false. API e collector ativos.
+---
+
+created: 2026-07-16 17:04
+---
+Frontend follow-up: botão GEX agora usa disabled={!gex.active}; o payload é reconsultado a cada 60s e uma invalidação desliga GEX/MID localmente. Regressões novas em tests/test_gex_frontend_contract.py falharam antes e passam após correção. Validação: 57 testes GEX/backfill, npm run build. npm run lint segue com 20 erros preexistentes fora deste patch.
 ---
 <!-- COMMENTS:END -->
 
