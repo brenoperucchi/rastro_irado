@@ -1,0 +1,22 @@
+[Unit]
+Description=IRAI WIN Tick Collector (MT5 portable dedicado)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/brenoperucchi/Devs/rastro_irado
+ExecStart=/home/brenoperucchi/Devs/rastro_irado/scripts/systemd/win-ticks-wsl.sh
+Restart=on-failure
+RestartSec=5
+Environment=IRAI_TICKS_PYTHON=/mnt/c/Users/brenoperucchi/AppData/Local/Microsoft/WindowsApps/py.exe
+Environment=IRAI_TICKS_PYTHON_VERSION_FLAG=-3.12
+Environment=IRAI_TICKS_TERMINAL=E:/MetaTradersWSL/wdowin/ira_ticks/terminal64.exe
+Environment=IRAI_TICKS_OUTPUT_ROOT=data/ticks/win
+Environment=IRAI_TICKS_POLL_SECONDS=2
+Environment=IRAI_TICKS_INITIAL_BACKFILL_MINUTES=15
+Environment=IRAI_TICKS_TERMINAL_WAIT_SECONDS=8
+
+[Install]
+WantedBy=default.target
+
