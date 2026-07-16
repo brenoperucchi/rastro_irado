@@ -18,6 +18,7 @@ from backend.workers.tick_collector_wsl import (
     partition_path,
     save_state,
     validate_portable_terminal,
+    write_parquet,
 )
 
 
@@ -72,7 +73,7 @@ def test_estado_do_cursor_sobrevive_a_restart(tmp_path):
 def test_particao_parquet_e_deterministica_por_data_e_simbolo(tmp_path):
     path = partition_path(tmp_path, "WIN$N", 1_752_672_600_000)
 
-    assert path == tmp_path / "date=2025-07-16" / "symbol=WIN%24N"
+    assert path == tmp_path / "date=2025-07-16" / "instrument=WIN%24N"
 
 
 def test_rejeita_terminal_que_nao_esta_no_data_path_portable_dedicado():
@@ -148,3 +149,23 @@ def test_coletor_mantem_uma_conexao_mt5_entre_ciclos(tmp_path, monkeypatch):
 
     assert fake.initialize_calls == 1
     assert fake.shutdown_calls == 0
+
+
+def test_parquet_preserva_schema_e_conteudo(tmp_path):
+    pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    row = {
+        "symbol": "WIN$N",
+        **_tick(1_752_672_600_000),
+        "collected_at": "2025-07-16T12:10:00+00:00",
+    }
+    files = write_parquet(tmp_path, "WIN$N", [row])
+
+    assert len(files) == 1
+    table = pq.ParquetFile(files[0]).read()
+    assert table.column_names == [
+        "symbol", "time", "time_msc", "bid", "ask", "last", "volume",
+        "flags", "volume_real", "collected_at",
+    ]
+    assert table.to_pylist()[0]["last"] == 140_000.0

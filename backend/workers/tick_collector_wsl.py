@@ -5,7 +5,7 @@ Windows-only: usa o pacote MetaTrader5 do Python 3.12, iniciado pelo wrapper
 systemd depois que o terminal dedicado foi aberto com ``/portable``.
 
 Persistência:
-  data/ticks/win/date=YYYY-MM-DD/symbol=WIN%24N/part-*.parquet
+  data/ticks/win/date=YYYY-MM-DD/instrument=WIN%24N/part-*.parquet
 
 O cursor atômico guarda o último ``time_msc`` e todas as identidades vistas
 naquele milissegundo. Isso preserva negócios distintos com o mesmo timestamp e
@@ -166,7 +166,9 @@ def save_state(path: Path, state: Mapping[str, TickCursor]) -> None:
 
 def partition_path(root: Path, symbol: str, time_msc: int) -> Path:
     session_date = datetime.fromtimestamp(time_msc / 1000, timezone.utc).date().isoformat()
-    return root / f"date={session_date}" / f"symbol={quote(symbol, safe='')}"
+    # ``instrument`` evita colisão de schema entre a partição Hive e a coluna
+    # ``symbol`` que também viaja dentro do Parquet.
+    return root / f"date={session_date}" / f"instrument={quote(symbol, safe='')}"
 
 
 def validate_portable_terminal(terminal_info: Any, terminal_path: str) -> dict[str, Any]:
