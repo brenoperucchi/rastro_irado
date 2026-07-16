@@ -449,7 +449,17 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
             {"type": "gex_flip", "price": round(flip * f), "color": "#EAB308", "style": "solid", "width": 2},
             {"type": "gex_min", "price": round(gmin * f), "color": "#EF4444", "style": "solid", "width": 3},
         ]
-        centro = round(flip * f / (grid_step * f)) * grid_step
+        # Grid de walls centrado no PREÇO (spot), não no Gamma Flip. Num
+        # mercado put-heavy como o IBOV, o Flip fica bem acima do spot (ex:
+        # ~+5% em 2026-07-15), e centrar o grid nele deixava TODAS as walls
+        # acima do preço — sem cobrir a região onde o preço opera nem o put
+        # wall (gex_min, logo abaixo do spot). Centrar no spot mantém o grid
+        # útil ao redor do preço. Os 3 níveis de GAMMA reais (gex_max/
+        # gex_flip/gex_min) continuam nos seus valores calculados, nas
+        # posições reais. A cor segue por flip (verde acima do zero-gamma =
+        # long-gamma/estável; vermelho abaixo = short-gamma), preservando a
+        # semântica GEX do indicador original.
+        centro = round(spot / grid_step) * grid_step
         for k in range(-8, 9):
             p = (centro + k * grid_step) * f
             # espessura por distância do centro (padrão do indicador NTSL de
