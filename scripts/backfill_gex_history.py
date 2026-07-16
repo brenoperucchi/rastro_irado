@@ -336,9 +336,14 @@ def ensure_safe_sqlite_runtime(db_path: str | Path, *, platform: str | None = No
     platform = platform or sys.platform
     if platform == "win32":
         return
+    raw_posix = os.fspath(db_path).replace("\\", "/")
     resolved = Path(db_path).expanduser().resolve(strict=False)
     parts = resolved.parts
-    if len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt" and len(parts[2]) == 1:
+    raw_is_drvfs = re.match(r"^/mnt/[A-Za-z](?:/|$)", raw_posix) is not None
+    resolved_is_drvfs = (
+        len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt" and len(parts[2]) == 1
+    )
+    if raw_is_drvfs or resolved_is_drvfs:
         raise ValueError(
             f"SQLite hospedado no Windows ({resolved}) não pode ser escrito pelo "
             "Python Linux/WSL; execute este backfill com o Python do Windows"
