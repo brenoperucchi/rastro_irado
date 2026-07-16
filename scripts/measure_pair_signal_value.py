@@ -226,24 +226,40 @@ def _hour_brt(timestamp_utc: str, is_b3: bool) -> int:
     return ts.hour
 
 
+def _pair_direction(snap) -> Optional[str]:
+    """Direção da transição causal do Pair Signal (marker `P`) numa barra —
+    default de `extract_trade_outcomes`. Ver `backend/irai/engine.py`
+    (campos `pair_compra`/`pair_venda`, já gated pelo achado X3)."""
+    if getattr(snap, "pair_compra", None) is not None:
+        return "buy"
+    if getattr(snap, "pair_venda", None) is not None:
+        return "sell"
+    return None
+
+
 def extract_trade_outcomes(
     session_date: str, target: str, snapshots, is_b3: bool,
+    *, direction_of: Optional[Callable] = None,
 ) -> list[TradeOutcome]:
-    """Varre as barras reais de UMA sessão, extrai as transições pair_compra/
-    pair_venda já causais (achado X3 corrigido: nunca nasce de barra em
-    formação), aplica cooldown e mede o resultado forward líquido de custo.
+    """Varre as barras reais de UMA sessão, extrai as transições causais já
+    gated pelo achado X3 (nunca nasce de barra em formação), aplica cooldown
+    e mede o resultado forward líquido de custo.
+
+    `direction_of(snap) -> "buy" | "sell" | None` decide QUAL marker dispara
+    o evento — default `_pair_direction` (marker `P`, pair_compra/pair_venda).
+    scripts/measure_price_divergence_value.py reusa esta função inteira
+    passando `direction_of=_divergence_direction` (marker `Z`,
+    z_compra_val/z_venda_val) em vez de duplicar a metodologia de entrada/
+    cooldown/MFE-MAE, que já passou por 2 rodadas de /codex-r.
     """
+    direction_of = direction_of or _pair_direction
     real = _real_snapshots(snapshots)
     cost = TARGET_COST_POINTS.get(target, 0.0)
     outcomes: list[TradeOutcome] = []
     last_counted_index = -COOLDOWN_BARS - 1
 
     for i, snap in enumerate(real):
-        direction = None
-        if getattr(snap, "pair_compra", None) is not None:
-            direction = "buy"
-        elif getattr(snap, "pair_venda", None) is not None:
-            direction = "sell"
+        direction = direction_of(snap)
         if direction is None:
             continue
         if i - last_counted_index < COOLDOWN_BARS:
@@ -366,7 +382,13 @@ def win_rate(outcomes: list[TradeOutcome], horizon: int) -> tuple[int, int, floa
 # ── Orquestração ────────────────────────────────────────────────────────────
 
 def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
-        burn_in_sessions: int = DEFAULT_BURN_IN_SESSIONS) -> dict:
+        burn_in_sessions: int = DEFAULT_BURN_IN_SESSIONS,
+        *, direction_of: Optional[Callable] = None,
+        limitations: Optional[list] = None) -> dict:
+    """`direction_of`/`limitations` default ao Pair Signal (marker `P`) —
+    scripts/measure_price_divergence_value.py reusa esta função passando as
+    suas próprias (marker `Z`) em vez de duplicar orquestração/relatório."""
+    direction_of = direction_of or _pair_direction
     report: dict = {"targets": {}}
     for target in targets:
         candidates = candidate_sessions(db_path, target, limit)
@@ -382,7 +404,8 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
                     # sessão seguinte encadear corretamente), mas seus
                     # eventos não entram na medição — estado ainda frio.
                     continue
-                outcomes.extend(extract_trade_outcomes(date, target, snapshots, is_b3))
+                outcomes.extend(extract_trade_outcomes(
+                    date, target, snapshots, is_b3, direction_of=direction_of))
 
         by_direction = {
             "buy": [o for o in outcomes if o.direction == "buy"],
@@ -441,7 +464,7 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
 
         report["targets"][target] = target_report
 
-    report["limitations"] = LIMITATIONS
+    report["limitations"] = limitations if limitations is not None else LIMITATIONS
     return report
 
 

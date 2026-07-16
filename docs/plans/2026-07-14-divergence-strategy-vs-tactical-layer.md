@@ -2,7 +2,11 @@
 
 **Projeto:** IRAI — Intraday Risk Appetite Index  
 **Criado:** 2026-07-14  
-**Status:** Revisado por Codex e Claude Sonnet  
+**Status:** Registro de decisão — decisões promovidas aos planos oficiais em 2026-07-14
+
+**Papel documental:** evidência e justificativa; não substitui o status do plano consolidado
+nem a especificação normativa do Tactical Layer
+
 **Revisão independente:** Claude Code 2.1.209, somente leitura, 2026-07-14  
 **Imagem analisada:** [`docs/explenation.jpeg`](../explenation.jpeg)  
 **Plano vigente:** [`2026-07-13-irai-plano-consolidado.md`](./2026-07-13-irai-plano-consolidado.md)
@@ -336,6 +340,48 @@ Para cada regra:
 Não otimizar threshold no período final. O threshold escolhido precisa vir de partições
 anteriores e ser aplicado de forma imutável no OOS.
 
+### 11.1 Resultado do item 1 (Pair Signal isolado) — 2026-07-15
+
+`scripts/measure_pair_signal_value.py` (NF-01, escopo mínimo) mediu o item 1 da lista acima:
+eventos causais (achado X3, só barra fechada) de transição `pair_compra`/`pair_venda`,
+entrada no fechamento da barra seguinte à transição (não a própria barra do sinal), custo
+de `TARGET_COST_POINTS`, IC95% bootstrap clusterizado por sessão, ~295 sessões OOS por
+ativo (~14 meses), Kalman encadeado cronologicamente entre sessões (achado C1-b) com 5
+sessões de burn-in excluídas da medição. Passou por 2 rodadas de `/codex-r` antes da
+execução — ver commit `496f739`.
+
+```text
+WIN$N — nenhum horizonte (h=3/6/10/20, compra/venda/geral) significante: IC95% sempre
+        inclui zero, win-rate sempre ~48-50%. MFE/MAE médios (~±350 pts) muito maiores
+        que o retorno líquido (~-10 pts): ruído domina.
+WDO$N — edge NEGATIVO e estatisticamente significante: compra h=3/6/10/20 e venda h=3,
+        todos com IC95% excluindo zero, -0,57 a -1,70 pts líquidos, win-rate 38-42%.
+```
+
+Conclusão suportada pela medição:
+
+> O marker Pair Signal isolado, seguido sem filtro adicional, não demonstra edge
+> econômico em WIN$N (resultado neutro) e demonstra edge NEGATIVO estatisticamente
+> significante em WDO$N. Isso confirma o risco que motivou o NF-01: o marker `P
+> COMPRA`/`P VENDA` não é um setup validado — é uma observação de distorção, como já
+> tratado na decisão 5 da seção 13.
+
+A limitação C1-a (calibração in-sample, ver LIMITAÇÕES no relatório de saída do script)
+tende a viesar o resultado a *favor* do sinal parecer mais mean-reverting do que seria em
+tempo real — o resultado neutro/negativo encontrado *apesar* desse viés otimista torna a
+conclusão "sem edge" mais robusta, não menos. Ainda assim é um resultado preliminar de uma
+única rodada exploratória, sem calibração point-in-time, burn-in mínimo e MFE/MAE apenas
+por fechamento de barra (ver seção LIMITAÇÕES completa no JSON/saída do script).
+
+Conclusões que a medição **não** suporta:
+
+- que a interseção Pair + divergência macro (item 3) também não teria edge;
+- que o Pair condicionado a regime de `P_up` ou região do NWE (itens 4-5) não teria edge;
+- que o custo assumido (`TARGET_COST_POINTS`, nunca derivado de P&L executável real) seja
+  exatamente correto.
+
+Itens 2-6 da lista do início desta seção continuam pendentes.
+
 ## 12. Estado verdadeiro do projeto em 2026-07-14
 
 ### Concluído
@@ -355,7 +401,9 @@ anteriores e ser aplicado de forma imutável no OOS.
 - alinhar threshold visual e operacional;
 - expor configuração efetiva ao frontend;
 - garantir barra fechada para eventos;
-- validar economicamente o Pair Signal;
+- validar economicamente o Pair Signal (item 1/6 do backtest da seção 11 concluído em
+  2026-07-15 — ver seção 11.1: sem edge em WIN$N, edge negativo significante em WDO$N;
+  itens 2-6 pendentes);
 - medir fuso da Axi;
 - concluir o gate de WDO em ambiente real;
 - atualizar os status desatualizados do plano NWE/consolidado;
@@ -372,17 +420,24 @@ anteriores e ser aplicado de forma imutável no OOS.
 - UI tática sob feature flag;
 - rollout individual em Windows/live.
 
-## 13. Decisões recomendadas antes da Frente 3
+## 13. Decisões aprovadas e promovidas antes da Frente 3
 
-1. Atualizar o plano consolidado para marcar NWE e migrações como concluídos.
-2. Registrar explicitamente que `P_up` é contexto/regime no Tactical, não feature
+As oito decisões abaixo foram incorporadas ao plano consolidado e à especificação do
+Tactical Layer em 2026-07-14:
+
+1. [x] Atualizar o plano consolidado para marcar NWE e migrações como concluídos.
+2. [x] Registrar explicitamente que `P_up` é contexto/regime no Tactical, não feature
    direcional aditiva com edge comprovado.
-3. Tornar os thresholds uma fonte única do backend e refletir os valores no gráfico.
-4. Corrigir a explicação visual para separar `P` pairwise de `Z` macro-preço.
-5. Tratar markers atuais como observações de distorção.
-6. Executar o backtest específico da estratégia da imagem antes de desenhar `CONFIRMADO`.
-7. Especificar barra fechada, histerese, cooldown e prioridades da máquina de estados.
-8. Só então implementar persistência, API Tactical e feature flag.
+3. [x] Tornar os thresholds uma fonte única do backend e refletir os valores no gráfico.
+4. [x] Corrigir a explicação visual para separar `P` pairwise de `Z` macro-preço.
+5. [x] Tratar markers atuais como observações de distorção.
+6. [x] Executar o backtest específico da estratégia da imagem antes de desenhar
+   `CONFIRMADO`.
+7. [x] Especificar barra fechada, histerese, cooldown e prioridades da máquina de estados.
+8. [x] Só então implementar persistência, API Tactical e feature flag.
+
+O `[x]` indica que a decisão entrou no plano, não que a implementação correspondente já
+foi concluída. O andamento de cada entrega deve ser consultado no plano consolidado.
 
 ## 14. Critérios para promover a estratégia
 
