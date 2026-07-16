@@ -380,7 +380,40 @@ Conclusões que a medição **não** suporta:
 - que o custo assumido (`TARGET_COST_POINTS`, nunca derivado de P&L executável real) seja
   exatamente correto.
 
-Itens 2-6 da lista do início desta seção continuam pendentes.
+### 11.2 Resultado do item 2 (divergência macro-preço isolada, marker Z) — 2026-07-15
+
+`scripts/measure_price_divergence_value.py` mediu o item 2 reusando a mesma metodologia do
+item 1 (generalização mínima de `extract_trade_outcomes`/`run` via parâmetro `direction_of`,
+não duplicação — ver commit `784d2f6`), agora sobre a transição causal `z_compra_val`/
+`z_venda_val`. Revisado via `/codex-r` (job `relay-mrmta8qe-g59z0c`) antes da execução.
+
+```text
+WIN$N — 62 eventos (vs. 1244 do Pair Signal — ~20x mais raro: o marker Z exige P_up
+        extremo E preço não confirmando, uma conjunção rara). Só compra h=20 é
+        significante (+245,97 pts, win-rate 74,2%), mas com só 31 eventos/24 sessões —
+        amostra fina, IC95% [+14,66; +459,36] quase toca zero. Demais horizontes/direções
+        não significantes.
+WDO$N — 41 eventos (vs. 1307 do Pair Signal). Compra h=3/h=6 e o agregado "all" h=3/6/20
+        significantes NEGATIVOS (-1,43 a -5,41 pts, win-rate 30-42%). Venda h=20
+        significante (-14,00 pts) mas com só 10 sessões/11 eventos — amostra fina demais
+        pra confiar isoladamente.
+```
+
+Conclusão suportada pela medição:
+
+> O marker de divergência macro-preço isolado é muito mais raro que o Pair Signal (~20-30x
+> menos eventos na mesma janela), o que reduz bastante o poder estatístico de qualquer
+> conclusão. Onde há significância, o padrão ecoa o do Pair Signal: nenhum edge positivo
+> robusto em WIN$N (o único resultado positivo tem amostra fina) e sinais de edge negativo
+> em WDO$N. Isso é consistente com o marker `Z` também ser uma observação de distorção, não
+> um setup validado — mas a confiança aqui é MENOR que a do item 1, pela amostra.
+
+A raridade do evento tem implicação direta para o item 3 (interseção Pair + Z): a
+conjunção dos dois markers será necessariamente mais rara ainda que o mais raro dos dois
+(62 e 41 eventos aqui) — qualquer medição do item 3 deve vir com expectativa explícita de
+amostra pequena, ou aceitar uma janela de replay maior que as ~300 sessões usadas até agora.
+
+Itens 3-6 da lista do início desta seção continuam pendentes.
 
 ## 12. Estado verdadeiro do projeto em 2026-07-14
 
@@ -401,9 +434,10 @@ Itens 2-6 da lista do início desta seção continuam pendentes.
 - alinhar threshold visual e operacional;
 - expor configuração efetiva ao frontend;
 - garantir barra fechada para eventos;
-- validar economicamente o Pair Signal (item 1/6 do backtest da seção 11 concluído em
-  2026-07-15 — ver seção 11.1: sem edge em WIN$N, edge negativo significante em WDO$N;
-  itens 2-6 pendentes);
+- validar economicamente os markers de distorção (2/6 itens do backtest da seção 11
+  concluídos em 2026-07-15 — item 1 §11.1: Pair Signal, sem edge em WIN$N, edge negativo
+  significante em WDO$N; item 2 §11.2: divergência macro-preço, amostra ~20-30x menor,
+  padrão similar mas confiança menor; itens 3-6 pendentes);
 - medir fuso da Axi;
 - concluir o gate de WDO em ambiente real;
 - atualizar os status desatualizados do plano NWE/consolidado;
