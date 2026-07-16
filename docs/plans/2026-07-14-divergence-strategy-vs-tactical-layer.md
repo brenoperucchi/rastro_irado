@@ -415,6 +415,75 @@ amostra pequena, ou aceitar uma janela de replay maior que as ~300 sessões usad
 
 Itens 3-6 da lista do início desta seção continuam pendentes.
 
+### 11.3/11.4 Item 3 (interseção Pair ∩ Z) e re-execução dos itens 1-3 na janela expandida
+(2021-2026) — 2026-07-15
+
+Por instrução explícita do usuário: (a) a definição de interseção foi **congelada antes de
+rodar ou olhar qualquer resultado** — primeira barra fechada em que `pair_signal ==
+price_diverge_dir` (mesma direção), sem exigir que os markers discretos transicionem na
+mesma barra (`scripts/measure_intersection_value.py`, revisado via `/codex-r` job
+`relay-mrmv6awy-phl3u0`, commit `13ac01c`); (b) os itens 1 e 2 foram **re-executados na
+mesma janela expandida** (toda a base elegível, `--limit 5000` → 1249-1250 sessões/ativo,
+2021-07-12 a 2026-07-15, ~5 anos) pra permitir comparação de estabilidade por período, em
+vez de só a janela de 300 sessões (~14 meses) usada em §11.1/§11.2; (c) um gate de amostra
+mínima (100 eventos, `docs/plans/2026-07-13-irai-tactical-layer-win-wdo.md:281`) foi
+adicionado a `run()` — agora genérico, aplicado retroativamente aos 3 scripts; (d) os
+`***` NÃO são tratados como confirmatórios isolados, dado que cada execução testa até 24
+combinações horizonte×direção simultâneas (ver `COMMON_LIMITATIONS` no código). Auditoria
+prévia de contagem de barras/sessão confirmou dados consistentes ao longo dos 5 anos, sem
+degradação sistemática em anos mais antigos (mediana 107-114 barras/sessão em todos os
+anos).
+
+JSONs completos: `nf01_pair_signal_expanded.json`, `nf02_price_divergence_expanded.json`,
+`nf03_intersection_expanded.json` (salvos fora do repo, reproduzíveis via os comandos dos
+scripts com `--limit 5000`).
+
+```text
+                    WIN$N (custo 10 pts)                    WDO$N (custo 1 pt)
+Item 1 (Pair)       5235 eventos/1245 sessões — GATE OK      5423 eventos/1244 sessões — GATE OK
+  300 sessões:      nenhum horizonte significante            h=3/6/10/20 compra e h=3 venda ***neg
+  expandida:        h=3/6/10/20 "all" ***NEGATIVO             h=3/6/10/20 "all" ***NEGATIVO (compra E
+                    (buy h=3/6/10 e sell h=3 também ***)      venda, todos ***)
+                    negativo em 5/6 anos                      negativo em 5/6 anos
+
+Item 2 (Z)          747 eventos/472 sessões — GATE OK         492 eventos/316 sessões — GATE OK
+  300 sessões:      1 resultado ***positivo (amostra fina)    h=3/6 compra e "all" ***NEGATIVO
+  expandida:        NENHUM horizonte significante — o         h=3/6/10 compra e h=3/6 "all" ***NEG
+                    ***positivo da janela menor SOME com      (confirma e reforça o achado anterior)
+                    mais dados (era ruído de amostra pequena)
+
+Item 3 (Pair∩Z)     496 eventos/334 sessões — GATE OK          392 eventos/244 sessões — GATE OK
+  (só expandida,    Só 1 de 24 comparações ***: "all" h=10    h=3/6/10 compra e h=3/6 "all" ***NEG —
+   300 sessões      (+41,10 pts). NÃO tratado como            mesma direção negativa dos itens 1 e 2,
+   era inconclusivo) confirmatório (ver ressalva de           não filtra o problema
+                    comparações múltiplas) — outros sinais
+                    tendem positivo mas sem significância
+```
+
+Conclusão suportada pela medição (janela expandida, ~5 anos, poder estatístico muito maior
+que a janela de 300 sessões):
+
+> **WDO$N**: edge NEGATIVO, estatisticamente significante e CONSISTENTE nas 3 medições
+> (Pair isolado, Z isolado, interseção dos dois) e na maioria dos anos — a evidência mais
+> forte que este backtest pode produzir dentro das limitações documentadas (C1-a, custo não
+> validado, replay retrospectivo). Seguir os markers de distorção em WDO$N perde dinheiro
+> líquido de custo, de forma consistente.
+>
+> **WIN$N**: quadro misto, não uma história única. O Pair Signal isolado é negativo e
+> significante com a amostra maior (o que a janela de 300 sessões não tinha poder pra
+> detectar — achado NOVO desta re-execução, substitui a conclusão "neutro" de §11.1 pra
+> WIN$N). O marker Z isolado é neutro (nem o único resultado "significante" da janela
+> menor sobreviveu). A interseção tende levemente positiva mas com só 1 de 24 comparações
+> cruzando o limiar — não deve ser lida como confirmação de edge positivo.
+
+Isso reforça, com evidência mais forte que a de §11.1/§11.2, que os markers `P`/`Z` não são
+setups validados. Não deve ser lido como prova de que a interseção "resolve" o problema do
+Pair Signal isolado em WIN$N — a amostra da interseção (496/392 eventos) ainda é bem menor
+que a dos markers isolados, e o único `***` positivo é consistente com ruído estatístico
+dado o número de comparações testadas.
+
+Itens 4-6 da lista do início desta seção continuam pendentes.
+
 ## 12. Estado verdadeiro do projeto em 2026-07-14
 
 ### Concluído
@@ -434,10 +503,12 @@ Itens 3-6 da lista do início desta seção continuam pendentes.
 - alinhar threshold visual e operacional;
 - expor configuração efetiva ao frontend;
 - garantir barra fechada para eventos;
-- validar economicamente os markers de distorção (2/6 itens do backtest da seção 11
-  concluídos em 2026-07-15 — item 1 §11.1: Pair Signal, sem edge em WIN$N, edge negativo
-  significante em WDO$N; item 2 §11.2: divergência macro-preço, amostra ~20-30x menor,
-  padrão similar mas confiança menor; itens 3-6 pendentes);
+- validar economicamente os markers de distorção (3/6 itens do backtest da seção 11
+  concluídos em 2026-07-15, re-executados numa janela expandida de 5 anos — ver §11.3/11.4:
+  WDO$N tem edge NEGATIVO consistente nos 3 itens medidos [Pair isolado, Z isolado,
+  interseção]; WIN$N tem quadro misto — Pair isolado negativo e significante com a amostra
+  maior, achado NOVO que substitui a leitura "neutro" da janela de 300 sessões, Z isolado
+  neutro, interseção sem edge confiável; itens 4-6 pendentes);
 - medir fuso da Axi;
 - concluir o gate de WDO em ambiente real;
 - atualizar os status desatualizados do plano NWE/consolidado;
