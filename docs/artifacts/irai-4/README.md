@@ -25,13 +25,19 @@ temporais obrigatórios, sem violações de ordem, e em todos
 - `h=3/6/10/20` encerra após exatamente esse número de barras completas desde
   a entrada;
 - MFE/MAE usa `high/low` desde a própria barra de entrada;
-- evento sem `open/high/low` real é rejeitado, sem fallback para `close`;
+- evento sem `open` real é rejeitado, sem fallback para `close`; `high/low`
+  incompleto preserva o retorno por `close`, mas deixa MFE/MAE ausentes;
 - custos reportados em `0,5x`, `1,0x`, `1,5x` e `2,0x`;
 - bootstrap de 10.000 iterações, clusterizado por sessão;
 - labels, MFE e MAE nunca cruzam a sessão.
 
 OHLC não revela se stop ou alvo ocorreu primeiro quando ambos foram tocados na
 mesma M5. Essa ambiguidade exige política conservadora ou replay de ticks.
+Além disso, ausência de OHLC pode estar correlacionada com leilão, halt ou queda
+de feed. Sem `open` de entrada, o trade é excluído mas o sinal consome cooldown;
+`high/low` incompleto no caminho preserva o retorno por `close` e anula MFE/MAE.
+O artefato publicado não teve eventos afetados, mas a regra e o possível viés de
+seleção passam a fazer parte explícita do contrato para novas gerações.
 
 ## Comando reproduzível
 

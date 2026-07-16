@@ -179,6 +179,11 @@ a política de latência declarada. Se o fechamento determinístico da barra `t`
 conhecido com a chegada da barra `t+1`, a simulação não pode entrar retroativamente no close
 de `t`. MFE, MAE e PnL começam em `entry_at`.
 
+Se o sinal for elegível mas faltar o `open` que provaria o fill, o trade fica fora da amostra
+e o sinal ainda consome cooldown. Isso evita substituí-lo oportunisticamente por um evento
+próximo. A taxa de descarte deve ser reportada: ausência de OHLC pode se concentrar em
+leilões, halts ou falhas de feed e, portanto, não é assumida como aleatória.
+
 ### 5.4 Contrato contínuo e status provisório
 
 Resultados de WIN/WDO permanecem `provisional` enquanto não for verificado no Windows/MT5

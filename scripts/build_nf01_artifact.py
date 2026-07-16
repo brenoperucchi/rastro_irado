@@ -55,6 +55,12 @@ PROVISIONAL_POLICIES = {
         "forem tocados na mesma barra, OHLC não revela qual ocorreu primeiro; "
         "essa ambiguidade exige ticks ou política conservadora."
     ),
+    "missing_ohlc": (
+        "sem OPEN executável o trade é excluído, mas seu sinal consome "
+        "cooldown; HIGH/LOW incompleto preserva o retorno por CLOSE e anula "
+        "MFE/MAE. Ausência correlacionada com leilão/halt/feed pode introduzir "
+        "viés de seleção."
+    ),
     "costs": (
         "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) é custo único aproximado, "
         "nunca derivado de P&L executável real (ADR-002). Custos completos e "

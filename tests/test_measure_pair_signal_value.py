@@ -68,9 +68,9 @@ def _mk_outcome(session_date, target, direction, hour_brt, pair_factor, entry_pr
 
 
 def _snap(i, close, *, pair_compra=None, pair_venda=None, pair_factor="us500",
-          ts_hour=10, bar_open=None, high=None, low=None):
+          ts_hour=10, bar_open=None, high=None, low=None, timestamp=None):
     s = IRAISnapshot(
-        timestamp=f"2026-07-10T{ts_hour:02d}:{(i * 5) % 60:02d}:00+00:00",
+        timestamp=timestamp or f"2026-07-10T{ts_hour:02d}:{(i * 5) % 60:02d}:00+00:00",
         session_date="2026-07-10", bar_idx=i, t_frac=1.0, p_up=50.0,
         score=0.0, verdict="", verdict_color="",
     )
@@ -175,6 +175,26 @@ def test_evento_sem_open_executavel_e_rejeitado_sem_fallback_para_close():
         "2026-07-10", "WIN$N", snaps, is_b3=True) == []
 
 
+def test_sinal_sem_open_executavel_ainda_consume_cooldown():
+    """Um sinal economicamente elegível não pode ser substituído por outro
+    próximo só porque o feed não permite provar o fill do primeiro. O trade
+    sem open fica fora da amostra, mas ocupa a janela da estratégia."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)]
+    snaps += [_snap(i, 100.0) for i in range(1, 5)]
+    snaps.append(_snap(5, 105.0, pair_compra=105.0))
+    snaps += [_snap(i, 105.0) for i in range(6, 30)]
+    snaps[1].win_bar_open = None
+
+    diagnostics = {}
+    assert extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True,
+        diagnostics=diagnostics) == []
+    assert diagnostics == {
+        "signals_after_cooldown": 1,
+        "rejected_missing_entry_open": 1,
+    }
+
+
 def test_quatro_timestamps_causais_do_evento():
     """Sinal na barra 0 (início 10:00, eixo Tickmill), entrada na barra 1
     (início 10:05). Contrato temporal (barra M5, timestamp = início; fecha
@@ -194,6 +214,30 @@ def test_quatro_timestamps_causais_do_evento():
     assert o.signal_available_at == o.confirmation_bar_end
     assert o.entry_at == "2026-07-10T10:05:00"
     assert o.signal_available_at <= o.entry_at  # nunca entra antes do sinal existir
+
+
+def test_gap_intra_sessao_mantem_fill_posterior_ao_sinal():
+    """Se a barra seguinte observada começa depois de um gap, seu open ainda
+    é causal, mas não coincide com o fechamento nominal da barra do sinal."""
+    snaps = [
+        _snap(0, 100.0, pair_compra=100.0,
+              timestamp="2026-07-10T10:00:00+00:00"),
+        _snap(1, 101.0, bar_open=102.0,
+              timestamp="2026-07-10T10:15:00+00:00"),
+        *[
+            _snap(i, 101.0 + i,
+                  timestamp=f"2026-07-10T{10 + ((15 + (i - 1) * 5) // 60):02d}:"
+                            f"{(15 + (i - 1) * 5) % 60:02d}:00+00:00")
+            for i in range(2, 25)
+        ],
+    ]
+
+    outcome = extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True)[0]
+
+    assert outcome.signal_available_at == "2026-07-10T10:05:00"
+    assert outcome.entry_at == "2026-07-10T10:15:00"
+    assert outcome.signal_available_at < outcome.entry_at
 
 
 def test_hour_brt_usa_offset_sazonal_nao_5h_fixo():
@@ -286,6 +330,27 @@ def test_mfe_mae_usam_extremos_ohlc_desde_a_barra_de_entrada():
     assert outcome.mae == -8.0
 
 
+def test_ohlc_ausente_no_caminho_preserva_fwd_mas_anula_mfe_mae():
+    """Close de saída continua permitindo medir retorno forward, mas um
+    high/low ausente no caminho impede afirmar as excursões completas."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
+        _snap(i, 100.0 + i) for i in range(1, 25)
+    ]
+    snaps[7].win_high = None
+
+    diagnostics = {}
+    outcome = extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True,
+        diagnostics=diagnostics)[0]
+
+    assert outcome.fwd[3] is not None
+    assert outcome.fwd[6] is not None
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert diagnostics["events_with_incomplete_mfe_mae"] == 1
+    assert diagnostics["events_emitted"] == 1
+
+
 def test_mfe_mae_clampados_em_zero_quando_trajetoria_e_monotonica():
     """Compra que só perde (preço cai sempre) -> excursão favorável nunca
     existiu de verdade: MFE deve ficar em 0.0 (piso), não negativo. Achado
@@ -333,6 +398,22 @@ def test_bootstrap_nao_significante_quando_ic_inclui_zero():
     assert est is not None
     assert est.ci_low < 0 < est.ci_high
     assert est.significant is False
+
+
+def test_estimate_mean_permanece_media_aritmetica_base_do_shift_de_custo():
+    """A reprecificação sem novo bootstrap depende de a estatística principal
+    continuar sendo uma medida de localização deslocável; o contrato atual é
+    explicitamente a média aritmética, não mediana, Sharpe ou outra métrica."""
+    outcomes = [
+        _mk_outcome(f"d{i}", "WIN$N", "buy", 10, None, 100.0,
+                    {3: value}, None, None)
+        for i, value in enumerate((0.0, 0.0, 9.0))
+    ]
+
+    estimate = estimate_mean(outcomes, 3, iterations=200)
+
+    assert estimate is not None
+    assert estimate.value == 3.0
 
 
 def test_win_rate_conta_so_horizontes_medidos():
@@ -517,6 +598,8 @@ def test_run_marca_gate_inconclusivo_abaixo_do_minimo():
     assert t["by_direction"]["all"]["n_events"] == 3
     assert t["gate_verdict"] == "INCONCLUSIVO (amostra abaixo do mínimo)"
     assert t["min_events_for_gate"] == psv.MIN_EVENTS_FOR_GATE
+    assert t["data_quality"]["events_emitted"] == 3
+    assert t["data_quality"]["missing_entry_open_pct_of_fill_candidates"] == 0.0
 
 
 def test_run_marca_gate_suficiente_quando_atinge_o_minimo():
@@ -554,6 +637,25 @@ def test_run_reporta_sensibilidade_a_quatro_cenarios_de_custo():
     assert sensitivity["1.0x"]["horizons"]["3"]["estimate"]["value"] == 0.0
     assert sensitivity["1.5x"]["horizons"]["3"]["estimate"]["value"] == -5.0
     assert sensitivity["2.0x"]["horizons"]["3"]["estimate"]["value"] == -10.0
+
+    expected = {
+        "0.5x": (5.0, True, 100.0, 1),
+        "1.0x": (0.0, False, 0.0, 0),
+        "1.5x": (-5.0, True, 0.0, 0),
+        "2.0x": (-10.0, True, 0.0, 0),
+    }
+    for multiplier, (shifted, significant, win_rate_pct, wins) in expected.items():
+        horizon = sensitivity[multiplier]["horizons"]["3"]
+        estimate = horizon["estimate"]
+        assert estimate["ci_low"] == shifted
+        assert estimate["ci_high"] == shifted
+        assert estimate["standard_error"] == 0.0
+        assert estimate["n_sessions"] == 1
+        assert estimate["n_events"] == 1
+        assert estimate["significant"] is significant
+        assert horizon["win_rate_pct"] == win_rate_pct
+        assert horizon["wins"] == wins
+        assert horizon["total"] == 1
 
 
 if __name__ == "__main__":

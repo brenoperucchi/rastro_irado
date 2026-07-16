@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 12:38'
+updated_date: '2026-07-16 14:16'
 labels:
   - tactical
   - validation
@@ -111,6 +111,31 @@ author: @codex
 created: 2026-07-16 12:38
 ---
 Revisão independente IRAI-3 aprovada sem bloqueadores ou bugs. Verificados 17.983 eventos, ordem causal completa, fronteira de sessão/cooldown, conexão somente leitura, persist_state=False, integridade e consistência dos artefatos e 243 testes mantidos (18 skipped). NF-01A encerrado; limitações econômicas permanecem corretamente atribuídas ao IRAI-4/VAL-04.
+---
+
+created: 2026-07-16 14:16
+---
+Revisão dupla independente (deep-reasoner + fable-reasoner) dos commits c7722ba (fill no OPEN M5 + excursões OHLC) e 8b9ac12 (cost sensitivity). SOMENTE LEITURA — nenhum arquivo alterado (codex trabalhando em paralelo).
+
+VEREDITO CONSOLIDADO: GO nos 5 itens. Os dois revisores convergiram no núcleo.
+
+APROVADO:
+- A) Fill no win_bar_open da barra i+1 é causal (marker só nasce em barra fechada/X3; open é o 1º tick executável). Invariante signal_available_at <= entry_at vale SEMPRE (barras reais >=5min apart no grid M5), não só no caso contíguo; gap intra-sessão torna o fill mais conservador, não viola.
+- B) exit_index = entry_index + h - 1 não tem off-by-one (h barras de exposição com entrada no open); teste :123-138 planta barra-armadilha.
+- C) MFE/MAE incluindo a barra de entrada é correto (fill no open -> todo H/L é posterior); ambiguidade intrabarra reconhecida na limitação #3.
+- D) Cost sensitivity por deslocamento constante é MATEMATICAMENTE EXATA (custo entra só aditivamente; média amostral é translation-equivariant; significant e win-rate corretamente recomputados, não deslocados).
+
+ACHADO REAL (E) — não é bug, é documentação/design:
+- Descartar eventos por OHLC ausente (win_bar_open None em :330-333; ou H/L None na janela :352-358) introduz VIÉS DE SELEÇÃO subdocumentado: dados faltantes correlacionam com halts/leilões/feed, e nenhuma entrada em COMMON_LIMITATIONS reconhece o descarte (só ambiguidade intrabarra e gaps). Afeta a métrica principal (fwd), não só MFE/MAE. Frequência baixa em WIN/WDO, mas presente.
+- SUB-ACHADO (fable, confirmado no código; deep discordou na interpretação): o descarte por open ausente (:330-333) roda ANTES de last_counted_index=i (:334), então o evento descartado NÃO consome o cooldown — ao vivo, esse sinal ocuparia a janela de 20 barras. Decisão de design não documentada nem testada — vale explicitar qual comportamento é o correto.
+
+GAPS DE TESTE (ambos, sobrepostos):
+1. Sinal->entrada não-contíguo (gap intra-sessão): fixtures são todas contíguas; comentário/teste afirmando 'igualdade' signal_available_at==entry_at (:247,:120,:195) super-generalizam (só vale no caso contíguo). Invariante segura é '<='.
+2. CI da cost-sensitivity: teste só cobre 'value'; ci_low/ci_high/significant/win-rate por multiplicador não travados como regressão.
+3. Descarte por H/L ausente no meio da janela (mfe/mae=None com fwd preservado): sem cobertura — é onde o viés do item E vive.
+4. Acoplamento frágil (deep): exatidão de D depende de estimate_mean usar a MÉDIA; trocar por mediana/Sharpe quebraria _cost_sensitivity_report silenciosamente — sem teste-guarda.
+
+Suíte atual: 250 passed, 18 skipped. Nenhuma regressão observada.
 ---
 <!-- COMMENTS:END -->
 

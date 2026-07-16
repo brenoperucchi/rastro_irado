@@ -99,6 +99,8 @@ def test_politicas_provisorias_documentadas():
     assert "proxy do primeiro preço executável" in pol["entry_price"]
     assert "HIGH/LOW" in pol["mfe_mae"]
     assert "qual ocorreu primeiro" in pol["mfe_mae"]
+    assert "consome cooldown" in pol["missing_ohlc"]
+    assert "viés de seleção" in pol["missing_ohlc"]
     assert "IRAI-4/VAL-04" in pol["costs"]
     assert "confirmatório" in pol["significance"]
 

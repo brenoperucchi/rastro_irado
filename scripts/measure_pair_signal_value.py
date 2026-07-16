@@ -65,9 +65,11 @@ X3 corrigido nesta mesma sessão de trabalho):
     barra do sinal e funciona como proxy do primeiro preço executável. Não
     reutiliza o fechamento que formou o marker nem espera o fechamento da
     barra seguinte. Sinal na última barra da sessão não gera evento.
-  - Cooldown: uma entrada só conta se estiver a >= COOLDOWN_BARS barras da
-    entrada contada anterior NA MESMA SESSÃO — evita janelas de medição
-    sobrepostas.
+  - Cooldown: um sinal elegível só conta se estiver a >= COOLDOWN_BARS barras
+    do sinal elegível anterior NA MESMA SESSÃO — evita janelas de medição
+    sobrepostas. Se faltar o open executável, o trade não entra na amostra,
+    mas o sinal ainda consome cooldown para não selecionar oportunisticamente
+    outro evento próximo.
   - Retorno forward (h=3,6,10,20 barras) fecha depois de h barras completas
     contadas desde a barra de entrada. MFE/MAE usa HIGH/LOW dessas barras,
     até 20 barras. Tudo fica na MESMA sessão — nunca atravessa a fronteira
@@ -244,7 +246,8 @@ class TradeOutcome:
     #   entry_at             = instante do FILL: abertura da barra SEGUINTE
     #     (i+1), que coincide com o fechamento de i. O open M5 é o primeiro
     #     tick observado em/apos esse limite e serve de proxy executável.
-    #     Portanto signal_available_at <= entry_at SEMPRE (hoje, igualdade).
+    #     Portanto signal_available_at <= entry_at SEMPRE. Há igualdade no
+    #     grid M5 contíguo; com gap de feed, entry_at é estritamente posterior.
     observation_bar_end: str
     confirmation_bar_end: str
     signal_available_at: str
@@ -293,6 +296,7 @@ def _pair_direction(snap) -> Optional[str]:
 def extract_trade_outcomes(
     session_date: str, target: str, snapshots, is_b3: bool,
     *, direction_of: Optional[Callable] = None,
+    diagnostics: Optional[dict[str, int]] = None,
 ) -> list[TradeOutcome]:
     """Varre as barras reais de UMA sessão, extrai as transições causais já
     gated pelo achado X3 (nunca nasce de barra em formação), aplica cooldown
@@ -306,6 +310,10 @@ def extract_trade_outcomes(
     cooldown/MFE-MAE, que já passou por 2 rodadas de /codex-r.
     """
     direction_of = direction_of or _pair_direction
+    def record(key: str) -> None:
+        if diagnostics is not None:
+            diagnostics[key] = diagnostics.get(key, 0) + 1
+
     real = _real_snapshots(snapshots)
     cost = TARGET_COST_POINTS.get(target, 0.0)
     outcomes: list[TradeOutcome] = []
@@ -317,6 +325,7 @@ def extract_trade_outcomes(
             continue
         if i - last_counted_index < COOLDOWN_BARS:
             continue  # dentro do cooldown da última entrada contada
+        record("signals_after_cooldown")
 
         # Entrada = OPEN da barra SEGUINTE. O marker só existe ao fechar a
         # barra i; a abertura de i+1 é o primeiro tick agregado pelo MT5 em/
@@ -325,13 +334,19 @@ def extract_trade_outcomes(
         # latência artificial da política provisória do NF-01A).
         entry_index = i + 1
         if entry_index >= len(real):
+            record("rejected_no_next_bar")
             continue  # sinal na última barra da sessão — sem preço executável real
+        # O sinal já foi economicamente elegível e ocupa a janela da regra.
+        # Marcar antes de validar o open impede que ausência de feed substitua
+        # oportunisticamente este sinal por outro próximo. O trade sem fill
+        # comprovável continua fora da amostra.
+        last_counted_index = i
         entry_open = getattr(real[entry_index], "win_bar_open", None)
         if entry_open is None or not math.isfinite(float(entry_open)):
             # Sem OHLC real não há como provar o primeiro preço executável;
             # rejeita o evento em vez de recair silenciosamente no close.
+            record("rejected_missing_entry_open")
             continue
-        last_counted_index = i
         entry_price = float(entry_open)
 
         sign = 1.0 if direction == "buy" else -1.0
@@ -365,6 +380,8 @@ def extract_trade_outcomes(
             else:
                 favorable_excursions = [entry_price - float(bar.win_low) for bar in window]
                 adverse_excursions = [entry_price - float(bar.win_high) for bar in window]
+        else:
+            record("events_with_incomplete_mfe_mae")
         # Piso em 0 pro MFE e teto em 0 pro MAE: numa trajetória
         # monotonicamente perdedora (ou vencedora), a excursão mais favorável
         # (ou mais adversa) medida não deve trocar de sinal em relação à
@@ -401,6 +418,7 @@ def extract_trade_outcomes(
             signal_available_at=signal_available_at,
             entry_at=entry_at,
         ))
+        record("events_emitted")
     return outcomes
 
 
@@ -565,6 +583,7 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
         candidates = candidate_sessions(db_path, target, limit)
         is_b3 = target in ("WIN$N", "WDO$N")
         outcomes: list[TradeOutcome] = []
+        extraction_diagnostics: dict[str, int] = {}
         sessions_before_first_pit_cutoff = 0
         with chronological_replay(db_path) as (compute, instance):
             for idx, date in enumerate(candidates.dates):  # já ordenado ascendente
@@ -585,7 +604,8 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
                     # ainda sem calibração point-in-time válida.
                     continue
                 outcomes.extend(extract_trade_outcomes(
-                    date, target, snapshots, is_b3, direction_of=direction_of))
+                    date, target, snapshots, is_b3, direction_of=direction_of,
+                    diagnostics=extraction_diagnostics))
 
         by_direction = {
             "buy": [o for o in outcomes if o.direction == "buy"],
@@ -600,6 +620,17 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
             "pit_mode": pit_schedule is not None,
             "sessions_before_first_pit_cutoff": sessions_before_first_pit_cutoff,
             "pit_cutoffs_used": pit_schedule.cutoffs_used(target) if pit_schedule is not None else None,
+            "data_quality": {
+                **extraction_diagnostics,
+                "missing_entry_open_pct_of_fill_candidates": (
+                    100.0 * extraction_diagnostics.get("rejected_missing_entry_open", 0)
+                    / max(
+                        1,
+                        extraction_diagnostics.get("signals_after_cooldown", 0)
+                        - extraction_diagnostics.get("rejected_no_next_bar", 0),
+                    )
+                ),
+            },
             "by_direction": {},
         }
         for label, subset in by_direction.items():
@@ -716,6 +747,11 @@ COMMON_LIMITATIONS = [
     "MFE/MAE usam HIGH/LOW M5 desde a barra de entrada, mas OHLC não informa "
     "a ordem intrabarra. Se stop e alvo forem tocados na mesma M5, a sequência "
     "é ambígua e exige política conservadora ou replay de ticks no IRAI-4.",
+    "Ausência de OHLC pode ser não aleatória (leilão, halt ou queda de feed). "
+    "Sem OPEN da barra de entrada, o trade é excluído da amostra, mas o sinal "
+    "consome cooldown; se faltar HIGH/LOW no caminho, o retorno por CLOSE é "
+    "preservado e MFE/MAE ficam ausentes. Essa política é conservadora, porém "
+    "a exclusão do trade ainda pode introduzir viés de seleção.",
     "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas "
     "(pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado "
     "inicial frio não reflete o que existiria em produção (achado do "
