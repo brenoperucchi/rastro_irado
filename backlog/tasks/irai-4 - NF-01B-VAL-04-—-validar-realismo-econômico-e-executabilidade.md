@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 14:26'
+updated_date: '2026-07-16 15:11'
 labels:
   - tactical
   - validation
@@ -87,5 +87,17 @@ author: @codex
 created: 2026-07-16 14:26
 ---
 Publicação e validação Windows concluídas no commit 014f160. origin/main atualizado; Ryzen5WSL avançou por fast-forward após preservar em /tmp as duas cópias locais dos artefatos com hashes idênticos aos publicados. Windows Python 3.12: 39 testes passaram em test_measure_pair_signal_value.py + test_build_nf01_artifact.py.
+---
+
+author: @codex
+created: 2026-07-16 15:02
+---
+PRÉ-REGISTRO AC3 (antes de gerar ou inspecionar resultados do challenger): hipótese confirmatória principal = o Pair fixo economicamente conhecido WIN$N↔WDO$N, sob o mesmo threshold 1,5, janela residual 20, |beta| mínimo 0,1, entrada no open da M5 seguinte, cooldown 20, horizontes 3/6/10/20 e custos 0,5x/1x/1,5x/2x. O beta é o peso Kalman causal do counterpart presente em `snapshot.factors`; a identidade jamais muda. Comparadores: Pair dinâmico e SMA momentum/reversão 6x20. Relatório primário: retorno líquido agregado h=6 a 1x custo com IC95% clusterizado por sessão; demais horizontes/custos/direções são secundários. Frequência equivalente: por alvo, N comum = menor contagem bruta entre os quatro braços; cada ledger é reduzido a N eventos pelo menor ranking SHA-256 de `signal|target|session_date|signal_available_at`, sem usar direção, retorno, MFE/MAE ou qualquer outcome. Não haverá matching por direção nem ajuste pós-resultado. Serão preservados também os relatórios brutos. Nenhum threshold/par/janela/método será alterado depois da leitura dos resultados nesta rodada.
+---
+
+author: @codex
+created: 2026-07-16 15:11
+---
+Correção de coordenação: o pré-registro beta-Kalman do comentário anterior foi supersedido antes de qualquer resultado pela tarefa dedicada IRAI-21, já commitada em origin/main. O contrato autoritativo do challenger é o de `docs/plans/2026-07-16-challenger-pair-fixo-win-wdo.md`: par WIN–WDO fixo, beta OLS rolling e independência do engine/Kalman/calibração. A variante beta-Kalman não será executada nem publicada.
 ---
 <!-- COMMENTS:END -->
