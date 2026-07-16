@@ -32,6 +32,7 @@ from scripts.backfill_gex_history import (
     rate_at_or_before,
     save_history_result,
     migrate_historical_rows_from_live,
+    reclassify_history_validity,
     open_backfill_database,
 )
 
@@ -325,6 +326,50 @@ def test_migracao_remove_somente_backfill_legado_da_tabela_live():
         """SELECT source_session_date, effective_session_date, target
            FROM gex_history_levels"""
     ).fetchall() == [("2026-07-15", "2026-07-16", "WIN$N")]
+
+
+def test_reclassificacao_promove_somente_reprovacao_por_ordem_flip_extremos():
+    conn = sqlite3.connect(":memory:")
+    ensure_history_schema(conn)
+
+    def insert(source, spot, gmin, flip, gmax, reasons):
+        meta = {
+            "grid_step": 1_000.0,
+            "liquid_strikes": 12,
+            "validity_reasons": reasons,
+        }
+        conn.execute(
+            """INSERT INTO gex_history_levels
+               (source_session_date, effective_session_date, target, valid,
+                gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov, spot, meta)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (source, "2026-07-16", "WIN$N", 0, gmax, gmin, flip, spot,
+             json.dumps(meta)),
+        )
+
+    insert("2026-07-13", 176_000, 170_000, 184_000, 180_000,
+           ["gamma_flip_not_between_extrema"])
+    insert("2026-07-14", 176_000, 170_000, 196_000, 180_000,
+           ["gamma_flip_not_between_extrema", "gamma_flip_too_far_from_spot"])
+    insert("2026-07-15", 176_000, 170_000, None, 180_000,
+           ["missing_gamma_flip"])
+    conn.commit()
+
+    report = reclassify_history_validity(conn)
+
+    assert report == {
+        "sessions": 3, "valid_before": 0, "valid_after": 1,
+        "promoted": 1, "demoted": 0,
+    }
+    rows = conn.execute(
+        "SELECT source_session_date, valid, meta FROM gex_history_levels ORDER BY 1"
+    ).fetchall()
+    assert [row[1] for row in rows] == [1, 0, 0]
+    promoted_meta = json.loads(rows[0][2])
+    assert promoted_meta["validity_reasons"] == []
+    assert promoted_meta["diagnostic_warnings"] == [
+        "gamma_flip_not_between_pointwise_extrema",
+    ]
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():

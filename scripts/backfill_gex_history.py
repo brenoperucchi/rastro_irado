@@ -492,6 +492,54 @@ def migrate_historical_rows_from_live(conn) -> int:
     return len(historical)
 
 
+def reclassify_history_validity(conn, *, target: str = "WIN$N") -> dict[str, int]:
+    """Reaplica apenas os gates atuais aos snapshots já persistidos.
+
+    Níveis, walls, fontes e timestamps permanecem byte a byte; somente
+    ``valid``, ``validity_reasons`` e ``diagnostic_warnings`` são atualizados.
+    """
+    ensure_history_schema(conn)
+    rows = conn.execute(
+        """SELECT source_session_date, valid, gamma_max_ibov, gamma_min_ibov,
+                  gamma_flip_ibov, spot, meta
+           FROM gex_history_levels WHERE target=?""",
+        (target,),
+    ).fetchall()
+    before = sum(bool(row[1]) for row in rows)
+    promoted = demoted = 0
+    with conn:
+        for source, old_valid, gamma_max, gamma_min, flip, spot, raw_meta in rows:
+            meta = json.loads(raw_meta or "{}")
+            result = {
+                "gamma_max_ibov": gamma_max,
+                "gamma_min_ibov": gamma_min,
+                "gamma_flip_ibov": flip,
+                "spot": spot,
+                "liquid_strikes": meta.get("liquid_strikes", 0),
+            }
+            reasons = gex_validity_reasons(
+                result, grid_step=float(meta.get("grid_step", gex.GRID_STEP)),
+            )
+            warnings = gex_diagnostic_warnings(result)
+            new_valid = not reasons
+            promoted += bool(new_valid and not old_valid)
+            demoted += bool(old_valid and not new_valid)
+            meta["validity_reasons"] = reasons
+            meta["diagnostic_warnings"] = warnings
+            conn.execute(
+                """UPDATE gex_history_levels SET valid=?, meta=?
+                   WHERE source_session_date=? AND target=?""",
+                (int(new_valid), json.dumps(meta, ensure_ascii=False), source, target),
+            )
+    return {
+        "sessions": len(rows),
+        "valid_before": before,
+        "valid_after": before + promoted - demoted,
+        "promoted": promoted,
+        "demoted": demoted,
+    }
+
+
 def existing_validity(conn, source_session_date: str) -> bool | None:
     ensure_history_schema(conn)
     row = conn.execute(
