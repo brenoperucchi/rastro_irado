@@ -633,6 +633,43 @@ def test_flip_fora_dos_extremos_pontuais_e_alerta_mas_nao_invalida_gex():
     )
 
 
+def test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe():
+    """Regressão do commit 2cca41d (tri-review deep-reasoner+codex, achado
+    'falta teste pra nova âncora'). Mercado put-heavy (put OI >> call OI perto
+    do spot) empurra o Flip bem longe do spot -- reproduz em miniatura o
+    cenário real do IBOV (flip~186k vs spot~178k WIN em 2026-07-15). Trava
+    que o grid de walls (`type=='wall'`) cobre o SPOT mesmo quando o Flip cai
+    fora dele; sob o código antigo (centro = round(flip/grid_step)*grid_step)
+    esta asserção falharia -- o grid inteiro saía de um lado do preço."""
+    options = []
+    for strike in range(100, 130):  # 30 strikes de put, todos com OI -- cumulativo
+        options.append({                                      # bem negativo até 130
+            "ticker": f"P{strike}", "oi": 10.0, "strike": float(strike),
+            "is_call": False, "expiry": "2026-08-21", "premium": None,
+        })
+    options.append({  # call isolada e gigante bem longe do spot -- só ali o
+        "ticker": "C130", "oi": 5000.0, "strike": 130.0,   # cumulativo vira positivo
+        "is_call": True, "expiry": "2026-08-21", "premium": None,
+    })
+    original_gamma = gw._bsm_gamma
+    gw._bsm_gamma = lambda *_args: 1.0
+    try:
+        result = gw.compute_gex(105.0, 105.0, options, "2026-07-13", grid_step=1.0)
+    finally:
+        gw._bsm_gamma = original_gamma
+
+    flip = result["gamma_flip_ibov"]
+    assert flip is not None
+    assert flip - 105.0 > 15, flip  # put-heavy empurra o flip bem longe do spot
+
+    walls = [w for w in result["walls"] if w["type"] == "wall"]
+    assert len(walls) == 17
+    prices = sorted(w["price"] for w in walls)
+    assert (prices[0], prices[-1]) == (97, 113)  # centro=round(105/1)*1=105, ±8
+    assert prices[0] <= 105 <= prices[-1]  # grid cobre o spot (a correção)
+    assert not (prices[0] <= flip <= prices[-1])  # flip fica FORA do grid (cenário do bug real)
+
+
 # ── Slice 3: orquestração de main() (painel Task #15) ───────────────────────
 
 def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():
