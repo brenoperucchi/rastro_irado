@@ -468,6 +468,54 @@ def process_session(
     }
 
 
+def audit_existing_sessions(conn, pairs: Iterable[tuple[str, str]]) -> list[dict]:
+    """Consolida cobertura/proveniência já persistida sem recalcular o GEX."""
+    rows = []
+    for source, effective in pairs:
+        stored = conn.execute(
+            """SELECT valid, gamma_max, gamma_flip, gamma_min, walls, meta
+               FROM gex_levels WHERE session_date=? AND target='WIN$N'""",
+            (source,),
+        ).fetchone()
+        if stored is None:
+            rows.append({
+                "source_session_date": source,
+                "effective_session_date": effective,
+                "action": "missing_existing",
+                "valid": False,
+                "validity_reasons": ["missing_existing_gex_row"],
+                "provenance_complete": False,
+            })
+            continue
+        meta = json.loads(stored["meta"] or "{}")
+        walls = json.loads(stored["walls"] or "[]")
+        source_files = meta.get("source_files", {})
+        provenance_complete = (
+            meta.get("effective_session_date") == effective
+            and len(source_files) == 4
+            and all(item.get("sha256") for item in source_files.values())
+        )
+        reasons = list(meta.get("validity_reasons", []))
+        if meta.get("effective_session_date") != effective:
+            reasons.append("effective_session_date_mismatch")
+        rows.append({
+            "source_session_date": source,
+            "effective_session_date": effective,
+            "action": "audit_existing" if provenance_complete else "audit_incomplete_provenance",
+            "valid": bool(stored["valid"]),
+            "validity_reasons": reasons,
+            "gamma_max": stored["gamma_max"],
+            "gamma_flip": stored["gamma_flip"],
+            "gamma_min": stored["gamma_min"],
+            "wall_count": sum(wall.get("type") == "wall" for wall in walls),
+            "mid_wall_count": sum(wall.get("type") == "mid_wall" for wall in walls),
+            "counts": meta.get("source_counts", {}),
+            "win_contract": meta.get("win_contract", {}).get("ticker"),
+            "provenance_complete": provenance_complete,
+        })
+    return rows
+
+
 def summarize(rows: Iterable[dict]) -> dict:
     rows = list(rows)
     reasons = sorted({reason for row in rows for reason in row.get("validity_reasons", [])})
@@ -496,6 +544,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--audit-only", action="store_true",
+                        help="não baixa/recalcula; audita somente gex_levels existente")
     parser.add_argument("--output-json")
     return parser.parse_args()
 
@@ -514,25 +564,30 @@ def main() -> int:
         if not pairs:
             print("nenhum par source/effective WIN encontrado", file=sys.stderr)
             return 1
-        rates = fetch_selic_history(pairs[0][0], pairs[-1][0], args.cache_dir)
-        rows = []
-        for source, effective in pairs:
-            try:
-                rate_source, rate = rate_at_or_before(rates, source)
-                row = process_session(
-                    conn, source, effective, rate, rate_source,
-                    cache_dir=args.cache_dir, replace=args.replace, dry_run=args.dry_run,
-                )
-            except Exception as exc:
-                row = {
-                    "source_session_date": source,
-                    "effective_session_date": effective,
-                    "action": "error",
-                    "valid": False,
-                    "reason": f"{type(exc).__name__}: {exc}",
-                }
-            rows.append(row)
-            print(json.dumps(row, ensure_ascii=False), flush=True)
+        if args.audit_only:
+            rows = audit_existing_sessions(conn, pairs)
+            for row in rows:
+                print(json.dumps(row, ensure_ascii=False), flush=True)
+        else:
+            rates = fetch_selic_history(pairs[0][0], pairs[-1][0], args.cache_dir)
+            rows = []
+            for source, effective in pairs:
+                try:
+                    rate_source, rate = rate_at_or_before(rates, source)
+                    row = process_session(
+                        conn, source, effective, rate, rate_source,
+                        cache_dir=args.cache_dir, replace=args.replace, dry_run=args.dry_run,
+                    )
+                except Exception as exc:
+                    row = {
+                        "source_session_date": source,
+                        "effective_session_date": effective,
+                        "action": "error",
+                        "valid": False,
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                rows.append(row)
+                print(json.dumps(row, ensure_ascii=False), flush=True)
         report = {
             "schema_version": 1,
             "generated_at": datetime.now(timezone.utc).isoformat(),

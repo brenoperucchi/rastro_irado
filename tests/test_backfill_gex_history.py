@@ -6,6 +6,7 @@ operável é o próximo pregão WIN presente no ledger de mercado.
 """
 
 import io
+import json
 import os
 import sqlite3
 import sys
@@ -17,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.backfill_gex_history import (
     assemble_ibov_options,
+    audit_existing_sessions,
     decide_persistence,
     gex_validity_reasons,
     ensure_safe_sqlite_runtime,
@@ -182,6 +184,52 @@ def test_auditoria_gex_valido_nao_inventa_motivo():
     }
 
     assert gex_validity_reasons(result, grid_step=1_000.0) == []
+
+
+def test_auditoria_existente_consolida_proveniencia_sem_recalcular():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, valid INTEGER,
+               gamma_max REAL, gamma_flip REAL, gamma_min REAL,
+               walls TEXT, meta TEXT
+           )"""
+    )
+    meta = {
+        "effective_session_date": "2026-07-16",
+        "validity_reasons": [],
+        "source_counts": {"joined_series": 789},
+        "source_files": {
+            name: {"sha256": name * 8}
+            for name in ("equities", "derivatives", "premiums", "index")
+        },
+        "win_contract": {"ticker": "WINQ26"},
+    }
+    walls = [{"type": "wall"}, {"type": "mid_wall"}]
+    conn.execute(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?)",
+        ("2026-07-15", "WIN$N", 1, 190000, 185000, 175000,
+         json.dumps(walls), json.dumps(meta)),
+    )
+
+    rows = audit_existing_sessions(conn, [("2026-07-15", "2026-07-16")])
+
+    assert rows == [{
+        "source_session_date": "2026-07-15",
+        "effective_session_date": "2026-07-16",
+        "action": "audit_existing",
+        "valid": True,
+        "validity_reasons": [],
+        "gamma_max": 190000.0,
+        "gamma_flip": 185000.0,
+        "gamma_min": 175000.0,
+        "wall_count": 1,
+        "mid_wall_count": 1,
+        "counts": {"joined_series": 789},
+        "win_contract": "WINQ26",
+        "provenance_complete": True,
+    }]
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():
