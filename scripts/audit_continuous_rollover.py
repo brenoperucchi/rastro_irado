@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audita rollover de séries contínuas WIN/WDO sem modificar o banco.
+"""Audita o rollover da série contínua WIN sem modificar o banco.
 
 A série ``$N`` é fornecida pelo broker. Este utilitário combina a descrição
 observada no MT5 com o calendário contratual da B3 e as descontinuidades
@@ -31,6 +31,10 @@ from typing import Iterable, Sequence
 
 SCHEMA_VERSION = "irai.rollover-audit.v1"
 EVEN_MONTHS = (2, 4, 6, 8, 10, 12)
+B3_WIN_CONTRACT_URL = (
+    "https://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/"
+    "renda-variavel/futuro-mini-de-ibovespa.htm"
+)
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,21 @@ def expected_win_expiries(start: str, end: str) -> list[date]:
             if start_date <= expiry <= end_date:
                 result.append(expiry)
     return result
+
+
+def calendar_for_symbol(symbol: str, start: str, end: str) -> list[date]:
+    """Seleciona uma regra explicitamente validada para o ativo.
+
+    O primeiro corte do IRAI-5 é deliberadamente WIN. Falhar de forma clara
+    evita aplicar ao WDO, por conveniência, uma regra contratual que não foi
+    implementada nem validada nesta fatia.
+    """
+    if symbol == "WIN$N":
+        return expected_win_expiries(start, end)
+    raise NotImplementedError(
+        f"calendário de rollover de {symbol!r} ainda não implementado; "
+        "esta versão do auditor cobre somente WIN$N"
+    )
 
 
 def infer_continuous_method(description: str | None) -> str:
@@ -213,7 +232,7 @@ def build_report(
     bars = load_daily_bars(db_path, symbol, source)
     if not bars:
         raise RuntimeError(f"nenhuma barra M5 encontrada para {symbol!r}/{source!r}")
-    expiries = expected_win_expiries(bars[0].session_date, bars[-1].session_date)
+    expiries = calendar_for_symbol(symbol, bars[0].session_date, bars[-1].session_date)
     return {
         "schema_version": SCHEMA_VERSION,
         "symbol": symbol,
@@ -225,6 +244,7 @@ def build_report(
             "B3 WIN: even months, Wednesday nearest the 15th; next trading "
             "session when the contractual date has no session"
         ),
+        "calendar_source_url": B3_WIN_CONTRACT_URL,
         "audit": audit_rollovers(
             bars,
             expected_expiries=expiries,
@@ -269,4 +289,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

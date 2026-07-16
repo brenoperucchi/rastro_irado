@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.audit_continuous_rollover import (
     DailyBar,
     audit_rollovers,
+    calendar_for_symbol,
     expected_win_expiries,
     infer_continuous_method,
 )
@@ -68,3 +69,12 @@ def test_descricao_mt5_sem_ajustes_classifica_serie_crua_por_liquidez():
     description = "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes"
 
     assert infer_continuous_method(description) == "liquidity_continuous_unadjusted"
+
+
+def test_auditor_nao_aplica_calendario_win_ao_wdo_silenciosamente():
+    try:
+        calendar_for_symbol("WDO$N", "2026-01-01", "2026-12-31")
+    except NotImplementedError as exc:
+        assert "WDO$N" in str(exc)
+    else:
+        raise AssertionError("WDO não pode herdar a regra de vencimento do WIN")
