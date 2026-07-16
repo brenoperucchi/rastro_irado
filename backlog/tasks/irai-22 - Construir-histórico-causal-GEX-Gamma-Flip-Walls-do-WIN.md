@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 15:43'
+updated_date: '2026-07-16 15:53'
 labels:
   - gex
   - validation
@@ -61,5 +61,11 @@ author: codex
 created: 2026-07-16 15:43
 ---
 Piloto Ryzen concluído. A chamada inicial com --db data/irai_live.db reproduziu um risco real: get_connection criou SQLite vazio; regressão permanente adicionada e corrigida por open_backfill_database (commit c0ee381). Suíte relacionada após correção/auditoria: 50 passed, 8 skipped local e 58 passed no Ryzen. Backfill real de 20 sessões: 4 válidas/16 inválidas, sem erros; 16 inserts inválidos, 1 válido, 1 promoção invalid->valid e 2 válidos legados preservados. Auditoria explícita adicionada (commit 95a5fc5): 13 gamma_flip_not_between_extrema, 9 gamma_flip_too_far_from_spot, 3 missing_gamma_flip. Proveniência causal completa (D -> próxima sessão WIN, quatro hashes B3) em 18/20; os dois snapshots legados válidos foram deliberadamente preservados. Janela de 100 sessões em execução no Ryzen; downloads são pré-carregados em paralelo, persistência segue serial/idempotente.
+---
+
+author: codex
+created: 2026-07-16 15:53
+---
+INCIDENTE/RECUPERAÇÃO: a primeira ampliação foi iniciada com python3 Linux sobre o SQLite hospedado em /mnt/c enquanto os serviços escreviam via Python Windows. O locking/WAL cruzado corrompeu a imagem. O job foi interrompido e API/collector parados. Preservada cópia forense data/backups/irai_corrupt_20260716_1245.db (SHA256 e259c649...), backup 10/07 validado, e recuperação  criada em arquivo novo. A recuperada passou quick_check no Linux e no Windows, preservando 3.570.922 market_bars até 2026-07-16T18:40:00Z e 23 gex_levels; foi promovida atomicamente, mantendo original forense e recuperada validada em backups. API retornou 200 e collector voltou a inserir barras. Correção permanente: ensure_safe_sqlite_runtime recusa Linux/WSL sobre DrvFS e instrui Python Windows (commits 46496b2/26bb645). Teste falhou antes, agora 60 testes relacionados passam no Windows. Backfill-100 reiniciado como unit systemd usando py.exe 3.12 Windows.
 ---
 <!-- COMMENTS:END -->
