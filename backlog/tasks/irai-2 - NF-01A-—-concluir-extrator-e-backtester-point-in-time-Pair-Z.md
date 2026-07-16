@@ -1,11 +1,11 @@
 ---
 id: IRAI-2
 title: NF-01A — concluir extrator e backtester point-in-time Pair/Z
-status: In Progress
+status: Review
 assignee:
   - '@claude'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 05:28'
+updated_date: '2026-07-16 08:26'
 labels:
   - tactical
   - validation
@@ -26,10 +26,10 @@ Entregar o núcleo causal e reproduzível do backtester de distorções Pair/Z, 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Extrator usa apenas dados disponíveis no fechamento determinístico de cada barra
-- [ ] #2 Replay não persiste estado no banco de produção nem contamina o estado Kalman live
-- [ ] #3 Pair, Z e baselines previstos geram eventos reproduzíveis por sessão
-- [ ] #4 Comando, testes executados, artefato e limitações conhecidas são reportados
+- [x] #1 Extrator usa apenas dados disponíveis no fechamento determinístico de cada barra
+- [x] #2 Replay não persiste estado no banco de produção nem contamina o estado Kalman live
+- [x] #3 Pair, Z e baselines previstos geram eventos reproduzíveis por sessão
+- [x] #4 Comando, testes executados, artefato e limitações conhecidas são reportados
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,6 +37,54 @@ Entregar o núcleo causal e reproduzível do backtester de distorções Pair/Z, 
 <!-- SECTION:PLAN:BEGIN -->
 Concluir a implementação já em andamento, testes permanentes, comando reproduzível e artefato de exemplo; não ampliar para NF-02/NF-03.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+NF-01A concluído conforme comentário #3. Nenhum avanço para IRAI-3/NF-02/NF-03/frontend/MT5.
+
+1. TIMESTAMPS CAUSAIS: TradeOutcome ganhou observation_bar_end,
+   confirmation_bar_end, signal_available_at, entry_at (eixo Tickmill, ISO).
+   Modelo M5 (timestamp=início da barra, fecha +5min); observação e
+   confirmação coincidem na política atual (marker X3 confirmado no
+   fechamento da barra i). Invariante testada: signal_available_at <=
+   entry_at (sem lookahead, 1 barra M5 de defasagem, conservador).
+
+2. RELÓGIO: _hour_brt passou do -5h fixo aproximado para
+   brt_to_tickmill_offset_hours (offset sazonal 5h/6h). Teste prova
+   divergência jul (verão, -6h) vs jan (inverno, -5h).
+
+3. BASELINES (AC #3): scripts/measure_baseline_value.py — momentum e
+   reversão via cruzamento de SMA 6x20 edge-triggered sobre o preço do WIN,
+   parâmetros de convenção NÃO otimizados, reusando toda a metodologia via
+   preprocess+direction_of. Só GERAM eventos reproduzíveis; invariantes ao
+   modo de calibração (usam só o preço). Avaliação econômica comparativa =
+   IRAI-4/VAL-04.
+
+4. ARTEFATO PIT VERSIONADO (item 4): docs/artifacts/irai-2/ —
+   nf01_pit.json.gz (completo, 17983 eventos com os 4 timestamps),
+   nf01_pit_summary.json (agregados legíveis), README.md. Gerado no host de
+   produção (ryzen5wsl) com --point-in-time --limit 2000. git.commit ==
+   origin_main == f9f90b4, head_in_origin_main=true (localizável). Comando/
+   hash/parâmetros/limitações no próprio artefato. Contagens: pair
+   3693/3833, z 119/120, interseção 93/97 (INCONCLUSIVO), baselines
+   2479/2535.
+
+5. LIMITAÇÕES PROVISÓRIAS documentadas explicitamente (provisional_policies
+   no artefato + módulos): entry_price = close da próxima M5 (fill
+   hipotético); MFE/MAE por close (não OHLC intrabar); custos aproximados
+   (ADR-002). Primeiro preço executável, OHLC intrabar, custos completos e
+   sensibilidade ficam para IRAI-4/VAL-04.
+
+COMANDO REPRODUTÍVEL: python3 -X utf8 scripts/build_nf01_artifact.py --db
+data/irai.db --targets WIN$N WDO$N --point-in-time --limit 2000 --output
+docs/artifacts/irai-2/nf01_pit.json
+
+TESTES: 243 passed, 18 skipped (pytest, --ignore test_measure_tactical_gate3
+por sklearn ausente no Linux dev). Novos: 4 timestamps, offset sazonal,
+serialização, cruzamento SMA, momentum==oposto de reversão, montagem do
+artefato. Commits: 89851fd, f9f90b4, bf48bb1.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
