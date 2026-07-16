@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@claude'
 created_date: '2026-07-16 15:04'
-updated_date: '2026-07-16 15:18'
+updated_date: '2026-07-16 15:39'
 labels:
   - tactical
   - validation
@@ -75,3 +75,24 @@ deslocado, integração run_fixed) e tests/test_build_challenger_artifact.py
 (comparação bruta+por-sessão, metadata, ressalva de janela). Commits: 06f20ba,
 5b67100, 25fba06.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-16 15:39
+---
+Review /fable-reasoner aplicada (SOMENTE o challenger IRAI-21; measure_pair_signal_value.py do codex NÃO tocado).
+
+Veredito do fable: GO em A-D,F,G; NO-GO parcial só no ranking do README (item E) por comparar janelas diferentes. Correções aplicadas (commits 7a24348, 25d57d5):
+
+E (crítico): pair_fixo_windowed — recorta o challenger na MESMA janela do dinâmico PIT (session_date > 1º cutoff) e re-bootstrapa. O ranking se CONFIRMA apples-to-apples: WIN$N challenger -11.02 vs dinâmico -7.47 (a diferença de janela NÃO explicava o gap); WDO$N -0.72 vs -1.00, ambos adversos. A conclusão 'todos negativos, nenhum edge' e o ranking WIN$N agora estão sustentados pela comparação de mesma janela.
+
+B: data_quality no relatório — descarte por alinhamento (barras WIN xor WDO) quantificado e NEGLIGÍVEL na base real: WIN 32/138646 (0,02%), WDO 1279/139790 (0,9%), 0 sessões vazias.
+
+A: comentário sobre o lookahead INERTE de t_frac (run() não lê). C: limitação sobre ausência do guarda de σ-quase-nula vs o dinâmico. F: redação corrigida (buy<->sell direto também dispara).
+
+G (gaps de teste): +test_anti_lookahead_prefixo_identico_ao_completo (prova DIRETA da causalidade: markers das K primeiras barras idênticos em prefixo vs sessão completa), +isolamento entre sessões (não vaza resíduo), +offset de inverno (5h), +data_quality. Suíte: 288 passed, 18 skipped.
+
+Fica em Review.
+---
+<!-- COMMENTS:END -->
