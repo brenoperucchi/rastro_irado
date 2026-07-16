@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 16:44'
+updated_date: '2026-07-16 16:56'
 labels:
   - gex
   - validation
@@ -73,6 +73,16 @@ author: codex
 created: 2026-07-16 16:44
 ---
 Ampliação final Ryzen/Windows: 200 sessões-fonte de 2025-09-24 a 2026-07-15, 73 válidas e 127 inválidas. Proveniência completa em 200/200 (effective_session_date, quatro hashes B3 e validity_reasons); quick_check=ok. Rejeições: 75 flip fora dos extremos, 31 também distante demais do spot, 50 sem flip. Cobertura mensal é regime-dependente: 2025-09 5/5, 10 6/23, 11 11/19, 12 5/20; 2026-01 14/21, 02 18/18, 03 0/22, 04 10/20, 05 0/20, 06 0/21, 07 4/11. Relatório: data/gex_history_200_audit.json; comando reproduzível usa py.exe 3.12 Windows com --limit 200 --audit-only. Validação Windows: 61 testes relacionados; suíte local mantida 292 passed, 18 skipped. API, collector M5 e tick collector ativos.
+---
+
+created: 2026-07-16 16:51
+---
+Bug LIVE reproduzido em 2026-07-16: o backfill histórico reutilizava gex_levels, tabela consumida pela API LIVE, e substituiu a linha inválida calculada pelo worker em 2026-07-15 por uma reconstrução histórica válida. Regressão permanente adicionada: test_backfill_historico_nunca_sobrescreve_tabela_gex_live falhou inicialmente por ausência de save_history_result. Correção em andamento separa a persistência histórica em gex_history_levels; nenhuma reconstrução poderá escrever no LIVE.
+---
+
+created: 2026-07-16 16:56
+---
+Correção LIVE concluída (commits 1d5452e/eb76c80). Causa: o backfill gravava em gex_levels e contaminava a fonte consumida pela API. Implementado gex_history_levels exclusivo, save_history_result e migração transacional identificada por meta.source_files. Regressões: teste novo falhou inicialmente na importação de save_history_result; testes finais 55 passed local e 55 passed no Python 3.12 Windows/Ryzen. Produção: backup consistente irai_pre_gex_live_fix_20260716_135413.db (quick_check=ok); 200 linhas movidas, 73 válidas, proveniência 200/200, quick_check=ok. Worker oficial reexecutado: WIN 2026-07-15 GammaMax=182497, Flip=186421, Min=171874, valid=false; API active=false. API e collector ativos.
 ---
 <!-- COMMENTS:END -->
 
