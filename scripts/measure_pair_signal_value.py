@@ -103,9 +103,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from datetime import datetime, timedelta
+
 from backend.irai import engine as engine_module
 from backend.irai.engine import IRAIEngine
 from backend.irai.kalman import KalmanFilterWrapper
+from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.db import factor_signature
 
 from scripts.measure_d1_inflation import (
@@ -126,6 +129,8 @@ TARGET_COST_POINTS = {"WIN$N": 10.0, "WDO$N": 1.0}
 FORWARD_HORIZONS = (3, 6, 10, 20)
 MFE_MAE_HORIZON = 20
 COOLDOWN_BARS = 20  # == maior horizonte: garante janelas de medição sem overlap
+BAR_DURATION_MIN = 5  # M5 — usado só p/ derivar o FIM de cada barra a partir do
+                      # timestamp (que é o INÍCIO da barra M5, convenção MT5)
 BOOTSTRAP_ITERATIONS = 10_000
 DEFAULT_SESSION_LIMIT = 300  # ~14 meses das sessões mais recentes; ajustável via --limit
 # Sessões iniciais do replay cujo estado do Kalman encadeado ainda está
@@ -223,18 +228,54 @@ class TradeOutcome:
     fwd: dict[int, Optional[float]]   # {horizonte: retorno líquido de custo, em pontos}
     mfe: Optional[float]
     mae: Optional[float]
+    # ── Contrato temporal causal (4 timestamps, eixo Tickmill, ISO) ──────────
+    # Prova, evento a evento, que nenhum dado do futuro entrou na decisão.
+    # Modelo: barra M5, timestamp = INÍCIO da barra; a barra fecha +5min.
+    #   observation_bar_end  = fim da barra que gerou o marker (barra i). A
+    #     distorção só é "vista" quando essa barra fecha (achado X3: o marker
+    #     nunca nasce de barra em formação).
+    #   confirmation_bar_end = fim da barra que CONFIRMA o sinal. Na política
+    #     atual, observação e confirmação coincidem (o próprio fechamento da
+    #     barra i confirma, X3), então == observation_bar_end. O campo separado
+    #     deixa o contrato pronto p/ uma barra de confirmação adicional futura
+    #     (VAL-04/tactical), sem quebrar o schema.
+    #   signal_available_at  = instante em que o sinal fica ACIONÁVEL =
+    #     confirmation_bar_end (existe assim que a barra de confirmação fecha).
+    #   entry_at             = instante do FILL. Política atual: close da barra
+    #     SEGUINTE (i+1), que ocorre em fim_da_barra(i+1). Portanto
+    #     signal_available_at <= entry_at SEMPRE (o sinal existe antes da
+    #     entrada — causal, e conservador: há 1 barra M5 de defasagem).
+    observation_bar_end: str
+    confirmation_bar_end: str
+    signal_available_at: str
+    entry_at: str
 
 
-def _hour_brt(timestamp_utc: str, is_b3: bool) -> int:
-    """Hora BRT aproximada só pra quebra de análise (não precisa do offset
-    sazonal exato aqui — é agrupamento, não cálculo de sinal)."""
-    from datetime import datetime
-    ts = datetime.fromisoformat(timestamp_utc.replace("Z", "+00:00"))
+def _parse_axis_ts(timestamp_iso: str) -> datetime:
+    """Parseia o timestamp do snapshot (eixo do servidor Tickmill, string ISO
+    naive — ver backend/irai/engine.py). Tolera o sufixo 'Z' por robustez,
+    mas os snapshots do engine são naive."""
+    return datetime.fromisoformat(timestamp_iso.replace("Z", "").replace("+00:00", ""))
+
+
+def _bar_end_iso(timestamp_iso: str) -> str:
+    """FIM da barra M5 a partir do seu timestamp de INÍCIO (convenção MT5:
+    o timestamp da barra é o instante de abertura; a barra fecha +5min)."""
+    return (_parse_axis_ts(timestamp_iso) + timedelta(minutes=BAR_DURATION_MIN)).isoformat()
+
+
+def _hour_brt(timestamp_iso: str, is_b3: bool) -> int:
+    """Hora BRT da barra, usando o offset SAZONAL oficial
+    (brt_to_tickmill_offset_hours: 5h fora do DST americano, 6h dentro) em
+    vez do -5h aproximado anterior. O timestamp vem no eixo Tickmill; a data
+    Tickmill coincide com a data BRT para o pregão diurno da B3 (09:00-18:00
+    BRT -> ~14:00-24:00 no eixo Tickmill, mesma data), então usar a data do
+    próprio timestamp p/ resolver o offset é seguro aqui — corrige o achado
+    do /codex-r (comentário #3 do IRAI-2)."""
+    ts = _parse_axis_ts(timestamp_iso)
     if is_b3:
-        # Eixo já vem deslocado +5h/+6h (Tickmill); BRT = Tickmill - offset.
-        # Aproximação deliberada (5h) só para agrupar por hora — ver
-        # backend/irai/timezones.py se precisão exata for necessária depois.
-        ts = ts.replace(hour=(ts.hour - 5) % 24)
+        offset = brt_to_tickmill_offset_hours(ts)
+        ts = ts - timedelta(hours=offset)
     return ts.hour
 
 
@@ -312,6 +353,15 @@ def extract_trade_outcomes(
         mfe = max(0.0, max(excursions)) if excursions else None
         mae = min(0.0, min(excursions)) if excursions else None
 
+        # Contrato temporal causal (ver docstring de TradeOutcome). A barra do
+        # sinal é `i`; a barra de entrada é `entry_index` (i+1). observação e
+        # confirmação coincidem na política atual (marker X3 confirmado no
+        # fechamento da barra i).
+        observation_bar_end = _bar_end_iso(snap.timestamp)
+        confirmation_bar_end = observation_bar_end
+        signal_available_at = confirmation_bar_end
+        entry_at = _bar_end_iso(real[entry_index].timestamp)
+
         outcomes.append(TradeOutcome(
             session_date=session_date,
             target=target,
@@ -326,8 +376,32 @@ def extract_trade_outcomes(
             fwd=fwd,
             mfe=mfe,
             mae=mae,
+            observation_bar_end=observation_bar_end,
+            confirmation_bar_end=confirmation_bar_end,
+            signal_available_at=signal_available_at,
+            entry_at=entry_at,
         ))
     return outcomes
+
+
+def outcome_to_dict(o: TradeOutcome) -> dict:
+    """Serializa um TradeOutcome pra JSON (artefato NF-01 versionado). `fwd`
+    vira dict com chaves-string (horizontes) pra sobreviver a round-trip JSON."""
+    return {
+        "session_date": o.session_date,
+        "target": o.target,
+        "direction": o.direction,
+        "hour_brt": o.hour_brt,
+        "pair_factor": o.pair_factor,
+        "entry_price": o.entry_price,
+        "fwd": {str(h): v for h, v in o.fwd.items()},
+        "mfe": o.mfe,
+        "mae": o.mae,
+        "observation_bar_end": o.observation_bar_end,
+        "confirmation_bar_end": o.confirmation_bar_end,
+        "signal_available_at": o.signal_available_at,
+        "entry_at": o.entry_at,
+    }
 
 
 # ── Bootstrap clusterizado por sessão (mesma primitiva de medida_tactical_gate3.py,
@@ -399,7 +473,8 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
         limitations: Optional[list] = None,
         preprocess: Optional[Callable] = None,
         min_events_for_gate: int = MIN_EVENTS_FOR_GATE,
-        pit_schedule=None) -> dict:
+        pit_schedule=None,
+        emit_events: bool = False) -> dict:
     """`direction_of`/`limitations` default ao Pair Signal (marker `P`) —
     scripts/measure_price_divergence_value.py e
     scripts/measure_intersection_value.py reusam esta função passando as
@@ -533,6 +608,15 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
             factor: {"n": len(vs), "mean": round(sum(vs) / len(vs), 2)}
             for factor, vs in sorted(by_factor.items(), key=lambda kv: -len(kv[1]))
         }
+
+        # Eventos individuais serializados (com os 4 timestamps causais) — só
+        # quando `emit_events`, pra alimentar o artefato NF-01 versionado sem
+        # inflar o relatório de rotina. Ordenados por (data, signal_available_at).
+        if emit_events:
+            target_report["events"] = [
+                outcome_to_dict(o)
+                for o in sorted(outcomes, key=lambda o: (o.session_date, o.signal_available_at))
+            ]
 
         report["targets"][target] = target_report
 

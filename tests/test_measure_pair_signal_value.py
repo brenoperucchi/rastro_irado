@@ -57,6 +57,16 @@ from scripts.measure_pair_signal_value import (
 )
 
 
+def _mk_outcome(session_date, target, direction, hour_brt, pair_factor, entry_price,
+                fwd, mfe, mae, *, obs="2026-07-10T10:05:00", conf="2026-07-10T10:05:00",
+                avail="2026-07-10T10:05:00", entry_at="2026-07-10T10:10:00"):
+    """Constrói TradeOutcome nos testes de bootstrap/win_rate, que não se
+    importam com os 4 timestamps causais (só medem fwd) — preenche-os com
+    valores plausíveis pra satisfazer o dataclass sem poluir cada caso."""
+    return TradeOutcome(session_date, target, direction, hour_brt, pair_factor,
+                        entry_price, fwd, mfe, mae, obs, conf, avail, entry_at)
+
+
 def _snap(i, close, *, pair_compra=None, pair_venda=None, pair_factor="us500",
           ts_hour=10):
     s = IRAISnapshot(
@@ -113,6 +123,54 @@ def test_sinal_na_ultima_barra_da_sessao_nao_gera_evento():
     snaps[4] = _snap(4, 100.0, pair_compra=100.0)
     outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
     assert outcomes == []
+
+
+def test_quatro_timestamps_causais_do_evento():
+    """Sinal na barra 0 (início 10:00, eixo Tickmill), entrada na barra 1
+    (início 10:05). Contrato temporal (barra M5, timestamp = início; fecha
+    +5min):
+      observation_bar_end  = fim da barra 0 = 10:05
+      confirmation_bar_end = == observation (marker X3 confirmado no
+                             fechamento da própria barra 0)
+      signal_available_at  = == confirmation
+      entry_at             = fim da barra 1 (de entrada) = 10:10
+    E signal_available_at <= entry_at (causal, com 1 barra de defasagem)."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
+        _snap(i, 100.0 + i * 5.0) for i in range(1, 25)
+    ]
+    o = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)[0]
+    assert o.observation_bar_end == "2026-07-10T10:05:00"
+    assert o.confirmation_bar_end == o.observation_bar_end
+    assert o.signal_available_at == o.confirmation_bar_end
+    assert o.entry_at == "2026-07-10T10:10:00"
+    assert o.signal_available_at <= o.entry_at  # nunca entra antes do sinal existir
+
+
+def test_hour_brt_usa_offset_sazonal_nao_5h_fixo():
+    """A quebra por hora deve usar o offset sazonal oficial
+    (brt_to_tickmill_offset_hours), não o -5h fixo anterior. Uma barra às
+    15:00 no eixo Tickmill:
+      - em julho (DST americano, offset 6) -> 09:00 BRT;
+      - em janeiro (fora do DST, offset 5) -> 10:00 BRT.
+    O -5h fixo antigo daria 10:00 nos DOIS casos — este teste falha com ele."""
+    assert psv._hour_brt("2026-07-10T15:00:00", is_b3=True) == 9    # verão: -6h
+    assert psv._hour_brt("2026-01-15T15:00:00", is_b3=True) == 10   # inverno: -5h
+    # Ativo não-B3 (offset 0): hora Tickmill == hora reportada.
+    assert psv._hour_brt("2026-07-10T15:00:00", is_b3=False) == 15
+
+
+def test_outcome_to_dict_serializa_todos_os_campos():
+    o = extract_trade_outcomes(
+        "2026-07-10", "WIN$N",
+        [_snap(0, 100.0, pair_compra=100.0)] + [_snap(i, 100.0 + i * 5.0) for i in range(1, 25)],
+        is_b3=True)[0]
+    d = psv.outcome_to_dict(o)
+    for key in ("session_date", "target", "direction", "hour_brt", "pair_factor",
+                "entry_price", "fwd", "mfe", "mae", "observation_bar_end",
+                "confirmation_bar_end", "signal_available_at", "entry_at"):
+        assert key in d, f"faltou {key} na serialização"
+    assert set(d["fwd"].keys()) == {"3", "6", "10", "20"}  # chaves-string, round-trip JSON
+    assert json.loads(json.dumps(d))["entry_at"] == o.entry_at  # sobrevive a round-trip
 
 
 def test_cooldown_suprime_segunda_entrada_proxima():
@@ -184,8 +242,8 @@ def test_nunca_extrai_evento_sem_marker():
 
 def test_bootstrap_detecta_media_claramente_positiva_como_significante():
     outcomes = [
-        TradeOutcome(f"2026-07-{10+i:02d}", "WIN$N", "buy", 10, "us500", 100.0,
-                     {3: 8.0, 6: 8.0, 10: 8.0, 20: 8.0}, None, None)
+        _mk_outcome(f"2026-07-{10+i:02d}", "WIN$N", "buy", 10, "us500", 100.0,
+                    {3: 8.0, 6: 8.0, 10: 8.0, 20: 8.0}, None, None)
         for i in range(30)
     ]
     est = estimate_mean(outcomes, 3, iterations=500)
@@ -201,7 +259,7 @@ def test_bootstrap_nao_significante_quando_ic_inclui_zero():
     outcomes = []
     for i in range(20):
         val = 20.0 if i % 2 == 0 else -20.0
-        outcomes.append(TradeOutcome(
+        outcomes.append(_mk_outcome(
             f"2026-07-{10+i:02d}", "WIN$N", "buy", 10, "us500", 100.0,
             {3: val, 6: val, 10: val, 20: val}, None, None))
     est = estimate_mean(outcomes, 3, iterations=500)
@@ -212,9 +270,9 @@ def test_bootstrap_nao_significante_quando_ic_inclui_zero():
 
 def test_win_rate_conta_so_horizontes_medidos():
     outcomes = [
-        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: 5.0}, None, None),
-        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: -5.0}, None, None),
-        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: None}, None, None),  # truncado
+        _mk_outcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: 5.0}, None, None),
+        _mk_outcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: -5.0}, None, None),
+        _mk_outcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: None}, None, None),  # truncado
     ]
     wins, total, pct = win_rate(outcomes, 3)
     assert wins == 1 and total == 2 and pct == 50.0
