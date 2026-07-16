@@ -94,17 +94,37 @@ def _load_session_bars(conn, symbol: str, session_date: str) -> dict:
     return {r["timestamp_utc"]: r for r in rows}
 
 
-def build_fixed_pair_snapshots(conn, session_date: str, target: str) -> list:
+def build_fixed_pair_snapshots(conn, session_date: str, target: str,
+                               quality: Optional[dict] = None) -> list:
     """Constrói snapshots sintéticos do TARGET com o marker do par fixo já
     estampado, prontos para `extract_trade_outcomes`. Timestamps deslocados
     +offset sazonal (eixo Tickmill) para casar com `is_b3=True` do run() e
-    ficar comparável ao Pair dinâmico (mesma convenção de eixo)."""
+    ficar comparável ao Pair dinâmico (mesma convenção de eixo).
+
+    `quality` (opcional): dict acumulador de diagnóstico de alinhamento
+    (achado do /fable-reasoner) — barras de WIN/WDO só num dos dois símbolos
+    são DESCARTADAS (só timestamps comuns entram). Preenche
+    target_bars/factor_bars/common_bars/sessions/empty_sessions para o
+    relatório expor quanto está sendo descartado (se ~0 na base real, a
+    ressalva morre com evidência)."""
     factor = FIXED_FACTOR[target]
     tbars = _load_session_bars(conn, target, session_date)
     fbars = _load_session_bars(conn, factor, session_date)
     common_ts = sorted(set(tbars) & set(fbars))
+    if quality is not None:
+        quality["sessions"] = quality.get("sessions", 0) + 1
+        quality["target_bars"] = quality.get("target_bars", 0) + len(tbars)
+        quality["factor_bars"] = quality.get("factor_bars", 0) + len(fbars)
+        quality["common_bars"] = quality.get("common_bars", 0) + len(common_ts)
+        if not common_ts:
+            quality["empty_sessions"] = quality.get("empty_sessions", 0) + 1
     if len(common_ts) < 2:
         return []
+    # NOTA: t_open é o open da 1ª barra COMUM. Se WIN e WDO tiverem a mesma
+    # grade (caso normal — mesma coleta/pregão B3), essa É a abertura real da
+    # sessão. Se um abrir uma barra antes do outro, o "open da sessão" seria o
+    # da 1ª barra comum (viés potencial em dias com grade desalinhada — o
+    # `quality` acima quantifica quanto isso ocorre).
     t_open = float(tbars[common_ts[0]]["open"])
     f_open = float(fbars[common_ts[0]]["open"])
     if t_open <= 0 or f_open <= 0:
@@ -137,6 +157,11 @@ def build_fixed_pair_snapshots(conn, session_date: str, target: str) -> list:
         prev_sig = sig
 
         tick_ts = (datetime.fromisoformat(ts.replace("Z", "")) + timedelta(hours=offset)).isoformat()
+        # t_frac usa `n` (total de barras da sessão) — um campo com LOOKAHEAD
+        # (só conhecido no fim). É INERTE aqui: extract_trade_outcomes/run()
+        # nunca leem t_frac destes snapshots. Se um preprocess futuro passar a
+        # ler t_frac destes snapshots sintéticos, isto vira antecipação
+        # silenciosa (achado do /fable-reasoner) — revisar então.
         snap = IRAISnapshot(
             timestamp=tick_ts, session_date=session_date, bar_idx=bar_idx,
             t_frac=(bar_idx + 1) / n, p_up=50.0, score=0.0, verdict="", verdict_color="",
@@ -161,21 +186,22 @@ def _pair_fixed_direction(snap) -> Optional[str]:
     return None
 
 
-@contextmanager
-def fixed_pair_replay(db_path: str):
-    """Replay alternativo (mesmo contrato de chronological_replay: yields
-    `(compute, instance)`), mas os snapshots vêm do market_bars com o par
-    fixo, não do engine/Kalman. `instance=None` — não há engine a mutar
-    (challenger não tem calibração, então pit_schedule nunca é usado)."""
-    conn = readonly_connection(db_path)
+def _make_fixed_pair_replay(quality_by_target: dict):
+    """Fábrica: cria um replay que acumula o diagnóstico de alinhamento em
+    `quality_by_target` (achado do /fable-reasoner) por target."""
+    @contextmanager
+    def fixed_pair_replay(db_path: str):
+        conn = readonly_connection(db_path)
 
-    def compute(session_date: str, target: str):
-        return build_fixed_pair_snapshots(conn, session_date, target)
+        def compute(session_date: str, target: str):
+            q = quality_by_target.setdefault(target, {})
+            return build_fixed_pair_snapshots(conn, session_date, target, quality=q)
 
-    try:
-        yield compute, None
-    finally:
-        conn.close()
+        try:
+            yield compute, None
+        finally:
+            conn.close()
+    return fixed_pair_replay
 
 
 LIMITATIONS = [
@@ -186,6 +212,16 @@ LIMITATIONS = [
     "simples vs modelo complexo). β OLS é parâmetro de convenção, não "
     "otimizado; não reproduz o encadeamento do Kalman nem o warm-up de σ do "
     "par que o dinâmico tem no início da sessão (intencional).",
+    "Barras presentes em SÓ um dos dois símbolos (WIN xor WDO — halt, leilão, "
+    "gap de liquidez) são DESCARTADAS do ledger (só timestamps comuns entram), "
+    "diferente do dinâmico que mantém a grade do target e forward-filla o "
+    "fator. Ver `data_quality` no relatório para quanto é descartado na base "
+    "real (achado do /fable-reasoner).",
+    "Diferente do dinâmico (select_active_pair exclui fatores de σ quase-nula, "
+    "zscore.py), o challenger NÃO tem guarda de σ-quase-nula do fator: se WDO "
+    "ficasse quase congelado numa janela (Σret_f²≈0+), β poderia explodir. "
+    "Risco prático baixo (ambas as pernas são futuros líquidos), mas é uma "
+    "diferença de tratamento vs. o dinâmico.",
 ] + COMMON_LIMITATIONS + [RETROSPECTIVE_ONLY_LIMITATION]
 
 
@@ -193,13 +229,15 @@ def run_fixed(db_path: str, targets, limit: int, bootstrap: int) -> dict:
     """Roda o challenger reusando run() do módulo Pair, com o replay fixo
     injetado por patch local (mesmo mecanismo dos testes) — não edita
     measure_pair_signal_value.py."""
-    with patch.object(psv, "chronological_replay", fixed_pair_replay):
+    quality_by_target: dict = {}
+    with patch.object(psv, "chronological_replay", _make_fixed_pair_replay(quality_by_target)):
         report = run(
             db_path, targets, limit, bootstrap, burn_in_sessions=0,
             direction_of=_pair_fixed_direction, limitations=LIMITATIONS,
             emit_events=True,
         )
     report["challenger"] = "pair_fixo_win_wdo"
+    report["data_quality"] = quality_by_target
     return report
 
 

@@ -29,12 +29,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import scripts.measure_pair_fixed_value as pf
 from scripts.build_nf01_artifact import _git_state
-from scripts.measure_pair_signal_value import FORWARD_HORIZONS
+from scripts.measure_pair_signal_value import (
+    BOOTSTRAP_ITERATIONS, FORWARD_HORIZONS, estimate_mean, win_rate,
+)
 
 ARTIFACT_SCHEMA_VERSION = 1
 
 # Quais sinais do artefato de referência entram na comparação, além do challenger.
 REFERENCE_SIGNALS = ("pair", "baseline_momentum", "baseline_reversao")
+
+
+class _LiteOutcome:
+    """Outcome mínimo reconstruído de um evento serializado (fwd + session_date)
+    — o suficiente para estimate_mean/win_rate reprocessarem uma sub-janela."""
+    __slots__ = ("fwd", "session_date")
+
+    def __init__(self, event: dict):
+        # fwd vem com chaves-string do JSON; estimate_mean indexa por int.
+        self.fwd = {int(k): v for k, v in event["fwd"].items()}
+        self.session_date = event["session_date"]
+
+
+def _first_pit_cutoff(reference: dict) -> str | None:
+    """1º cutoff point-in-time do artefato de referência (define o início da
+    janela do Pair dinâmico). None se a referência não for PIT."""
+    for sig in reference.get("signals", {}).values():
+        for tr in sig.get("targets", {}).values():
+            cutoffs = tr.get("pit_cutoffs_used")
+            if cutoffs:
+                return cutoffs[0]
+    return None
 
 
 def _sessions_measured(target_report: dict) -> int:
@@ -89,10 +113,49 @@ def _load_reference(path: str | Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def build_comparison(challenger_report: dict, reference: dict | None, targets) -> dict:
+def _windowed_challenger_metrics(challenger_target: dict, cutoff: str,
+                                 sessions_measured: int, bootstrap: int) -> dict:
+    """Recomputa as métricas do challenger SÓ sobre os eventos com
+    `session_date > cutoff` — a MESMA janela do Pair dinâmico PIT (achado do
+    /fable-reasoner: o ranking bruto misturava janelas). Reconstrói os
+    outcomes dos eventos serializados e re-bootstrapa. `sessions_measured`
+    (denominador de eventos/sessão) usa o do dinâmico na mesma janela —
+    aproximação documentada: mesma janela temporal, ~mesmo nº de sessões."""
+    events = challenger_target.get("events", [])
+    windowed = [_LiteOutcome(e) for e in events if e["session_date"] > cutoff]
+    out = {"sessions_measured": sessions_measured, "n_events_window": len(windowed),
+           "note": ("challenger restrito à janela do dinâmico PIT (session_date > "
+                    f"{cutoff}); denominador de sessões = o do dinâmico (aprox.)"),
+           "horizons": {}}
+    for h in FORWARD_HORIZONS:
+        est = estimate_mean(windowed, h, iterations=bootstrap)
+        _, total, pct = win_rate(windowed, h)
+        if est is None:
+            out["horizons"][str(h)] = None
+            continue
+        events_per_session = est.n_events / sessions_measured if sessions_measured else None
+        expectancy = est.value * events_per_session if events_per_session is not None else None
+        out["horizons"][str(h)] = {
+            "mean_per_event": round(est.value, 4),
+            "significant": est.significant,
+            "ci_low": round(est.ci_low, 4),
+            "ci_high": round(est.ci_high, 4),
+            "events": est.n_events,
+            "events_per_session": round(events_per_session, 4) if events_per_session is not None else None,
+            "expectancy_per_session": round(expectancy, 4) if expectancy is not None else None,
+            "win_rate_pct": round(pct, 2) if pct == pct else None,
+        }
+    return out
+
+
+def build_comparison(challenger_report: dict, reference: dict | None, targets,
+                     bootstrap: int = BOOTSTRAP_ITERATIONS) -> dict:
     """Monta a tabela comparativa por alvo: challenger vs sinais de referência.
-    `reference` None -> só o challenger (comparação omitida com nota)."""
+    `reference` None -> só o challenger (comparação omitida com nota). Quando a
+    referência é PIT, adiciona `pair_fixo_windowed`: o challenger recortado na
+    MESMA janela temporal do dinâmico, para um ranking apples-to-apples."""
     comparison = {}
+    cutoff = _first_pit_cutoff(reference) if reference is not None else None
     for target in targets:
         row = {"pair_fixo": _signal_metrics(challenger_report["targets"][target])}
         if reference is not None:
@@ -100,6 +163,11 @@ def build_comparison(challenger_report: dict, reference: dict | None, targets) -
                 tr = reference.get("signals", {}).get(sig, {}).get("targets", {}).get(target)
                 if tr is not None:
                     row[sig] = _signal_metrics(tr)
+            if cutoff is not None:
+                dyn = reference.get("signals", {}).get("pair", {}).get("targets", {}).get(target)
+                sessions = _sessions_measured(dyn) if dyn else 0
+                row["pair_fixo_windowed"] = _windowed_challenger_metrics(
+                    challenger_report["targets"][target], cutoff, sessions, bootstrap)
         comparison[target] = row
     return comparison
 
@@ -123,7 +191,8 @@ def build_artifact(db_path: str, targets, limit: int, bootstrap: int,
             "point_in_time": reference.get("parameters", {}).get("point_in_time"),
             "note": ("Pair dinâmico + baselines são point-in-time (~2022-12+); o challenger "
                      "mede toda a base (~2021+). Expectativa por sessão normaliza a "
-                     "FREQUÊNCIA, não a janela temporal — ver metodologia §3."),
+                     "FREQUÊNCIA, não a janela temporal — use `pair_fixo_windowed` na "
+                     "comparação para o ranking apples-to-apples (mesma janela)."),
         }
 
     return {
@@ -139,7 +208,7 @@ def build_artifact(db_path: str, targets, limit: int, bootstrap: int,
             "independent_of_calibration": True,
         },
         "reference": reference_meta,
-        "comparison": build_comparison(challenger, reference, targets),
+        "comparison": build_comparison(challenger, reference, targets, bootstrap=bootstrap),
         "challenger": challenger,
     }
 

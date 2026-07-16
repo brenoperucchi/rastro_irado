@@ -47,9 +47,12 @@ As duas ÚNICAS diferenças vs. o Pair dinâmico são: (a) par FIXO (WDO) em vez
 direção β-agnóstica) é o MESMO código de `zscore.py`.
 
 ### 2.3 Marker discreto (edge-triggered, causal)
-O marker dispara só na TRANSIÇÃO do sinal (`neutral→buy` ⇒ compra; `neutral→sell` ⇒ venda),
-igual ao Pair dinâmico. β[i], resíduo[i] e z[i] usam dados até o FECHAMENTO da barra i — o
-marker nasce quando a barra i fecha (mesma garantia causal do achado X3).
+O marker dispara em toda TRANSIÇÃO do sinal — quando `sig` muda de valor (`neutral→buy`,
+`neutral→sell`, e também `buy→sell`/`sell→buy` diretos), exatamente como o Pair dinâmico
+(`prev_sig != sig`). β[i], resíduo[i] e z[i] usam dados até o FECHAMENTO da barra i — o
+marker nasce quando a barra i fecha (mesma garantia causal do achado X3). Provado por
+`tests/test_measure_pair_fixed_value.py::test_anti_lookahead_prefixo_identico_ao_completo`:
+os markers das primeiras K barras são idênticos quer a sessão termine ali quer continue.
 
 ### 2.4 Eixo temporal
 As barras vêm do `market_bars` no eixo B3/BRT cru (UTC-3 — `CLAUDE.md`). Ao construir os

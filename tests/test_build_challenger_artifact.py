@@ -47,24 +47,37 @@ def _fake_target_report(mean, events, sessions_replayed, burn_in=0):
     }
 
 
+def _fake_challenger_target():
+    """Challenger target com eventos serializados: metade ANTES do cutoff
+    (2022-06), metade DEPOIS (2023-06) — pra a filtragem windowed ter o que
+    recortar. fwd fixo -2.0 em todos os horizontes."""
+    tr = _fake_target_report(mean=-2.0, events=1000, sessions_replayed=1250)
+    fwd = {"3": -2.0, "6": -2.0, "10": -2.0, "20": -2.0}
+    events = ([{"session_date": "2022-06-15", "fwd": dict(fwd)} for _ in range(400)]
+              + [{"session_date": "2023-06-15", "fwd": dict(fwd)} for _ in range(600)])
+    tr["events"] = events
+    return tr
+
+
 def _fake_run_fixed(db_path, targets, limit, bootstrap):
     return {"challenger": "pair_fixo_win_wdo",
-            "targets": {t: _fake_target_report(mean=-2.0, events=1000, sessions_replayed=1250)
-                        for t in targets}}
+            "targets": {t: _fake_challenger_target() for t in targets}}
 
 
 def _fake_reference():
+    def _pair_tr(mean, events):
+        tr = _fake_target_report(mean=mean, events=events, sessions_replayed=1250, burn_in=5)
+        tr["sessions_before_first_pit_cutoff"] = 370  # PIT: mede ~875 sessões
+        tr["pit_cutoffs_used"] = ["2022-12-30", "2023-03-31"]
+        return tr
     return {
         "generated_at": "2026-07-16T00:00:00+00:00",
         "git": {"commit": "abc123"},
         "parameters": {"point_in_time": True},
         "signals": {
-            "pair": {"targets": {t: _fake_target_report(mean=-1.0, events=3000, sessions_replayed=1250, burn_in=5)
-                                 for t in ("WIN$N", "WDO$N")}},
-            "baseline_momentum": {"targets": {t: _fake_target_report(mean=-0.5, events=2500, sessions_replayed=1250, burn_in=5)
-                                              for t in ("WIN$N", "WDO$N")}},
-            "baseline_reversao": {"targets": {t: _fake_target_report(mean=0.5, events=2500, sessions_replayed=1250, burn_in=5)
-                                              for t in ("WIN$N", "WDO$N")}},
+            "pair": {"targets": {t: _pair_tr(-1.0, 3000) for t in ("WIN$N", "WDO$N")}},
+            "baseline_momentum": {"targets": {t: _pair_tr(-0.5, 2500) for t in ("WIN$N", "WDO$N")}},
+            "baseline_reversao": {"targets": {t: _pair_tr(0.5, 2500) for t in ("WIN$N", "WDO$N")}},
         },
     }
 
@@ -89,25 +102,40 @@ def test_metadata_e_metodologia_presentes():
     assert a["parameters"]["independent_of_calibration"] is True
 
 
-def test_comparacao_tem_challenger_e_sinais_de_referencia():
+def test_comparacao_tem_challenger_sinais_e_janela_alinhada():
     a = _build()
     comp = a["comparison"]["WIN$N"]
-    assert set(comp) == {"pair_fixo", "pair", "baseline_momentum", "baseline_reversao"}
+    assert set(comp) == {"pair_fixo", "pair", "baseline_momentum",
+                         "baseline_reversao", "pair_fixo_windowed"}
 
 
 def test_expectativa_por_sessao_normaliza_frequencia():
     """expectancy_per_session = mean_per_event × events/sessions_measured.
-    Challenger: mean=-2.0, 1000 eventos, 1250 sessões medidas (burn_in=0) ->
-    events/sessao=0.8 -> expectancy = -2.0*0.8 = -1.6."""
+    Challenger: mean=-2.0, 1000 eventos, 1250 sessões medidas (burn_in=0)."""
     a = _build()
     ch = a["comparison"]["WIN$N"]["pair_fixo"]["horizons"]["6"]
     assert ch["mean_per_event"] == -2.0
     assert ch["events_per_session"] == round(1000 / 1250, 4)
     assert ch["expectancy_per_session"] == round(-2.0 * (1000 / 1250), 4)
-    # Pair dinâmico: mean=-1.0, 3000 eventos, 1245 medidas (1250-5 burn_in)
+    # Pair dinâmico: mean=-1.0, 3000 eventos, 875 medidas (1250-5-370 pre_cutoff)
     dyn = a["comparison"]["WIN$N"]["pair"]["horizons"]["6"]
-    assert dyn["events_per_session"] == round(3000 / 1245, 4)
-    assert dyn["expectancy_per_session"] == round(-1.0 * (3000 / 1245), 4)
+    assert dyn["events_per_session"] == round(3000 / 875, 4)
+
+
+def test_janela_alinhada_recorta_challenger_no_cutoff():
+    """pair_fixo_windowed recorta o challenger em session_date > 1º cutoff
+    (2022-12-30): dos 1000 eventos (400 em 2022-06, 600 em 2023-06), só os
+    600 pós-cutoff entram, e o mean/evento continua -2.0 (fwd fixo)."""
+    a = _build()
+    win = a["comparison"]["WIN$N"]["pair_fixo_windowed"]
+    assert win["n_events_window"] == 600
+    h6 = win["horizons"]["6"]
+    assert h6["mean_per_event"] == -2.0
+    assert h6["events"] == 600
+    # denominador = sessões medidas do dinâmico (mesma janela), não 1250
+    assert win["sessions_measured"] == 875
+    assert h6["events_per_session"] == round(600 / 875, 4)
+    assert "session_date > 2022-12-30" in win["note"]
 
 
 def test_reference_meta_registra_ressalva_de_janela():

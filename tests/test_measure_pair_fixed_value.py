@@ -150,6 +150,85 @@ def test_sessao_sem_barras_comuns_retorna_vazio():
     assert snaps == []
 
 
+def test_anti_lookahead_prefixo_identico_ao_completo():
+    """Prova DIRETA da causalidade (achado do /fable-reasoner): os markers/
+    β/z das primeiras K barras têm que ser IDÊNTICOS quer a sessão termine
+    ali (prefixo) quer continue (completa). Se o cálculo usasse qualquer dado
+    futuro, o prefixo divergiria."""
+    db_full = os.path.join(tempfile.mkdtemp(), "full.db")
+    db_pre = os.path.join(tempfile.mkdtemp(), "pre.db")
+    n = PAIR_SIGMA_WINDOW + 25
+    wdo = [50.0 + 0.5 * i for i in range(n)]
+    win = [100.0 + (1.0 * i if i <= n // 2 else 1.0 * (n // 2) + 5.0 * (i - n // 2))
+           for i in range(n)]
+    K = n - 8  # prefixo trunca as últimas 8 barras
+    _seed_win_wdo(db_full, win, wdo)
+    _seed_win_wdo(db_pre, win[:K], wdo[:K])
+
+    cf = pf.readonly_connection(db_full)
+    cp = pf.readonly_connection(db_pre)
+    try:
+        full = pf.build_fixed_pair_snapshots(cf, "2026-07-10", "WIN$N")
+        pre = pf.build_fixed_pair_snapshots(cp, "2026-07-10", "WIN$N")
+    finally:
+        cf.close(); cp.close()
+    assert len(pre) == K
+    for a, b in zip(full[:K], pre):
+        # markers idênticos barra a barra — nenhum vazamento do futuro
+        assert a.pair_fixed_compra == b.pair_fixed_compra
+        assert a.pair_fixed_venda == b.pair_fixed_venda
+        assert a.win_current == b.win_current
+
+
+def test_isolamento_entre_sessoes_nao_vaza_residuo():
+    """O histórico de resíduos é local por sessão — a sessão 2 recomeça do
+    zero, sem herdar β/resíduo da 1 (achado do /fable-reasoner)."""
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    n = PAIR_SIGMA_WINDOW + 10
+    wdo = [50.0 + 0.5 * i for i in range(n)]
+    win = [100.0 + 5.0 * i for i in range(n)]  # sessão 1 muito distorcida
+    _seed_win_wdo(db, win, wdo, session="2026-07-10")
+    # sessão 2: preço plano -> se herdasse resíduo da 1, dispararia; não deve.
+    _seed_win_wdo(db, [100.0] * n, [50.0 + 0.5 * i for i in range(n)], session="2026-07-13")
+    conn = pf.readonly_connection(db)
+    try:
+        s2 = pf.build_fixed_pair_snapshots(conn, "2026-07-13", "WIN$N")
+    finally:
+        conn.close()
+    # 1ª barra da sessão 2: sem histórico herdado -> z=0/neutral -> sem marker
+    assert s2[0].pair_fixed_compra is None and s2[0].pair_fixed_venda is None
+
+
+def test_offset_de_inverno_desloca_5h():
+    """Fora do DST americano (janeiro) o offset é 5h: 12:00 B3 -> 17:00
+    Tickmill (o caminho de verão/6h já é coberto em outro teste)."""
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed_win_wdo(db, [100.0] * 3, [50.0] * 3, session="2026-01-15", start_hour=12)
+    conn = pf.readonly_connection(db)
+    try:
+        snaps = pf.build_fixed_pair_snapshots(conn, "2026-01-15", "WIN$N")
+    finally:
+        conn.close()
+    assert snaps[0].timestamp.endswith("T17:00:00")
+
+
+def test_data_quality_conta_barras_e_descartes():
+    """O diagnóstico de alinhamento (achado do /fable-reasoner) conta barras
+    de WIN/WDO e comuns. Com grade IDÊNTICA, common == target == factor."""
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    n = PAIR_SIGMA_WINDOW + 5
+    _seed_win_wdo(db, [100.0 + i for i in range(n)], [50.0 + 0.5 * i for i in range(n)])
+    q = {}
+    conn = pf.readonly_connection(db)
+    try:
+        pf.build_fixed_pair_snapshots(conn, "2026-07-10", "WIN$N", quality=q)
+    finally:
+        conn.close()
+    assert q["sessions"] == 1
+    assert q["target_bars"] == n and q["factor_bars"] == n
+    assert q["common_bars"] == n  # grade idêntica -> nada descartado
+
+
 # ── 3. _pair_fixed_direction ─────────────────────────────────────────────
 
 def test_direction_le_campos_estampados():
