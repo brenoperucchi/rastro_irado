@@ -633,14 +633,22 @@ def test_flip_fora_dos_extremos_pontuais_e_alerta_mas_nao_invalida_gex():
     )
 
 
-def test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe():
-    """Regressão do commit 2cca41d (tri-review deep-reasoner+codex, achado
-    'falta teste pra nova âncora'). Mercado put-heavy (put OI >> call OI perto
-    do spot) empurra o Flip bem longe do spot -- reproduz em miniatura o
-    cenário real do IBOV (flip~186k vs spot~178k WIN em 2026-07-15). Trava
-    que o grid de walls (`type=='wall'`) cobre o SPOT mesmo quando o Flip cai
-    fora dele; sob o código antigo (centro = round(flip/grid_step)*grid_step)
-    esta asserção falharia -- o grid inteiro saía de um lado do preço."""
+def test_grid_de_walls_ancorado_no_gamma_flip_fiel_ao_indicador_original():
+    """Trava o centro do grid de walls em GammaFlip, fiel ao indicador NTSL/
+    ProfitChart original (docs/indicadores/walls.txt:22, `Centro :=
+    Round(GammaFlip / (Espacamento*FatorConversao)) * Espacamento`) e à
+    especificação registrada em
+    docs/plans/2026-07-16-regra-manual-miqueias-win.md §4.1.3.
+
+    Histórico: o commit 2cca41d recentrou o grid no SPOT (não no Flip),
+    revertido depois que o tri-review (deep-reasoner+codex) e a revisão
+    externa apontaram a contradição com a fonte original -- o grid ficar
+    inteiro de um lado do preço num mercado put-heavy é o comportamento
+    correto do indicador (informa que o zero-gamma mais próximo está longe),
+    não um bug de desenho a esconder recentrando no preço. Este teste usa o
+    mesmo cenário put-heavy do achado anterior (flip bem longe do spot) pra
+    travar a fórmula certa: sob a fórmula errada (centro no spot) esta
+    asserção falharia -- o grid sairia em [97, 113], não [121, 137]."""
     options = []
     for strike in range(100, 130):  # 30 strikes de put, todos com OI -- cumulativo
         options.append({                                      # bem negativo até 130
@@ -665,9 +673,9 @@ def test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe():
     walls = [w for w in result["walls"] if w["type"] == "wall"]
     assert len(walls) == 17
     prices = sorted(w["price"] for w in walls)
-    assert (prices[0], prices[-1]) == (97, 113)  # centro=round(105/1)*1=105, ±8
-    assert prices[0] <= 105 <= prices[-1]  # grid cobre o spot (a correção)
-    assert not (prices[0] <= flip <= prices[-1])  # flip fica FORA do grid (cenário do bug real)
+    centro_esperado = round(flip / 1.0) * 1.0  # f=1.0 (win_settle==spot==105.0)
+    assert prices[0] == round(centro_esperado - 8) and prices[-1] == round(centro_esperado + 8)
+    assert not (prices[0] <= 105.0 <= prices[-1])  # grid NÃO cobre o spot -- esperado, não bug
 
 
 # ── Slice 3: orquestração de main() (painel Task #15) ───────────────────────
