@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.backfill_gex_history import (
     assemble_ibov_options,
     decide_persistence,
+    gex_validity_reasons,
     next_effective_win_session,
     parse_equity_premiums,
     parse_ibov_open_interest,
@@ -132,6 +133,39 @@ def test_backfill_recusa_sqlite_sem_tabelas_de_producao(tmp_path):
 
     with pytest.raises(ValueError, match="market_bars.*gex_levels"):
         open_backfill_database(empty)
+
+
+def test_auditoria_gex_explica_todos_os_gates_reprovados():
+    result = {
+        "spot": 170_000.0,
+        "gamma_min_ibov": 165_000.0,
+        "gamma_flip_ibov": None,
+        "gamma_max_ibov": 180_000.0,
+        "liquid_strikes": 7,
+    }
+
+    assert gex_validity_reasons(result, grid_step=1_000.0) == [
+        "missing_gamma_flip",
+        "insufficient_liquid_strikes",
+    ]
+
+    result.update(gamma_flip_ibov=190_000.0, liquid_strikes=12)
+    assert gex_validity_reasons(result, grid_step=1_000.0) == [
+        "gamma_flip_not_between_extrema",
+        "gamma_flip_too_far_from_spot",
+    ]
+
+
+def test_auditoria_gex_valido_nao_inventa_motivo():
+    result = {
+        "spot": 170_000.0,
+        "gamma_min_ibov": 165_000.0,
+        "gamma_flip_ibov": 171_000.0,
+        "gamma_max_ibov": 180_000.0,
+        "liquid_strikes": 8,
+    }
+
+    assert gex_validity_reasons(result, grid_step=1_000.0) == []
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():

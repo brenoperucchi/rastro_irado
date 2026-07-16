@@ -310,6 +310,22 @@ def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, re
     return "replace_with_valid" if candidate_valid else "skip_existing_invalid"
 
 
+def gex_validity_reasons(result: dict, *, grid_step: float) -> list[str]:
+    """Espelha os gates de ``compute_gex`` em motivos auditáveis."""
+    flip = result.get("gamma_flip_ibov")
+    reasons = []
+    if flip is None:
+        reasons.append("missing_gamma_flip")
+    else:
+        if not result["gamma_max_ibov"] > flip > result["gamma_min_ibov"]:
+            reasons.append("gamma_flip_not_between_extrema")
+        if abs(flip - result["spot"]) >= 15 * grid_step:
+            reasons.append("gamma_flip_too_far_from_spot")
+    if result.get("liquid_strikes", 0) < 8:
+        reasons.append("insufficient_liquid_strikes")
+    return reasons
+
+
 def open_backfill_database(db_path: str | Path):
     """Abre somente uma base IRAI existente e com as tabelas exigidas.
 
@@ -371,9 +387,11 @@ def process_session(
             "effective_session_date": effective_session_date,
             "action": "reject_insufficient_netgex",
             "valid": False,
+            "validity_reasons": ["insufficient_netgex_strikes"],
             "counts": {key: bundle[key] for key in ("oi_series", "premium_series", "joined_series")},
         }
 
+    validity_reasons = gex_validity_reasons(result, grid_step=gex.GRID_STEP)
     result["meta"].update({
         "source_session_date": source_session_date,
         "effective_session_date": effective_session_date,
@@ -395,6 +413,8 @@ def process_session(
         "source_counts": {
             key: bundle[key] for key in ("oi_series", "premium_series", "joined_series")
         },
+        "liquid_strikes": result["liquid_strikes"],
+        "validity_reasons": validity_reasons,
     })
 
     try:
@@ -410,6 +430,7 @@ def process_session(
         "effective_session_date": effective_session_date,
         "action": f"dry_run_{action}" if dry_run and should_write else action,
         "valid": bool(result["valid"]),
+        "validity_reasons": validity_reasons,
         "gamma_max": result["gamma_max"],
         "gamma_flip": result["gamma_flip"],
         "gamma_min": result["gamma_min"],
@@ -424,6 +445,7 @@ def process_session(
 
 def summarize(rows: Iterable[dict]) -> dict:
     rows = list(rows)
+    reasons = sorted({reason for row in rows for reason in row.get("validity_reasons", [])})
     return {
         "sessions": len(rows),
         "valid": sum(bool(row.get("valid")) for row in rows),
@@ -431,6 +453,10 @@ def summarize(rows: Iterable[dict]) -> dict:
         "actions": {
             action: sum(row.get("action") == action for row in rows)
             for action in sorted({row.get("action") for row in rows})
+        },
+        "rejection_reasons": {
+            reason: sum(reason in row.get("validity_reasons", []) for row in rows)
+            for reason in reasons
         },
     }
 
