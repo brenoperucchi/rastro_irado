@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 17:04'
+updated_date: '2026-07-16 17:23'
 labels:
   - gex
   - validation
@@ -88,6 +88,11 @@ Correção LIVE concluída (commits 1d5452e/eb76c80). Causa: o backfill gravava 
 created: 2026-07-16 17:04
 ---
 Frontend follow-up: botão GEX agora usa disabled={!gex.active}; o payload é reconsultado a cada 60s e uma invalidação desliga GEX/MID localmente. Regressões novas em tests/test_gex_frontend_contract.py falharam antes e passam após correção. Validação: 57 testes GEX/backfill, npm run build. npm run lint segue com 20 erros preexistentes fora deste patch.
+---
+
+created: 2026-07-16 17:23
+---
+Gate GEX corrigido após comparação com MagicGEX/Miqueias. Causa: valid exigia GammaMax > GammaFlip > GammaMin, mas Flip é zero do acumulado e Max/Min são extremos pontuais; não há essa invariante. Regressão test-first falhou com snapshot líquido/próximo e Flip fora dos extremos, depois passou. Commits a13a547/7f12db0. Produção: WIN 15/07 agora valid=true e API active=true (Min 171874, Max 182497, Flip 186421); API/collector ativos. Histórico reclassificado com backup quick_check=ok: 200 sessões, 73→119 válidas, 46 promovidas, 0 rebaixadas; 81 inválidas (50 sem Flip, 31 Flip distante). Auditoria gex_history_200_audit.json regenerada. Validação Windows: 60 passed.
 ---
 <!-- COMMENTS:END -->
 

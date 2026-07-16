@@ -118,10 +118,16 @@ GammaMax/Min = argmax/argmin do netGEX por strike, com refino parabólico (vért
 ```
 
 Gates de validade (calculados, não aparecem em `walls.txt`): `liquid` exige >= 8 strikes
-com `netGEX != 0` dentro de ±5 grades do spot; `valid` exige `GammaMax > GammaFlip >
-GammaMin`, `liquid` e o Flip a menos de 15 grades do spot. Um GEX marcado `valid=false`
+com `netGEX != 0` dentro de ±5 grades do spot; `valid` exige `liquid`, Gamma Flip
+existente e o Flip a menos de 15 grades do spot. A posição do Flip acumulado em relação
+aos extremos pontuais GammaMax/GammaMin é alerta diagnóstico, não bloqueio. Um GEX marcado `valid=false`
 **não deve alimentar a tabela de decisão** (mesma lógica do gate de qualidade de dados,
 regra de negócio 4).
+
+Correção validada em 16/07/2026 (`a13a547`/`7f12db0`): o gate antigo confundia o zero
+do GEX acumulado com os extremos do netGEX pontual. A reclassificação causal, sem alterar
+níveis ou fontes, promoveu 46 sessões e mudou a cobertura de 73/200 para 119/200 válidas;
+81 permanecem inválidas por Flip ausente (50) ou distante demais do spot (31).
 
 #### 4.1.3 Conversão IBOV→WIN e plotagem (walls/mid-walls)
 
