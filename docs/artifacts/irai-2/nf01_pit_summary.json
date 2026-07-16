@@ -1,0 +1,2746 @@
+{
+  "schema_version": 1,
+  "artifact": "nf01-pair-z-intersection-baselines",
+  "generated_at": "2026-07-16T07:07:10+00:00",
+  "git": {
+    "commit": "f9f90b40bf092886c5b46fd2b3d45d17fba8a3ac",
+    "origin_main": "f9f90b40bf092886c5b46fd2b3d45d17fba8a3ac",
+    "head_in_origin_main": true,
+    "dirty": true
+  },
+  "command": "python3 -X utf8 scripts/build_nf01_artifact.py --db data/irai.db --targets WIN$N WDO$N --point-in-time --limit 2000 --output docs/artifacts/irai-2/nf01_pit.json",
+  "parameters": {
+    "db": "data/irai.db",
+    "targets": [
+      "WIN$N",
+      "WDO$N"
+    ],
+    "limit": 2000,
+    "bootstrap": 10000,
+    "burn_in_sessions": 5,
+    "point_in_time": true,
+    "min_events_for_gate": 100
+  },
+  "provisional_policies": {
+    "entry_price": "close da PRÓXIMA barra M5 após o sinal — FILL HIPOTÉTICO, não o primeiro preço realmente executável. O primeiro preço executável (≈open logo após signal_available_at) é IRAI-4/VAL-04.",
+    "mfe_mae": "calculados só com o CLOSE de cada barra M5, não com os extremos intrabar (OHLC). MFE/MAE OHLC é IRAI-4/VAL-04.",
+    "costs": "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) é custo único aproximado, nunca derivado de P&L executável real (ADR-002). Custos completos e análise de sensibilidade são IRAI-4/VAL-04.",
+    "significance": "cada sinal testa até 24 combinações horizonte×direção; um `***` isolado NÃO é confirmatório — ler consistência, não `***` isolado."
+  },
+  "signals": {
+    "pair": {
+      "targets": {
+        "WIN$N": {
+          "sessions_replayed": 1250,
+          "sessions_discarded": 1,
+          "sessions_burn_in": 5,
+          "cost_points": 10.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1781,
+              "n_sessions_with_events": 809,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -8.410271206001154,
+                    "ci_low": -18.30422920007624,
+                    "ci_high": 1.2227023166493218,
+                    "n_sessions": 800,
+                    "n_events": 1733,
+                    "significant": false,
+                    "standard_error": 4.946556556063059
+                  },
+                  "win_rate_pct": 47.02827466820543,
+                  "wins": 815,
+                  "total": 1733
+                },
+                "6": {
+                  "estimate": {
+                    "value": -10.854449027695933,
+                    "ci_low": -23.89324669292719,
+                    "ci_high": 1.930934376548066,
+                    "n_sessions": 798,
+                    "n_events": 1697,
+                    "significant": false,
+                    "standard_error": 6.593921879077443
+                  },
+                  "win_rate_pct": 47.967000589275194,
+                  "wins": 814,
+                  "total": 1697
+                },
+                "10": {
+                  "estimate": {
+                    "value": -22.5533211456429,
+                    "ci_low": -40.56781100040027,
+                    "ci_high": -4.984617377567833,
+                    "n_sessions": 791,
+                    "n_events": 1641,
+                    "significant": true,
+                    "standard_error": 9.133797168299724
+                  },
+                  "win_rate_pct": 48.01950030469226,
+                  "wins": 788,
+                  "total": 1641
+                },
+                "20": {
+                  "estimate": {
+                    "value": -19.377093101138648,
+                    "ci_low": -47.27188671301361,
+                    "ci_high": 8.363494237823225,
+                    "n_sessions": 772,
+                    "n_events": 1493,
+                    "significant": false,
+                    "standard_error": 14.285900526919834
+                  },
+                  "win_rate_pct": 48.02411252511721,
+                  "wins": 717,
+                  "total": 1493
+                }
+              },
+              "mfe_mean": 287.79,
+              "mae_mean": -300.82
+            },
+            "sell": {
+              "n_events": 1912,
+              "n_sessions_with_events": 828,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -2.224633749321758,
+                    "ci_low": -11.985720478984627,
+                    "ci_high": 7.570516718641715,
+                    "n_sessions": 822,
+                    "n_events": 1843,
+                    "significant": false,
+                    "standard_error": 5.030496313724595
+                  },
+                  "win_rate_pct": 48.56212696690179,
+                  "wins": 895,
+                  "total": 1843
+                },
+                "6": {
+                  "estimate": {
+                    "value": -5.422885572139304,
+                    "ci_low": -20.16479501242224,
+                    "ci_high": 9.181837318187029,
+                    "n_sessions": 820,
+                    "n_events": 1809,
+                    "significant": false,
+                    "standard_error": 7.363910944576412
+                  },
+                  "win_rate_pct": 49.75124378109453,
+                  "wins": 900,
+                  "total": 1809
+                },
+                "10": {
+                  "estimate": {
+                    "value": -5.858528237307473,
+                    "ci_low": -25.02335978832515,
+                    "ci_high": 12.613590333863751,
+                    "n_sessions": 815,
+                    "n_events": 1753,
+                    "significant": false,
+                    "standard_error": 9.631600619830355
+                  },
+                  "win_rate_pct": 48.830576155162575,
+                  "wins": 856,
+                  "total": 1753
+                },
+                "20": {
+                  "estimate": {
+                    "value": -7.984076433121019,
+                    "ci_low": -36.48815449959701,
+                    "ci_high": 20.665837608680835,
+                    "n_sessions": 798,
+                    "n_events": 1570,
+                    "significant": false,
+                    "standard_error": 14.661811027811616
+                  },
+                  "win_rate_pct": 49.80891719745223,
+                  "wins": 782,
+                  "total": 1570
+                }
+              },
+              "mfe_mean": 296.32,
+              "mae_mean": -294.4
+            },
+            "all": {
+              "n_events": 3693,
+              "n_sessions_with_events": 881,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -5.222315436241611,
+                    "ci_low": -12.165482571597042,
+                    "ci_high": 1.6602877752497287,
+                    "n_sessions": 881,
+                    "n_events": 3576,
+                    "significant": false,
+                    "standard_error": 3.5239072085579957
+                  },
+                  "win_rate_pct": 47.81879194630873,
+                  "wins": 1710,
+                  "total": 3576
+                },
+                "6": {
+                  "estimate": {
+                    "value": -8.051911009697662,
+                    "ci_low": -17.69670252684684,
+                    "ci_high": 1.6714293228361514,
+                    "n_sessions": 881,
+                    "n_events": 3506,
+                    "significant": false,
+                    "standard_error": 4.9294072886242395
+                  },
+                  "win_rate_pct": 48.8876212207644,
+                  "wins": 1714,
+                  "total": 3506
+                },
+                "10": {
+                  "estimate": {
+                    "value": -13.930465527401296,
+                    "ci_low": -26.75311673194211,
+                    "ci_high": -1.0656947778439945,
+                    "n_sessions": 881,
+                    "n_events": 3394,
+                    "significant": true,
+                    "standard_error": 6.52557069199856
+                  },
+                  "win_rate_pct": 48.43842074248674,
+                  "wins": 1644,
+                  "total": 3394
+                },
+                "20": {
+                  "estimate": {
+                    "value": -13.537381651975188,
+                    "ci_low": -33.2643562698767,
+                    "ci_high": 5.312829888458527,
+                    "n_sessions": 881,
+                    "n_events": 3063,
+                    "significant": false,
+                    "standard_error": 9.938355037466387
+                  },
+                  "win_rate_pct": 48.938948743062355,
+                  "wins": 1499,
+                  "total": 3063
+                }
+              },
+              "mfe_mean": 292.21,
+              "mae_mean": -297.5
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 988,
+              "mean": -4.06
+            },
+            "2024": {
+              "n": 995,
+              "mean": -4.89
+            },
+            "2025": {
+              "n": 1005,
+              "mean": -20.32
+            },
+            "2026": {
+              "n": 518,
+              "mean": 2.08
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": -19.71,
+            "10": 31.04,
+            "11": -2.51,
+            "12": 1.18,
+            "13": -20.87,
+            "14": -4.05,
+            "15": -3.27,
+            "16": -16.3,
+            "17": -16.41
+          },
+          "by_pair_factor_h6_mean": {
+            "wdo": {
+              "n": 2312,
+              "mean": -6.43
+            },
+            "us500": {
+              "n": 1167,
+              "mean": -11.92
+            },
+            "di1": {
+              "n": 27,
+              "mean": 20.19
+            }
+          }
+        },
+        "WDO$N": {
+          "sessions_replayed": 1249,
+          "sessions_discarded": 2,
+          "sessions_burn_in": 5,
+          "cost_points": 1.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1854,
+              "n_sessions_with_events": 816,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.3311111111111111,
+                    "ci_low": -1.6108865801104142,
+                    "ci_high": -1.0526745929637655,
+                    "n_sessions": 810,
+                    "n_events": 1800,
+                    "significant": true,
+                    "standard_error": 0.1423443386169296
+                  },
+                  "win_rate_pct": 36.94444444444444,
+                  "wins": 665,
+                  "total": 1800
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.4424398625429553,
+                    "ci_low": -1.8499467810462837,
+                    "ci_high": -1.036677674028464,
+                    "n_sessions": 806,
+                    "n_events": 1746,
+                    "significant": true,
+                    "standard_error": 0.20800498769242354
+                  },
+                  "win_rate_pct": 40.148911798396334,
+                  "wins": 701,
+                  "total": 1746
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.6502667457024303,
+                    "ci_low": -2.1958409104300625,
+                    "ci_high": -1.0973488600358177,
+                    "n_sessions": 802,
+                    "n_events": 1687,
+                    "significant": true,
+                    "standard_error": 0.27974183185869517
+                  },
+                  "win_rate_pct": 42.501481920569056,
+                  "wins": 717,
+                  "total": 1687
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.5850785340314135,
+                    "ci_low": -2.3578800969589766,
+                    "ci_high": -0.826391229370141,
+                    "n_sessions": 784,
+                    "n_events": 1528,
+                    "significant": true,
+                    "standard_error": 0.3886005669319406
+                  },
+                  "win_rate_pct": 44.109947643979055,
+                  "wins": 674,
+                  "total": 1528
+                }
+              },
+              "mfe_mean": 7.95,
+              "mae_mean": -8.65
+            },
+            "sell": {
+              "n_events": 1979,
+              "n_sessions_with_events": 834,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.9246753246753247,
+                    "ci_low": -1.2076247358866525,
+                    "ci_high": -0.6390782743541017,
+                    "n_sessions": 829,
+                    "n_events": 1925,
+                    "significant": true,
+                    "standard_error": 0.14441979984497444
+                  },
+                  "win_rate_pct": 39.532467532467535,
+                  "wins": 761,
+                  "total": 1925
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.8739316239316239,
+                    "ci_low": -1.2918613503639518,
+                    "ci_high": -0.4416192721736623,
+                    "n_sessions": 825,
+                    "n_events": 1872,
+                    "significant": true,
+                    "standard_error": 0.21781209435162915
+                  },
+                  "win_rate_pct": 43.05555555555556,
+                  "wins": 806,
+                  "total": 1872
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.8272879464285714,
+                    "ci_low": -1.3523857033423234,
+                    "ci_high": -0.29873134903095394,
+                    "n_sessions": 818,
+                    "n_events": 1792,
+                    "significant": true,
+                    "standard_error": 0.2690582996879077
+                  },
+                  "win_rate_pct": 45.591517857142854,
+                  "wins": 817,
+                  "total": 1792
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.6913233458177278,
+                    "ci_low": -1.4580521948945044,
+                    "ci_high": 0.11021411300958923,
+                    "n_sessions": 798,
+                    "n_events": 1602,
+                    "significant": false,
+                    "standard_error": 0.4007861467191691
+                  },
+                  "win_rate_pct": 47.62796504369538,
+                  "wins": 763,
+                  "total": 1602
+                }
+              },
+              "mfe_mean": 8.42,
+              "mae_mean": -8.37
+            },
+            "all": {
+              "n_events": 3833,
+              "n_sessions_with_events": 880,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.1210738255033557,
+                    "ci_low": -1.3188139024891032,
+                    "ci_high": -0.9191352624618533,
+                    "n_sessions": 880,
+                    "n_events": 3725,
+                    "significant": true,
+                    "standard_error": 0.10109332276453346
+                  },
+                  "win_rate_pct": 38.281879194630875,
+                  "wins": 1426,
+                  "total": 3725
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.14828634604754,
+                    "ci_low": -1.4466637865813818,
+                    "ci_high": -0.850214283221664,
+                    "n_sessions": 880,
+                    "n_events": 3618,
+                    "significant": true,
+                    "standard_error": 0.15315151042471142
+                  },
+                  "win_rate_pct": 41.65284687672747,
+                  "wins": 1507,
+                  "total": 3618
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.2263581488933601,
+                    "ci_low": -1.6068123754855983,
+                    "ci_high": -0.8474497155952042,
+                    "n_sessions": 880,
+                    "n_events": 3479,
+                    "significant": true,
+                    "standard_error": 0.1950449417444193
+                  },
+                  "win_rate_pct": 44.09313020983041,
+                  "wins": 1534,
+                  "total": 3479
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.1276357827476038,
+                    "ci_low": -1.6613810545770689,
+                    "ci_high": -0.5918918062549241,
+                    "n_sessions": 880,
+                    "n_events": 3130,
+                    "significant": true,
+                    "standard_error": 0.27195373698998576
+                  },
+                  "win_rate_pct": 45.91054313099041,
+                  "wins": 1437,
+                  "total": 3130
+                }
+              },
+              "mfe_mean": 8.19,
+              "mae_mean": -8.5
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 986,
+              "mean": -1.11
+            },
+            "2024": {
+              "n": 1039,
+              "mean": -1.35
+            },
+            "2025": {
+              "n": 1035,
+              "mean": -1.44
+            },
+            "2026": {
+              "n": 558,
+              "mean": -0.31
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": -0.64,
+            "10": -1.76,
+            "11": -1.87,
+            "12": -2.0,
+            "13": -1.2,
+            "14": -1.05,
+            "15": -0.4,
+            "16": -1.16,
+            "17": -0.94
+          },
+          "by_pair_factor_h6_mean": {
+            "di1": {
+              "n": 2363,
+              "mean": -0.92
+            },
+            "win": {
+              "n": 934,
+              "mean": -1.68
+            },
+            "us500": {
+              "n": 320,
+              "mean": -1.19
+            },
+            "xauusd": {
+              "n": 1,
+              "mean": -19.0
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada (scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da cesta real de produção em cada momento histórico. Necessário pro encadeamento do Kalman (achado C1-b) sobreviver às trocas de calibração — engine.py:685 só reaproveita o estado quando a assinatura da cesta não muda entre sessões. Isso remove o viés de seleção retrospectiva da cesta e dos pesos/sigmas/calibração logística (recalibrados a cada cutoff, só com dados <= cutoff), mas mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que apareceu no dashboard historicamente. Contagens de eventos, identidade do fator ativo e by_pair_factor mudam de universo em relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+        "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver `sessions_before_first_pit_cutoff` no relatório) não têm calibração válida ainda — são replayadas (aquecem o Kalman) mas excluídas da medição, além do burn-in padrão.",
+        "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói perfeitamente 'a informação disponível naquele dia': dados posteriormente corrigidos/completados no banco (backfill) podem aparecer em cutoffs antigos como se sempre tivessem estado lá.",
+        "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+        "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+        "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os extremos intrabarra (H/L) — podem subestimar a excursão real.",
+        "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+        "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+        "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas."
+      ]
+    },
+    "z": {
+      "targets": {
+        "WIN$N": {
+          "sessions_replayed": 1250,
+          "sessions_discarded": 1,
+          "sessions_burn_in": 5,
+          "cost_points": 10.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 68,
+              "n_sessions_with_events": 47,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -30.29850746268657,
+                    "ci_low": -96.47957264132742,
+                    "ci_high": 34.63938618925829,
+                    "n_sessions": 46,
+                    "n_events": 67,
+                    "significant": false,
+                    "standard_error": 33.535712118641506
+                  },
+                  "win_rate_pct": 46.26865671641791,
+                  "wins": 31,
+                  "total": 67
+                },
+                "6": {
+                  "estimate": {
+                    "value": 13.656716417910447,
+                    "ci_low": -79.0676119402985,
+                    "ci_high": 102.95343806921672,
+                    "n_sessions": 46,
+                    "n_events": 67,
+                    "significant": false,
+                    "standard_error": 46.80102986794216
+                  },
+                  "win_rate_pct": 61.19402985074627,
+                  "wins": 41,
+                  "total": 67
+                },
+                "10": {
+                  "estimate": {
+                    "value": 14.090909090909092,
+                    "ci_low": -98.54984135378106,
+                    "ci_high": 134.1620100635592,
+                    "n_sessions": 46,
+                    "n_events": 66,
+                    "significant": false,
+                    "standard_error": 59.08106350824363
+                  },
+                  "win_rate_pct": 51.515151515151516,
+                  "wins": 34,
+                  "total": 66
+                },
+                "20": {
+                  "estimate": {
+                    "value": 103.33333333333333,
+                    "ci_low": -45.88783602150538,
+                    "ci_high": 262.5800245098038,
+                    "n_sessions": 44,
+                    "n_events": 60,
+                    "significant": false,
+                    "standard_error": 77.91997941763549
+                  },
+                  "win_rate_pct": 58.333333333333336,
+                  "wins": 35,
+                  "total": 60
+                }
+              },
+              "mfe_mean": 387.43,
+              "mae_mean": -293.82
+            },
+            "sell": {
+              "n_events": 51,
+              "n_sessions_with_events": 36,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -33.529411764705884,
+                    "ci_low": -116.63062218890555,
+                    "ci_high": 48.22071286141574,
+                    "n_sessions": 36,
+                    "n_events": 51,
+                    "significant": false,
+                    "standard_error": 42.546533176672654
+                  },
+                  "win_rate_pct": 43.13725490196079,
+                  "wins": 22,
+                  "total": 51
+                },
+                "6": {
+                  "estimate": {
+                    "value": 22.15686274509804,
+                    "ci_low": -63.93725575336518,
+                    "ci_high": 105.1063829787234,
+                    "n_sessions": 36,
+                    "n_events": 51,
+                    "significant": false,
+                    "standard_error": 42.90469054687727
+                  },
+                  "win_rate_pct": 58.8235294117647,
+                  "wins": 30,
+                  "total": 51
+                },
+                "10": {
+                  "estimate": {
+                    "value": -33.16326530612245,
+                    "ci_low": -148.30260638297872,
+                    "ci_high": 73.75240384615381,
+                    "n_sessions": 35,
+                    "n_events": 49,
+                    "significant": false,
+                    "standard_error": 55.96182982434037
+                  },
+                  "win_rate_pct": 48.97959183673469,
+                  "wins": 24,
+                  "total": 49
+                },
+                "20": {
+                  "estimate": {
+                    "value": -83.69565217391305,
+                    "ci_low": -295.0056818181818,
+                    "ci_high": 112.36570477247491,
+                    "n_sessions": 32,
+                    "n_events": 46,
+                    "significant": false,
+                    "standard_error": 102.52570018419765
+                  },
+                  "win_rate_pct": 39.130434782608695,
+                  "wins": 18,
+                  "total": 46
+                }
+              },
+              "mfe_mean": 394.61,
+              "mae_mean": -412.45
+            },
+            "all": {
+              "n_events": 119,
+              "n_sessions_with_events": 83,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -31.694915254237287,
+                    "ci_low": -83.5550934243622,
+                    "ci_high": 19.463239669421483,
+                    "n_sessions": 82,
+                    "n_events": 118,
+                    "significant": false,
+                    "standard_error": 26.389605497713603
+                  },
+                  "win_rate_pct": 44.91525423728814,
+                  "wins": 53,
+                  "total": 118
+                },
+                "6": {
+                  "estimate": {
+                    "value": 17.33050847457627,
+                    "ci_low": -46.75361039794608,
+                    "ci_high": 79.61888044544054,
+                    "n_sessions": 82,
+                    "n_events": 118,
+                    "significant": false,
+                    "standard_error": 32.37476088259492
+                  },
+                  "win_rate_pct": 60.16949152542373,
+                  "wins": 71,
+                  "total": 118
+                },
+                "10": {
+                  "estimate": {
+                    "value": -6.043478260869565,
+                    "ci_low": -85.88302139037432,
+                    "ci_high": 76.8702797906602,
+                    "n_sessions": 81,
+                    "n_events": 115,
+                    "significant": false,
+                    "standard_error": 41.32087961845361
+                  },
+                  "win_rate_pct": 50.43478260869565,
+                  "wins": 58,
+                  "total": 115
+                },
+                "20": {
+                  "estimate": {
+                    "value": 22.169811320754718,
+                    "ci_low": -99.47756696428571,
+                    "ci_high": 145.46329365079364,
+                    "n_sessions": 76,
+                    "n_events": 106,
+                    "significant": false,
+                    "standard_error": 62.35017851373039
+                  },
+                  "win_rate_pct": 50.0,
+                  "wins": 53,
+                  "total": 106
+                }
+              },
+              "mfe_mean": 390.5,
+              "mae_mean": -344.66
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 35,
+              "mean": 94.43
+            },
+            "2024": {
+              "n": 19,
+              "mean": 11.58
+            },
+            "2025": {
+              "n": 26,
+              "mean": -15.77
+            },
+            "2026": {
+              "n": 38,
+              "mean": -28.16
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": -218.33,
+            "10": -194.29,
+            "11": 6.58,
+            "12": 216.94,
+            "13": 46.0,
+            "14": -36.25,
+            "15": -7.27,
+            "16": 170.36,
+            "17": 5.0
+          },
+          "by_pair_factor_h6_mean": {
+            "wdo": {
+              "n": 99,
+              "mean": 27.02
+            },
+            "us500": {
+              "n": 19,
+              "mean": -33.16
+            }
+          }
+        },
+        "WDO$N": {
+          "sessions_replayed": 1249,
+          "sessions_discarded": 2,
+          "sessions_burn_in": 5,
+          "cost_points": 1.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 59,
+              "n_sessions_with_events": 42,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.4915254237288136,
+                    "ci_low": -2.42867445054945,
+                    "ci_high": 1.7264564713670962,
+                    "n_sessions": 42,
+                    "n_events": 59,
+                    "significant": false,
+                    "standard_error": 1.0601384476625388
+                  },
+                  "win_rate_pct": 42.3728813559322,
+                  "wins": 25,
+                  "total": 59
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.25,
+                    "ci_low": -3.682022727272727,
+                    "ci_high": 1.2254901960784315,
+                    "n_sessions": 42,
+                    "n_events": 58,
+                    "significant": false,
+                    "standard_error": 1.2563831792516897
+                  },
+                  "win_rate_pct": 34.48275862068966,
+                  "wins": 20,
+                  "total": 58
+                },
+                "10": {
+                  "estimate": {
+                    "value": -2.0267857142857144,
+                    "ci_low": -5.936439393939394,
+                    "ci_high": 2.0668181818181797,
+                    "n_sessions": 40,
+                    "n_events": 56,
+                    "significant": false,
+                    "standard_error": 2.053857520593121
+                  },
+                  "win_rate_pct": 41.07142857142857,
+                  "wins": 23,
+                  "total": 56
+                },
+                "20": {
+                  "estimate": {
+                    "value": -2.462962962962963,
+                    "ci_low": -6.769893483709273,
+                    "ci_high": 2.3192720646178073,
+                    "n_sessions": 38,
+                    "n_events": 54,
+                    "significant": false,
+                    "standard_error": 2.3070270456041713
+                  },
+                  "win_rate_pct": 37.03703703703704,
+                  "wins": 20,
+                  "total": 54
+                }
+              },
+              "mfe_mean": 10.18,
+              "mae_mean": -11.64
+            },
+            "sell": {
+              "n_events": 61,
+              "n_sessions_with_events": 40,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.425,
+                    "ci_low": -3.4412126325940213,
+                    "ci_high": 0.5298857276119397,
+                    "n_sessions": 40,
+                    "n_events": 60,
+                    "significant": false,
+                    "standard_error": 1.0194806785073507
+                  },
+                  "win_rate_pct": 40.0,
+                  "wins": 24,
+                  "total": 60
+                },
+                "6": {
+                  "estimate": {
+                    "value": 0.06779661016949153,
+                    "ci_low": -2.2500961538461537,
+                    "ci_high": 2.838990617433414,
+                    "n_sessions": 40,
+                    "n_events": 59,
+                    "significant": false,
+                    "standard_error": 1.3187309384814472
+                  },
+                  "win_rate_pct": 45.76271186440678,
+                  "wins": 27,
+                  "total": 59
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.6101694915254238,
+                    "ci_low": -3.409124830393487,
+                    "ci_high": 2.8425925925925926,
+                    "n_sessions": 40,
+                    "n_events": 59,
+                    "significant": false,
+                    "standard_error": 1.6078313816250398
+                  },
+                  "win_rate_pct": 35.59322033898305,
+                  "wins": 21,
+                  "total": 59
+                },
+                "20": {
+                  "estimate": {
+                    "value": 0.9134615384615384,
+                    "ci_low": -4.765404238618524,
+                    "ci_high": 6.357214285714284,
+                    "n_sessions": 36,
+                    "n_events": 52,
+                    "significant": false,
+                    "standard_error": 2.8121777966104506
+                  },
+                  "win_rate_pct": 44.23076923076923,
+                  "wins": 23,
+                  "total": 52
+                }
+              },
+              "mfe_mean": 11.43,
+              "mae_mean": -10.46
+            },
+            "all": {
+              "n_events": 120,
+              "n_sessions_with_events": 82,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.9621848739495799,
+                    "ci_low": -2.379501488095238,
+                    "ci_high": 0.5,
+                    "n_sessions": 82,
+                    "n_events": 119,
+                    "significant": false,
+                    "standard_error": 0.7344958357555255
+                  },
+                  "win_rate_pct": 41.1764705882353,
+                  "wins": 49,
+                  "total": 119
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.5854700854700855,
+                    "ci_low": -2.3060516879165456,
+                    "ci_high": 1.284597144048363,
+                    "n_sessions": 82,
+                    "n_events": 117,
+                    "significant": false,
+                    "standard_error": 0.9138589671998512
+                  },
+                  "win_rate_pct": 40.17094017094017,
+                  "wins": 47,
+                  "total": 117
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.3,
+                    "ci_low": -3.7392962417096536,
+                    "ci_high": 1.3741191358433122,
+                    "n_sessions": 80,
+                    "n_events": 115,
+                    "significant": false,
+                    "standard_error": 1.2942126142522088
+                  },
+                  "win_rate_pct": 38.26086956521739,
+                  "wins": 44,
+                  "total": 115
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.8066037735849056,
+                    "ci_low": -4.49025,
+                    "ci_high": 2.8609291237113386,
+                    "n_sessions": 74,
+                    "n_events": 106,
+                    "significant": false,
+                    "standard_error": 1.868324177379183
+                  },
+                  "win_rate_pct": 40.56603773584906,
+                  "wins": 43,
+                  "total": 106
+                }
+              },
+              "mfe_mean": 10.81,
+              "mae_mean": -11.04
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 32,
+              "mean": -1.58
+            },
+            "2024": {
+              "n": 42,
+              "mean": 0.07
+            },
+            "2025": {
+              "n": 28,
+              "mean": 0.48
+            },
+            "2026": {
+              "n": 15,
+              "mean": -2.3
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": 2.12,
+            "10": -3.69,
+            "11": 0.0,
+            "12": -0.11,
+            "13": 2.09,
+            "14": -3.56,
+            "15": 0.8,
+            "16": -2.32,
+            "17": -2.22
+          },
+          "by_pair_factor_h6_mean": {
+            "di1": {
+              "n": 74,
+              "mean": -2.03
+            },
+            "win": {
+              "n": 32,
+              "mean": 2.97
+            },
+            "us500": {
+              "n": 11,
+              "mean": -1.23
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada (scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da cesta real de produção em cada momento histórico. Necessário pro encadeamento do Kalman (achado C1-b) sobreviver às trocas de calibração — engine.py:685 só reaproveita o estado quando a assinatura da cesta não muda entre sessões. Isso remove o viés de seleção retrospectiva da cesta e dos pesos/sigmas/calibração logística (recalibrados a cada cutoff, só com dados <= cutoff), mas mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que apareceu no dashboard historicamente. Contagens de eventos, identidade do fator ativo e by_pair_factor mudam de universo em relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+        "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver `sessions_before_first_pit_cutoff` no relatório) não têm calibração válida ainda — são replayadas (aquecem o Kalman) mas excluídas da medição, além do burn-in padrão.",
+        "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói perfeitamente 'a informação disponível naquele dia': dados posteriormente corrigidos/completados no banco (backfill) podem aparecer em cutoffs antigos como se sempre tivessem estado lá.",
+        "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+        "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+        "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os extremos intrabarra (H/L) — podem subestimar a excursão real.",
+        "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+        "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+        "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas.",
+        "by_pair_factor no relatório reflete qual fator do PAIR SIGNAL estava ativo no momento do evento de divergência Z — é metadado descritivo (o Pair e o Z podem estar ativos ao mesmo tempo sem relação causal entre si), não o fator que disparou este evento."
+      ]
+    },
+    "intersection": {
+      "targets": {
+        "WIN$N": {
+          "sessions_replayed": 1250,
+          "sessions_discarded": 1,
+          "sessions_burn_in": 5,
+          "cost_points": 10.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 53,
+              "n_sessions_with_events": 38,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": 14.705882352941176,
+                    "ci_low": -62.01665173237754,
+                    "ci_high": 91.66755319148935,
+                    "n_sessions": 38,
+                    "n_events": 51,
+                    "significant": false,
+                    "standard_error": 38.920254314603035
+                  },
+                  "win_rate_pct": 49.01960784313726,
+                  "wins": 25,
+                  "total": 51
+                },
+                "6": {
+                  "estimate": {
+                    "value": 33.2,
+                    "ci_low": -79.25863004776377,
+                    "ci_high": 138.48892874814447,
+                    "n_sessions": 38,
+                    "n_events": 50,
+                    "significant": false,
+                    "standard_error": 55.30257642073967
+                  },
+                  "win_rate_pct": 56.0,
+                  "wins": 28,
+                  "total": 50
+                },
+                "10": {
+                  "estimate": {
+                    "value": 16.770833333333332,
+                    "ci_low": -101.49039296569691,
+                    "ci_high": 127.02393617021272,
+                    "n_sessions": 38,
+                    "n_events": 48,
+                    "significant": false,
+                    "standard_error": 57.80634472681668
+                  },
+                  "win_rate_pct": 56.25,
+                  "wins": 27,
+                  "total": 48
+                },
+                "20": {
+                  "estimate": {
+                    "value": 84.77777777777777,
+                    "ci_low": -93.2952715140359,
+                    "ci_high": 266.8810266591035,
+                    "n_sessions": 35,
+                    "n_events": 45,
+                    "significant": false,
+                    "standard_error": 92.07685275401553
+                  },
+                  "win_rate_pct": 48.888888888888886,
+                  "wins": 22,
+                  "total": 45
+                }
+              },
+              "mfe_mean": 361.13,
+              "mae_mean": -279.91
+            },
+            "sell": {
+              "n_events": 40,
+              "n_sessions_with_events": 27,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -28.0,
+                    "ci_low": -133.07738095238093,
+                    "ci_high": 67.80526891807379,
+                    "n_sessions": 27,
+                    "n_events": 40,
+                    "significant": false,
+                    "standard_error": 51.200585386442825
+                  },
+                  "win_rate_pct": 42.5,
+                  "wins": 17,
+                  "total": 40
+                },
+                "6": {
+                  "estimate": {
+                    "value": 36.75,
+                    "ci_low": -65.46568349404424,
+                    "ci_high": 133.42137355584072,
+                    "n_sessions": 27,
+                    "n_events": 40,
+                    "significant": false,
+                    "standard_error": 50.46037183003642
+                  },
+                  "win_rate_pct": 60.0,
+                  "wins": 24,
+                  "total": 40
+                },
+                "10": {
+                  "estimate": {
+                    "value": -35.13157894736842,
+                    "ci_low": -172.87973484848484,
+                    "ci_high": 81.97368421052632,
+                    "n_sessions": 26,
+                    "n_events": 38,
+                    "significant": false,
+                    "standard_error": 64.10991882223266
+                  },
+                  "win_rate_pct": 44.73684210526316,
+                  "wins": 17,
+                  "total": 38
+                },
+                "20": {
+                  "estimate": {
+                    "value": -160.6578947368421,
+                    "ci_low": -400.0033783783784,
+                    "ci_high": 53.20432692307678,
+                    "n_sessions": 26,
+                    "n_events": 38,
+                    "significant": false,
+                    "standard_error": 115.47474856107499
+                  },
+                  "win_rate_pct": 39.473684210526315,
+                  "wins": 15,
+                  "total": 38
+                }
+              },
+              "mfe_mean": 390.25,
+              "mae_mean": -455.12
+            },
+            "all": {
+              "n_events": 93,
+              "n_sessions_with_events": 65,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -4.065934065934066,
+                    "ci_low": -65.90463744191733,
+                    "ci_high": 55.65792410714281,
+                    "n_sessions": 65,
+                    "n_events": 91,
+                    "significant": false,
+                    "standard_error": 31.065941579131266
+                  },
+                  "win_rate_pct": 46.15384615384615,
+                  "wins": 42,
+                  "total": 91
+                },
+                "6": {
+                  "estimate": {
+                    "value": 34.77777777777778,
+                    "ci_low": -41.278504380475596,
+                    "ci_high": 107.96388888888887,
+                    "n_sessions": 65,
+                    "n_events": 90,
+                    "significant": false,
+                    "standard_error": 37.61806656286285
+                  },
+                  "win_rate_pct": 57.77777777777778,
+                  "wins": 52,
+                  "total": 90
+                },
+                "10": {
+                  "estimate": {
+                    "value": -6.162790697674419,
+                    "ci_low": -92.56459827833572,
+                    "ci_high": 75.84572559902527,
+                    "n_sessions": 64,
+                    "n_events": 86,
+                    "significant": false,
+                    "standard_error": 42.54277740618821
+                  },
+                  "win_rate_pct": 51.16279069767442,
+                  "wins": 44,
+                  "total": 86
+                },
+                "20": {
+                  "estimate": {
+                    "value": -27.59036144578313,
+                    "ci_low": -171.16329082270568,
+                    "ci_high": 115.82862364057755,
+                    "n_sessions": 61,
+                    "n_events": 83,
+                    "significant": false,
+                    "standard_error": 72.37229959314406
+                  },
+                  "win_rate_pct": 44.57831325301205,
+                  "wins": 37,
+                  "total": 83
+                }
+              },
+              "mfe_mean": 373.66,
+              "mae_mean": -355.27
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "INCONCLUSIVO (amostra abaixo do mínimo)",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 24,
+              "mean": 58.12
+            },
+            "2024": {
+              "n": 14,
+              "mean": 79.29
+            },
+            "2025": {
+              "n": 19,
+              "mean": 45.53
+            },
+            "2026": {
+              "n": 33,
+              "mean": -7.27
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": -195.0,
+            "10": -118.24,
+            "11": 37.86,
+            "12": 209.0,
+            "13": 30.0,
+            "14": -9.55,
+            "15": -10.0,
+            "16": 138.18,
+            "17": 3.0
+          },
+          "by_pair_factor_h6_mean": {
+            "wdo": {
+              "n": 76,
+              "mean": 31.91
+            },
+            "us500": {
+              "n": 14,
+              "mean": 50.36
+            }
+          }
+        },
+        "WDO$N": {
+          "sessions_replayed": 1249,
+          "sessions_discarded": 2,
+          "sessions_burn_in": 5,
+          "cost_points": 1.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 50,
+              "n_sessions_with_events": 35,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.03,
+                    "ci_low": -2.70213399189463,
+                    "ci_high": 0.45539562807881717,
+                    "n_sessions": 35,
+                    "n_events": 50,
+                    "significant": false,
+                    "standard_error": 0.8081160709335635
+                  },
+                  "win_rate_pct": 40.0,
+                  "wins": 20,
+                  "total": 50
+                },
+                "6": {
+                  "estimate": {
+                    "value": -2.9574468085106385,
+                    "ci_low": -5.666768292682927,
+                    "ci_high": -0.6111111111111112,
+                    "n_sessions": 35,
+                    "n_events": 47,
+                    "significant": true,
+                    "standard_error": 1.2996802434701316
+                  },
+                  "win_rate_pct": 29.78723404255319,
+                  "wins": 14,
+                  "total": 47
+                },
+                "10": {
+                  "estimate": {
+                    "value": -2.9431818181818183,
+                    "ci_low": -6.538486842105263,
+                    "ci_high": 0.13096804511278173,
+                    "n_sessions": 32,
+                    "n_events": 44,
+                    "significant": false,
+                    "standard_error": 1.7157413381770903
+                  },
+                  "win_rate_pct": 34.09090909090909,
+                  "wins": 15,
+                  "total": 44
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.7857142857142858,
+                    "ci_low": -6.283886158886159,
+                    "ci_high": 2.9375318877551018,
+                    "n_sessions": 31,
+                    "n_events": 42,
+                    "significant": false,
+                    "standard_error": 2.3499019240994623
+                  },
+                  "win_rate_pct": 35.714285714285715,
+                  "wins": 15,
+                  "total": 42
+                }
+              },
+              "mfe_mean": 7.82,
+              "mae_mean": -10.51
+            },
+            "sell": {
+              "n_events": 47,
+              "n_sessions_with_events": 31,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.244186046511628,
+                    "ci_low": -3.125,
+                    "ci_high": 0.5111174242424241,
+                    "n_sessions": 30,
+                    "n_events": 43,
+                    "significant": false,
+                    "standard_error": 0.9274730125758737
+                  },
+                  "win_rate_pct": 39.53488372093023,
+                  "wins": 17,
+                  "total": 43
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.23255813953488372,
+                    "ci_low": -2.394794891640867,
+                    "ci_high": 1.881578947368421,
+                    "n_sessions": 30,
+                    "n_events": 43,
+                    "significant": false,
+                    "standard_error": 1.0837067888269711
+                  },
+                  "win_rate_pct": 48.83720930232558,
+                  "wins": 21,
+                  "total": 43
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.9404761904761905,
+                    "ci_low": -3.813790516206483,
+                    "ci_high": 2.0,
+                    "n_sessions": 30,
+                    "n_events": 42,
+                    "significant": false,
+                    "standard_error": 1.4836576061286122
+                  },
+                  "win_rate_pct": 38.095238095238095,
+                  "wins": 16,
+                  "total": 42
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.8194444444444444,
+                    "ci_low": -7.712332887700534,
+                    "ci_high": 5.444551282051281,
+                    "n_sessions": 27,
+                    "n_events": 36,
+                    "significant": false,
+                    "standard_error": 3.333573388911624
+                  },
+                  "win_rate_pct": 50.0,
+                  "wins": 18,
+                  "total": 36
+                }
+              },
+              "mfe_mean": 9.27,
+              "mae_mean": -8.38
+            },
+            "all": {
+              "n_events": 97,
+              "n_sessions_with_events": 66,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.1290322580645162,
+                    "ci_low": -2.3846249999999998,
+                    "ci_high": 0.021052631578947368,
+                    "n_sessions": 65,
+                    "n_events": 93,
+                    "significant": false,
+                    "standard_error": 0.6049840553212625
+                  },
+                  "win_rate_pct": 39.784946236559136,
+                  "wins": 37,
+                  "total": 93
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.6555555555555554,
+                    "ci_low": -3.392492750996738,
+                    "ci_high": -0.07469265367316372,
+                    "n_sessions": 65,
+                    "n_events": 90,
+                    "significant": true,
+                    "standard_error": 0.8533318909180736
+                  },
+                  "win_rate_pct": 38.888888888888886,
+                  "wins": 35,
+                  "total": 90
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.9651162790697674,
+                    "ci_low": -4.195128959910289,
+                    "ci_high": 0.13530850383631693,
+                    "n_sessions": 62,
+                    "n_events": 86,
+                    "significant": false,
+                    "standard_error": 1.1066178054475182
+                  },
+                  "win_rate_pct": 36.04651162790697,
+                  "wins": 31,
+                  "total": 86
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.3397435897435896,
+                    "ci_low": -5.317073170731708,
+                    "ci_high": 2.553640593561367,
+                    "n_sessions": 58,
+                    "n_events": 78,
+                    "significant": false,
+                    "standard_error": 1.9910185750897547
+                  },
+                  "win_rate_pct": 42.30769230769231,
+                  "wins": 33,
+                  "total": 78
+                }
+              },
+              "mfe_mean": 8.52,
+              "mae_mean": -9.49
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "INCONCLUSIVO (amostra abaixo do mínimo)",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 29,
+              "mean": -2.1
+            },
+            "2024": {
+              "n": 23,
+              "mean": -1.37
+            },
+            "2025": {
+              "n": 24,
+              "mean": -1.06
+            },
+            "2026": {
+              "n": 14,
+              "mean": -2.21
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "9": -1.6,
+            "10": -4.18,
+            "11": -2.08,
+            "12": -2.27,
+            "13": 2.67,
+            "14": -5.0,
+            "15": -0.5,
+            "16": -3.5,
+            "17": 0.55
+          },
+          "by_pair_factor_h6_mean": {
+            "di1": {
+              "n": 58,
+              "mean": -1.33
+            },
+            "win": {
+              "n": 22,
+              "mean": -1.68
+            },
+            "us500": {
+              "n": 9,
+              "mean": -3.0
+            },
+            "xauusd": {
+              "n": 1,
+              "mean": -8.0
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada (scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da cesta real de produção em cada momento histórico. Necessário pro encadeamento do Kalman (achado C1-b) sobreviver às trocas de calibração — engine.py:685 só reaproveita o estado quando a assinatura da cesta não muda entre sessões. Isso remove o viés de seleção retrospectiva da cesta e dos pesos/sigmas/calibração logística (recalibrados a cada cutoff, só com dados <= cutoff), mas mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que apareceu no dashboard historicamente. Contagens de eventos, identidade do fator ativo e by_pair_factor mudam de universo em relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+        "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver `sessions_before_first_pit_cutoff` no relatório) não têm calibração válida ainda — são replayadas (aquecem o Kalman) mas excluídas da medição, além do burn-in padrão.",
+        "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói perfeitamente 'a informação disponível naquele dia': dados posteriormente corrigidos/completados no banco (backfill) podem aparecer em cutoffs antigos como se sempre tivessem estado lá.",
+        "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+        "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+        "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os extremos intrabarra (H/L) — podem subestimar a excursão real.",
+        "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+        "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+        "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas.",
+        "A definição de interseção usada aqui (`pair_signal == price_diverge_dir` na primeira barra alinhada) foi CONGELADA antes de rodar ou olhar qualquer resultado — não houve otimização de janela/definição após ver os dados.",
+        "Causalidade: `pair_signal`/`price_diverge_dir` (campos contínuos que `_mark_intersection` lê) não são gated por `bar_may_be_forming` no engine, diferente dos markers discretos `pair_compra`/`z_compra_val`. Este script depende de `candidate_sessions()` já excluir incondicionalmente a sessão mais recente/potencialmente parcial antes de qualquer sessão chegar aqui — ver docstring do módulo.",
+        "by_pair_factor no relatório reflete qual fator do Pair Signal estava ativo no momento do evento de interseção — aqui SIM é o fator relevante (a interseção exige o Pair Signal alinhado), diferente do caso do marker Z isolado (item 2), onde era só metadado incidental."
+      ]
+    },
+    "baseline_momentum": {
+      "targets": {
+        "WIN$N": {
+          "sessions_replayed": 1250,
+          "sessions_discarded": 1,
+          "sessions_burn_in": 5,
+          "cost_points": 10.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1281,
+              "n_sessions_with_events": 726,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -4.01685393258427,
+                    "ci_low": -14.124135007759067,
+                    "ci_high": 6.213799050978675,
+                    "n_sessions": 720,
+                    "n_events": 1246,
+                    "significant": false,
+                    "standard_error": 5.191428208564585
+                  },
+                  "win_rate_pct": 47.351524879614765,
+                  "wins": 590,
+                  "total": 1246
+                },
+                "6": {
+                  "estimate": {
+                    "value": -2.2719802793755135,
+                    "ci_low": -16.531295974184676,
+                    "ci_high": 12.436003303055326,
+                    "n_sessions": 712,
+                    "n_events": 1217,
+                    "significant": false,
+                    "standard_error": 7.300181491309679
+                  },
+                  "win_rate_pct": 47.82251437962202,
+                  "wins": 582,
+                  "total": 1217
+                },
+                "10": {
+                  "estimate": {
+                    "value": -2.1515151515151514,
+                    "ci_low": -21.254297793452704,
+                    "ci_high": 17.41848680544497,
+                    "n_sessions": 700,
+                    "n_events": 1155,
+                    "significant": false,
+                    "standard_error": 9.785777093702395
+                  },
+                  "win_rate_pct": 47.61904761904762,
+                  "wins": 550,
+                  "total": 1155
+                },
+                "20": {
+                  "estimate": {
+                    "value": 0.1422963689892051,
+                    "ci_low": -28.012686733250693,
+                    "ci_high": 29.436645071263378,
+                    "n_sessions": 662,
+                    "n_events": 1019,
+                    "significant": false,
+                    "standard_error": 14.800633438662048
+                  },
+                  "win_rate_pct": 48.086359175662416,
+                  "wins": 490,
+                  "total": 1019
+                }
+              },
+              "mfe_mean": 258.26,
+              "mae_mean": -236.24
+            },
+            "sell": {
+              "n_events": 1198,
+              "n_sessions_with_events": 721,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -12.226027397260275,
+                    "ci_low": -22.519059943691946,
+                    "ci_high": -2.217164424864526,
+                    "n_sessions": 712,
+                    "n_events": 1168,
+                    "significant": true,
+                    "standard_error": 5.161407833995935
+                  },
+                  "win_rate_pct": 45.205479452054796,
+                  "wins": 528,
+                  "total": 1168
+                },
+                "6": {
+                  "estimate": {
+                    "value": -8.56134157105031,
+                    "ci_low": -23.33916443273521,
+                    "ci_high": 6.4506303048115905,
+                    "n_sessions": 706,
+                    "n_events": 1133,
+                    "significant": false,
+                    "standard_error": 7.6708636686646265
+                  },
+                  "win_rate_pct": 46.16063548102383,
+                  "wins": 523,
+                  "total": 1133
+                },
+                "10": {
+                  "estimate": {
+                    "value": -4.07321594068582,
+                    "ci_low": -22.690220493791923,
+                    "ci_high": 15.42720094483027,
+                    "n_sessions": 686,
+                    "n_events": 1079,
+                    "significant": false,
+                    "standard_error": 9.666353959775337
+                  },
+                  "win_rate_pct": 46.895273401297494,
+                  "wins": 506,
+                  "total": 1079
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.22395833333333334,
+                    "ci_low": -27.770085404770267,
+                    "ci_high": 28.055397836102042,
+                    "n_sessions": 657,
+                    "n_events": 960,
+                    "significant": false,
+                    "standard_error": 14.261470269706045
+                  },
+                  "win_rate_pct": 49.270833333333336,
+                  "wins": 473,
+                  "total": 960
+                }
+              },
+              "mfe_mean": 251.56,
+              "mae_mean": -245.99
+            },
+            "all": {
+              "n_events": 2479,
+              "n_sessions_with_events": 880,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -7.988815244407622,
+                    "ci_low": -15.392983342424877,
+                    "ci_high": -0.6103298870459449,
+                    "n_sessions": 879,
+                    "n_events": 2414,
+                    "significant": true,
+                    "standard_error": 3.7717759278196477
+                  },
+                  "win_rate_pct": 46.31317315658658,
+                  "wins": 1118,
+                  "total": 2414
+                },
+                "6": {
+                  "estimate": {
+                    "value": -5.304255319148936,
+                    "ci_low": -15.751786827001132,
+                    "ci_high": 5.159248997394206,
+                    "n_sessions": 878,
+                    "n_events": 2350,
+                    "significant": false,
+                    "standard_error": 5.365713902695577
+                  },
+                  "win_rate_pct": 47.02127659574468,
+                  "wins": 1105,
+                  "total": 2350
+                },
+                "10": {
+                  "estimate": {
+                    "value": -3.079677708146822,
+                    "ci_low": -16.806745492983648,
+                    "ci_high": 10.546384623087333,
+                    "n_sessions": 878,
+                    "n_events": 2234,
+                    "significant": false,
+                    "standard_error": 7.013529306360685
+                  },
+                  "win_rate_pct": 47.26947179946285,
+                  "wins": 1056,
+                  "total": 2234
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.035371399696816574,
+                    "ci_low": -19.94991497636114,
+                    "ci_high": 19.469748524528097,
+                    "n_sessions": 874,
+                    "n_events": 1979,
+                    "significant": false,
+                    "standard_error": 10.164679547274593
+                  },
+                  "win_rate_pct": 48.66093986862052,
+                  "wins": 963,
+                  "total": 1979
+                }
+              },
+              "mfe_mean": 255.02,
+              "mae_mean": -240.96
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 649,
+              "mean": -14.68
+            },
+            "2024": {
+              "n": 686,
+              "mean": -13.1
+            },
+            "2025": {
+              "n": 661,
+              "mean": 10.02
+            },
+            "2026": {
+              "n": 354,
+              "mean": -1.62
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "10": -32.91,
+            "11": -22.66,
+            "12": 1.67,
+            "13": -6.01,
+            "14": 2.09,
+            "15": 6.21,
+            "16": 6.19,
+            "17": -7.55
+          },
+          "by_pair_factor_h6_mean": {
+            "wdo": {
+              "n": 1530,
+              "mean": -3.68
+            },
+            "us500": {
+              "n": 797,
+              "mean": -8.57
+            },
+            "di1": {
+              "n": 23,
+              "mean": 0.0
+            }
+          }
+        },
+        "WDO$N": {
+          "sessions_replayed": 1249,
+          "sessions_discarded": 2,
+          "sessions_burn_in": 5,
+          "cost_points": 1.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1250,
+              "n_sessions_with_events": 729,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.1865242399342646,
+                    "ci_low": -1.4775165090434494,
+                    "ci_high": -0.8996824640111691,
+                    "n_sessions": 721,
+                    "n_events": 1217,
+                    "significant": true,
+                    "standard_error": 0.14773799639923868
+                  },
+                  "win_rate_pct": 32.539030402629415,
+                  "wins": 396,
+                  "total": 1217
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.9557335581787522,
+                    "ci_low": -1.3553028029588519,
+                    "ci_high": -0.5479369600453211,
+                    "n_sessions": 715,
+                    "n_events": 1186,
+                    "significant": true,
+                    "standard_error": 0.20599698130828353
+                  },
+                  "win_rate_pct": 37.94266441821248,
+                  "wins": 450,
+                  "total": 1186
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.111013215859031,
+                    "ci_low": -1.6317741308308322,
+                    "ci_high": -0.5942465036346397,
+                    "n_sessions": 706,
+                    "n_events": 1135,
+                    "significant": true,
+                    "standard_error": 0.26556992758202896
+                  },
+                  "win_rate_pct": 39.47136563876652,
+                  "wins": 448,
+                  "total": 1135
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.3453557312252964,
+                    "ci_low": -2.194903253372398,
+                    "ci_high": -0.4636833160924401,
+                    "n_sessions": 667,
+                    "n_events": 1012,
+                    "significant": true,
+                    "standard_error": 0.4354007524627011
+                  },
+                  "win_rate_pct": 42.391304347826086,
+                  "wins": 429,
+                  "total": 1012
+                }
+              },
+              "mfe_mean": 6.95,
+              "mae_mean": -7.21
+            },
+            "sell": {
+              "n_events": 1285,
+              "n_sessions_with_events": 740,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.8795036028823059,
+                    "ci_low": -1.188066329133055,
+                    "ci_high": -0.5767371501782996,
+                    "n_sessions": 731,
+                    "n_events": 1249,
+                    "significant": true,
+                    "standard_error": 0.15578800803628384
+                  },
+                  "win_rate_pct": 36.10888710968775,
+                  "wins": 451,
+                  "total": 1249
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.8375927452596867,
+                    "ci_low": -1.239920551966923,
+                    "ci_high": -0.4345425356543145,
+                    "n_sessions": 722,
+                    "n_events": 1213,
+                    "significant": true,
+                    "standard_error": 0.20368275797401256
+                  },
+                  "win_rate_pct": 40.14839241549876,
+                  "wins": 487,
+                  "total": 1213
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.6459948320413437,
+                    "ci_low": -1.2100197924930483,
+                    "ci_high": -0.0683313031094792,
+                    "n_sessions": 702,
+                    "n_events": 1161,
+                    "significant": true,
+                    "standard_error": 0.28632816330257554
+                  },
+                  "win_rate_pct": 43.92764857881137,
+                  "wins": 510,
+                  "total": 1161
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.6128712871287129,
+                    "ci_low": -1.4720593690667445,
+                    "ci_high": 0.2713597461602798,
+                    "n_sessions": 669,
+                    "n_events": 1010,
+                    "significant": false,
+                    "standard_error": 0.4429358291696467
+                  },
+                  "win_rate_pct": 45.04950495049505,
+                  "wins": 455,
+                  "total": 1010
+                }
+              },
+              "mfe_mean": 7.53,
+              "mae_mean": -7.2
+            },
+            "all": {
+              "n_events": 2535,
+              "n_sessions_with_events": 878,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.031021897810219,
+                    "ci_low": -1.242675078098531,
+                    "ci_high": -0.8159279532885513,
+                    "n_sessions": 878,
+                    "n_events": 2466,
+                    "significant": true,
+                    "standard_error": 0.10571393686602269
+                  },
+                  "win_rate_pct": 34.34712084347121,
+                  "wins": 847,
+                  "total": 2466
+                },
+                "6": {
+                  "estimate": {
+                    "value": -0.8959983326385994,
+                    "ci_low": -1.1717859026015212,
+                    "ci_high": -0.612095055027087,
+                    "n_sessions": 878,
+                    "n_events": 2399,
+                    "significant": true,
+                    "standard_error": 0.14377684077111552
+                  },
+                  "win_rate_pct": 39.05794080867028,
+                  "wins": 937,
+                  "total": 2399
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.8758710801393729,
+                    "ci_low": -1.2629205612660124,
+                    "ci_high": -0.48751839636437355,
+                    "n_sessions": 877,
+                    "n_events": 2296,
+                    "significant": true,
+                    "standard_error": 0.19695875632886117
+                  },
+                  "win_rate_pct": 41.724738675958186,
+                  "wins": 958,
+                  "total": 2296
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.9794757665677547,
+                    "ci_low": -1.5919504570161447,
+                    "ci_high": -0.3794210097686036,
+                    "n_sessions": 875,
+                    "n_events": 2022,
+                    "significant": true,
+                    "standard_error": 0.310250507710553
+                  },
+                  "win_rate_pct": 43.7190900098912,
+                  "wins": 884,
+                  "total": 2022
+                }
+              },
+              "mfe_mean": 7.25,
+              "mae_mean": -7.2
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 652,
+              "mean": -0.83
+            },
+            "2024": {
+              "n": 689,
+              "mean": -0.91
+            },
+            "2025": {
+              "n": 691,
+              "mean": -0.91
+            },
+            "2026": {
+              "n": 367,
+              "mean": -0.96
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "10": -0.63,
+            "11": -0.4,
+            "12": -0.49,
+            "13": -0.72,
+            "14": -0.84,
+            "15": -1.54,
+            "16": -1.27,
+            "17": -1.27
+          },
+          "by_pair_factor_h6_mean": {
+            "di1": {
+              "n": 1561,
+              "mean": -0.96
+            },
+            "win": {
+              "n": 625,
+              "mean": -0.8
+            },
+            "us500": {
+              "n": 213,
+              "mean": -0.67
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Baseline 'momentum': cruzamento de SMA(6) x SMA(20) sobre o preço do WIN, edge-triggered. É uma RÉGUA reproduzível pra comparar contra os markers Pair/Z — NÃO um setup proposto. Os parâmetros (6/20) são convenção redonda, não otimizados.",
+        "Este script só GERA eventos reproduzíveis do baseline. A comparação econômica (líquida de custo completo, primeiro preço executável, sensibilidade a parâmetros) contra os markers pertence ao IRAI-4/VAL-04 — não é feita aqui.",
+        "O baseline usa só `win_current` (preço do target), sem nenhum parâmetro calibrado — logo é INVARIANTE ao modo point-in-time vs retrospectivo (C1-a não o afeta). É essa imunidade que o torna uma régua limpa contra os markers calibrados.",
+        "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+        "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+        "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os extremos intrabarra (H/L) — podem subestimar a excursão real.",
+        "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+        "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+        "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas.",
+        "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada (scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da cesta real de produção em cada momento histórico. Necessário pro encadeamento do Kalman (achado C1-b) sobreviver às trocas de calibração — engine.py:685 só reaproveita o estado quando a assinatura da cesta não muda entre sessões. Isso remove o viés de seleção retrospectiva da cesta e dos pesos/sigmas/calibração logística (recalibrados a cada cutoff, só com dados <= cutoff), mas mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que apareceu no dashboard historicamente. Contagens de eventos, identidade do fator ativo e by_pair_factor mudam de universo em relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+        "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver `sessions_before_first_pit_cutoff` no relatório) não têm calibração válida ainda — são replayadas (aquecem o Kalman) mas excluídas da medição, além do burn-in padrão.",
+        "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói perfeitamente 'a informação disponível naquele dia': dados posteriormente corrigidos/completados no banco (backfill) podem aparecer em cutoffs antigos como se sempre tivessem estado lá."
+      ]
+    },
+    "baseline_reversao": {
+      "targets": {
+        "WIN$N": {
+          "sessions_replayed": 1250,
+          "sessions_discarded": 1,
+          "sessions_burn_in": 5,
+          "cost_points": 10.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1198,
+              "n_sessions_with_events": 721,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -7.773972602739726,
+                    "ci_low": -17.782835575135476,
+                    "ci_high": 2.5190599436919454,
+                    "n_sessions": 712,
+                    "n_events": 1168,
+                    "significant": false,
+                    "standard_error": 5.161407833995936
+                  },
+                  "win_rate_pct": 48.11643835616438,
+                  "wins": 562,
+                  "total": 1168
+                },
+                "6": {
+                  "estimate": {
+                    "value": -11.43865842894969,
+                    "ci_low": -26.450630304811604,
+                    "ci_high": 3.339164432735208,
+                    "n_sessions": 706,
+                    "n_events": 1133,
+                    "significant": false,
+                    "standard_error": 7.6708636686646265
+                  },
+                  "win_rate_pct": 48.190644307149164,
+                  "wins": 546,
+                  "total": 1133
+                },
+                "10": {
+                  "estimate": {
+                    "value": -15.92678405931418,
+                    "ci_low": -35.427200944830275,
+                    "ci_high": 2.6902204937919216,
+                    "n_sessions": 686,
+                    "n_events": 1079,
+                    "significant": false,
+                    "standard_error": 9.666353959775337
+                  },
+                  "win_rate_pct": 48.56348470806302,
+                  "wins": 524,
+                  "total": 1079
+                },
+                "20": {
+                  "estimate": {
+                    "value": -19.776041666666668,
+                    "ci_low": -48.05539783610205,
+                    "ci_high": 7.770085404770261,
+                    "n_sessions": 657,
+                    "n_events": 960,
+                    "significant": false,
+                    "standard_error": 14.261470269706045
+                  },
+                  "win_rate_pct": 47.395833333333336,
+                  "wins": 455,
+                  "total": 960
+                }
+              },
+              "mfe_mean": 245.99,
+              "mae_mean": -251.56
+            },
+            "sell": {
+              "n_events": 1281,
+              "n_sessions_with_events": 726,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -15.98314606741573,
+                    "ci_low": -26.21379905097868,
+                    "ci_high": -5.875864992240934,
+                    "n_sessions": 720,
+                    "n_events": 1246,
+                    "significant": true,
+                    "standard_error": 5.191428208564585
+                  },
+                  "win_rate_pct": 44.62279293739968,
+                  "wins": 556,
+                  "total": 1246
+                },
+                "6": {
+                  "estimate": {
+                    "value": -17.728019720624488,
+                    "ci_low": -32.43600330305533,
+                    "ci_high": -3.4687040258153266,
+                    "n_sessions": 712,
+                    "n_events": 1217,
+                    "significant": true,
+                    "standard_error": 7.30018149130968
+                  },
+                  "win_rate_pct": 46.75431388660641,
+                  "wins": 569,
+                  "total": 1217
+                },
+                "10": {
+                  "estimate": {
+                    "value": -17.848484848484848,
+                    "ci_low": -37.41848680544499,
+                    "ci_high": 1.254297793452704,
+                    "n_sessions": 700,
+                    "n_events": 1155,
+                    "significant": false,
+                    "standard_error": 9.785777093702395
+                  },
+                  "win_rate_pct": 48.05194805194805,
+                  "wins": 555,
+                  "total": 1155
+                },
+                "20": {
+                  "estimate": {
+                    "value": -20.142296368989204,
+                    "ci_low": -49.436645071263385,
+                    "ci_high": 8.012686733250685,
+                    "n_sessions": 662,
+                    "n_events": 1019,
+                    "significant": false,
+                    "standard_error": 14.800633438662048
+                  },
+                  "win_rate_pct": 48.086359175662416,
+                  "wins": 490,
+                  "total": 1019
+                }
+              },
+              "mfe_mean": 236.24,
+              "mae_mean": -258.26
+            },
+            "all": {
+              "n_events": 2479,
+              "n_sessions_with_events": 880,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -12.011184755592378,
+                    "ci_low": -19.389670112954057,
+                    "ci_high": -4.607016657575122,
+                    "n_sessions": 879,
+                    "n_events": 2414,
+                    "significant": true,
+                    "standard_error": 3.7717759278196477
+                  },
+                  "win_rate_pct": 46.31317315658658,
+                  "wins": 1118,
+                  "total": 2414
+                },
+                "6": {
+                  "estimate": {
+                    "value": -14.695744680851064,
+                    "ci_low": -25.15924899739421,
+                    "ci_high": -4.248213172998869,
+                    "n_sessions": 878,
+                    "n_events": 2350,
+                    "significant": true,
+                    "standard_error": 5.365713902695577
+                  },
+                  "win_rate_pct": 47.4468085106383,
+                  "wins": 1115,
+                  "total": 2350
+                },
+                "10": {
+                  "estimate": {
+                    "value": -16.92032229185318,
+                    "ci_low": -30.54638462308734,
+                    "ci_high": -3.193254507016356,
+                    "n_sessions": 878,
+                    "n_events": 2234,
+                    "significant": true,
+                    "standard_error": 7.013529306360685
+                  },
+                  "win_rate_pct": 48.29901521933751,
+                  "wins": 1079,
+                  "total": 2234
+                },
+                "20": {
+                  "estimate": {
+                    "value": -19.964628600303183,
+                    "ci_low": -39.46974852452811,
+                    "ci_high": -0.05008502363886092,
+                    "n_sessions": 874,
+                    "n_events": 1979,
+                    "significant": true,
+                    "standard_error": 10.164679547274593
+                  },
+                  "win_rate_pct": 47.751389590702374,
+                  "wins": 945,
+                  "total": 1979
+                }
+              },
+              "mfe_mean": 240.96,
+              "mae_mean": -255.02
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 649,
+              "mean": -5.32
+            },
+            "2024": {
+              "n": 686,
+              "mean": -6.9
+            },
+            "2025": {
+              "n": 661,
+              "mean": -30.02
+            },
+            "2026": {
+              "n": 354,
+              "mean": -18.38
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "10": 12.91,
+            "11": 2.66,
+            "12": -21.67,
+            "13": -13.99,
+            "14": -22.09,
+            "15": -26.21,
+            "16": -26.19,
+            "17": -12.45
+          },
+          "by_pair_factor_h6_mean": {
+            "wdo": {
+              "n": 1530,
+              "mean": -16.32
+            },
+            "us500": {
+              "n": 797,
+              "mean": -11.43
+            },
+            "di1": {
+              "n": 23,
+              "mean": -20.0
+            }
+          }
+        },
+        "WDO$N": {
+          "sessions_replayed": 1249,
+          "sessions_discarded": 2,
+          "sessions_burn_in": 5,
+          "cost_points": 1.0,
+          "pit_mode": true,
+          "sessions_before_first_pit_cutoff": 369,
+          "pit_cutoffs_used": [
+            "2022-12-30",
+            "2023-03-31",
+            "2023-06-30",
+            "2023-09-29",
+            "2023-10-25",
+            "2024-02-29",
+            "2024-06-28",
+            "2024-10-31",
+            "2025-02-28",
+            "2025-06-30",
+            "2025-10-31",
+            "2026-02-27"
+          ],
+          "by_direction": {
+            "buy": {
+              "n_events": 1285,
+              "n_sessions_with_events": 740,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -1.1204963971176942,
+                    "ci_low": -1.4232628498217004,
+                    "ci_high": -0.8119336708669451,
+                    "n_sessions": 731,
+                    "n_events": 1249,
+                    "significant": true,
+                    "standard_error": 0.15578800803628384
+                  },
+                  "win_rate_pct": 34.747798238590875,
+                  "wins": 434,
+                  "total": 1249
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.1624072547403133,
+                    "ci_low": -1.5654574643456856,
+                    "ci_high": -0.7600794480330771,
+                    "n_sessions": 722,
+                    "n_events": 1213,
+                    "significant": true,
+                    "standard_error": 0.20368275797401256
+                  },
+                  "win_rate_pct": 38.33470733718055,
+                  "wins": 465,
+                  "total": 1213
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.3540051679586564,
+                    "ci_low": -1.931668696890521,
+                    "ci_high": -0.7899802075069519,
+                    "n_sessions": 702,
+                    "n_events": 1161,
+                    "significant": true,
+                    "standard_error": 0.28632816330257554
+                  },
+                  "win_rate_pct": 42.204995693367785,
+                  "wins": 490,
+                  "total": 1161
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.387128712871287,
+                    "ci_low": -2.27135974616028,
+                    "ci_high": -0.5279406309332555,
+                    "n_sessions": 669,
+                    "n_events": 1010,
+                    "significant": true,
+                    "standard_error": 0.4429358291696467
+                  },
+                  "win_rate_pct": 43.960396039603964,
+                  "wins": 444,
+                  "total": 1010
+                }
+              },
+              "mfe_mean": 7.2,
+              "mae_mean": -7.53
+            },
+            "sell": {
+              "n_events": 1250,
+              "n_sessions_with_events": 729,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.8134757600657354,
+                    "ci_low": -1.100317535988831,
+                    "ci_high": -0.5224834909565507,
+                    "n_sessions": 721,
+                    "n_events": 1217,
+                    "significant": true,
+                    "standard_error": 0.14773799639923868
+                  },
+                  "win_rate_pct": 38.044371405094495,
+                  "wins": 463,
+                  "total": 1217
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.044266441821248,
+                    "ci_low": -1.452063039954679,
+                    "ci_high": -0.644697197041148,
+                    "n_sessions": 715,
+                    "n_events": 1186,
+                    "significant": true,
+                    "standard_error": 0.20599698130828353
+                  },
+                  "win_rate_pct": 40.72512647554806,
+                  "wins": 483,
+                  "total": 1186
+                },
+                "10": {
+                  "estimate": {
+                    "value": -0.8889867841409692,
+                    "ci_low": -1.4057534963653604,
+                    "ci_high": -0.3682258691691678,
+                    "n_sessions": 706,
+                    "n_events": 1135,
+                    "significant": true,
+                    "standard_error": 0.26556992758202896
+                  },
+                  "win_rate_pct": 42.99559471365639,
+                  "wins": 488,
+                  "total": 1135
+                },
+                "20": {
+                  "estimate": {
+                    "value": -0.6546442687747036,
+                    "ci_low": -1.53631668390756,
+                    "ci_high": 0.1949032533723979,
+                    "n_sessions": 667,
+                    "n_events": 1012,
+                    "significant": false,
+                    "standard_error": 0.4354007524627011
+                  },
+                  "win_rate_pct": 46.047430830039524,
+                  "wins": 466,
+                  "total": 1012
+                }
+              },
+              "mfe_mean": 7.21,
+              "mae_mean": -6.95
+            },
+            "all": {
+              "n_events": 2535,
+              "n_sessions_with_events": 878,
+              "horizons": {
+                "3": {
+                  "estimate": {
+                    "value": -0.968978102189781,
+                    "ci_low": -1.1840720467114487,
+                    "ci_high": -0.7573249219014692,
+                    "n_sessions": 878,
+                    "n_events": 2466,
+                    "significant": true,
+                    "standard_error": 0.10571393686602269
+                  },
+                  "win_rate_pct": 36.37469586374696,
+                  "wins": 897,
+                  "total": 2466
+                },
+                "6": {
+                  "estimate": {
+                    "value": -1.1040016673614006,
+                    "ci_low": -1.387904944972913,
+                    "ci_high": -0.8282140973984788,
+                    "n_sessions": 878,
+                    "n_events": 2399,
+                    "significant": true,
+                    "standard_error": 0.14377684077111552
+                  },
+                  "win_rate_pct": 39.51646519383076,
+                  "wins": 948,
+                  "total": 2399
+                },
+                "10": {
+                  "estimate": {
+                    "value": -1.1241289198606272,
+                    "ci_low": -1.5124816036356266,
+                    "ci_high": -0.7370794387339877,
+                    "n_sessions": 877,
+                    "n_events": 2296,
+                    "significant": true,
+                    "standard_error": 0.19695875632886117
+                  },
+                  "win_rate_pct": 42.59581881533101,
+                  "wins": 978,
+                  "total": 2296
+                },
+                "20": {
+                  "estimate": {
+                    "value": -1.0205242334322453,
+                    "ci_low": -1.6205789902313965,
+                    "ci_high": -0.4080495429838555,
+                    "n_sessions": 875,
+                    "n_events": 2022,
+                    "significant": true,
+                    "standard_error": 0.310250507710553
+                  },
+                  "win_rate_pct": 45.00494559841741,
+                  "wins": 910,
+                  "total": 2022
+                }
+              },
+              "mfe_mean": 7.2,
+              "mae_mean": -7.25
+            }
+          },
+          "min_events_for_gate": 100,
+          "gate_verdict": "AMOSTRA_SUFICIENTE_PARA_GATE",
+          "by_year_h6_mean": {
+            "2023": {
+              "n": 652,
+              "mean": -1.17
+            },
+            "2024": {
+              "n": 689,
+              "mean": -1.09
+            },
+            "2025": {
+              "n": 691,
+              "mean": -1.09
+            },
+            "2026": {
+              "n": 367,
+              "mean": -1.04
+            }
+          },
+          "by_hour_brt_h6_mean": {
+            "10": -1.37,
+            "11": -1.6,
+            "12": -1.51,
+            "13": -1.28,
+            "14": -1.16,
+            "15": -0.46,
+            "16": -0.73,
+            "17": -0.73
+          },
+          "by_pair_factor_h6_mean": {
+            "di1": {
+              "n": 1561,
+              "mean": -1.04
+            },
+            "win": {
+              "n": 625,
+              "mean": -1.2
+            },
+            "us500": {
+              "n": 213,
+              "mean": -1.33
+            }
+          }
+        }
+      },
+      "limitations": [
+        "Baseline 'reversao': cruzamento de SMA(6) x SMA(20) sobre o preço do WIN, edge-triggered. É uma RÉGUA reproduzível pra comparar contra os markers Pair/Z — NÃO um setup proposto. Os parâmetros (6/20) são convenção redonda, não otimizados.",
+        "Este script só GERA eventos reproduzíveis do baseline. A comparação econômica (líquida de custo completo, primeiro preço executável, sensibilidade a parâmetros) contra os markers pertence ao IRAI-4/VAL-04 — não é feita aqui.",
+        "O baseline usa só `win_current` (preço do target), sem nenhum parâmetro calibrado — logo é INVARIANTE ao modo point-in-time vs retrospectivo (C1-a não o afeta). É essa imunidade que o torna uma régua limpa contra os markers calibrados.",
+        "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
+        "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
+        "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os extremos intrabarra (H/L) — podem subestimar a excursão real.",
+        "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas (pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado inicial frio não reflete o que existiria em produção (achado do /codex-r, 2ª rodada: risco de maior prioridade apontado).",
+        "Cada execução reporta múltiplos horizontes (h=3/6/10/20) × até 3 agrupamentos de direção (buy/sell/all) por alvo — até 24 comparações simultâneas. Um `***` isolado NÃO deve ser lido como confirmatório sem correção pra comparações múltiplas (ex: Bonferroni implícito); é mais informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ direções do que qualquer `***` isolado.",
+        "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento esperado — não valida contagem mínima de barras nem gaps internos. Numa janela de replay que cubra vários anos, uma sessão esparsa (dados faltando no meio, mas presente no fechamento) passa como 'completa'; nesse caso, 'h=6' significa 6 barras REAIS observadas, que podem cobrir mais de 30 minutos de relógio (achado do /codex-r, job relay-mrmv6awy-phl3u0). Auditar contagem de barras/gaps por sessão antes de confiar em quebras por ano/período de janelas expandidas.",
+        "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada (scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da cesta real de produção em cada momento histórico. Necessário pro encadeamento do Kalman (achado C1-b) sobreviver às trocas de calibração — engine.py:685 só reaproveita o estado quando a assinatura da cesta não muda entre sessões. Isso remove o viés de seleção retrospectiva da cesta e dos pesos/sigmas/calibração logística (recalibrados a cada cutoff, só com dados <= cutoff), mas mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que apareceu no dashboard historicamente. Contagens de eventos, identidade do fator ativo e by_pair_factor mudam de universo em relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+        "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver `sessions_before_first_pit_cutoff` no relatório) não têm calibração válida ainda — são replayadas (aquecem o Kalman) mas excluídas da medição, além do burn-in padrão.",
+        "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói perfeitamente 'a informação disponível naquele dia': dados posteriormente corrigidos/completados no banco (backfill) podem aparecer em cutoffs antigos como se sempre tivessem estado lá."
+      ]
+    }
+  },
+  "events_moved_to": "nf01_pit.json.gz (artefato completo, gzipado)",
+  "event_counts": {
+    "pair": {
+      "WIN$N": 3693,
+      "WDO$N": 3833
+    },
+    "z": {
+      "WIN$N": 119,
+      "WDO$N": 120
+    },
+    "intersection": {
+      "WIN$N": 93,
+      "WDO$N": 97
+    },
+    "baseline_momentum": {
+      "WIN$N": 2479,
+      "WDO$N": 2535
+    },
+    "baseline_reversao": {
+      "WIN$N": 2479,
+      "WDO$N": 2535
+    }
+  }
+}
