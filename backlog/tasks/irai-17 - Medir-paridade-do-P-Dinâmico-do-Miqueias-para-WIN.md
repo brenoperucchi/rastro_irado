@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:15'
-updated_date: '2026-07-16 04:29'
+updated_date: '2026-07-16 04:31'
 labels:
   - validation
   - win
@@ -60,6 +60,8 @@ Pesquisa concluída: o bundle público seleciona `p_up_v1` quando presente e cai
 Execução real no Ryzen5WSL em 2026-07-16 04:27 UTC, após push/pull, contra Firebase público + API de produção local. Foram alinhadas 90/90 barras de pré-mercado. Miqueias versus v1/v2: correlação -0,596071; MAE 4,300889 pp; diferença máxima 12,83 pp; primeira divergência já em 00:00 do eixo Tickmill. v1 e v2 ficaram exatamente empatados porque ainda não havia barra real do WIN; 0 barras operacionais, portanto nenhum vencedor de qualidade pode ser declarado. A captura agora preserva Miqueias/v1/v2 e marca `quality_winner=null`. Próximo dado necessário: captura após o fechamento e acumulação de sessões intocadas para Brier/log-loss/AUC/calibração; a utilidade como gate tático será medida separadamente e líquida de custos.
 
 Validação executada: `pytest -q tests/test_compare_p_dynamic_parity.py` → 9 passed localmente e 9 passed no Ryzen5WSL; `python3 -m py_compile scripts/compare_p_dynamic_parity.py`; execução produtiva via `python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json`. Commits publicados e aplicados no WSL: `9f4631a`, `8ffb7b0`, `06f2f73`.
+
+Captura operacional de fechamento agendada no Ryzen5WSL com timer de usuário `irai-p-dynamic-parity-close-20260716.timer` para 2026-07-16 17:56 BRT (AccuracySec=30s), antes da virada do eixo Tickmill. O serviço executará o mesmo comparador e atualizará `data/p_dynamic_parity/latest.json`, mantendo o bundle bruto Miqueias/v1/v2.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
