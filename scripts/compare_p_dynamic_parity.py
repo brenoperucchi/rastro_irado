@@ -403,6 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     session_date = args.session_date or reference[0].timestamp[:10]
     candidate_points: dict[str, list[SeriesPoint]] = {}
+    candidate_rows_by_name: dict[str, list[dict]] = {}
     candidate_sources: dict[str, str] = {}
     source_errors: dict[str, str] = {}
 
@@ -417,6 +418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 rows = load_json_source(source, timeout=args.timeout)
                 candidate_points[version] = normalize_series(rows, value_fields=LOCAL_VALUE_FIELDS)
+                candidate_rows_by_name[version] = rows
                 candidate_sources[version] = source
             except Exception as exc:
                 source_errors[version] = f"{type(exc).__name__}: {exc}"
@@ -428,6 +430,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             rows = load_json_source(source, timeout=args.timeout)
             candidate_points[name] = normalize_series(rows, value_fields=LOCAL_VALUE_FIELDS)
+            candidate_rows_by_name[name] = rows
             candidate_sources[name] = source
         except Exception as exc:
             source_errors[name] = f"{type(exc).__name__}: {exc}"
@@ -454,15 +457,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_errors": source_errors,
         **comparison,
     }
-    best = comparison["ranking_by_operational_mae"][:1]
+    ranked = comparison["ranking_by_operational_mae"]
+    metric_scope = comparison["ranking_basis"].split(".")[0]
+    closest_candidates: list[str] = []
+    if ranked:
+        minimum_mae = comparison["candidates"][ranked[0]][metric_scope]["mae"]
+        closest_candidates = [
+            name
+            for name in ranked
+            if math.isclose(
+                comparison["candidates"][name][metric_scope]["mae"],
+                minimum_mae,
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+        ]
+    operational_comparable = any(
+        candidate["operational_bars"]["common_rows"] > 0
+        for candidate in comparison["candidates"].values()
+    )
     report["conclusion"] = {
         "scope": "parity_only",
-        "comparable": bool(best),
-        "closest_candidate": best[0] if best else None,
+        "comparable": bool(ranked),
+        "operational_comparable": operational_comparable,
+        "closest_candidate": closest_candidates[0] if len(closest_candidates) == 1 else None,
+        "closest_candidates": closest_candidates,
+        "parity_tie": len(closest_candidates) > 1,
         "quality_winner": None,
         "reason": (
             f"menor MAE segundo {comparison['ranking_basis']}"
-            if best
+            if ranked
             else "nenhuma série candidata teve timestamps comuns com a referência"
         ),
         "promotion_warning": (
@@ -473,9 +497,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.capture_dir:
         stamp = generated_at.replace(":", "").replace("+0000", "Z").replace("+00:00", "Z")
-        capture_path = Path(args.capture_dir) / f"miqueias_WIN_N_{session_date}_{stamp}.json"
-        _write_json(capture_path, public_rows)
-        report["reference_capture"] = str(capture_path)
+        capture_base = Path(args.capture_dir) / session_date / stamp
+        capture_paths = {"miqueias": str(capture_base / "miqueias.json")}
+        _write_json(Path(capture_paths["miqueias"]), public_rows)
+        for name, rows in sorted(candidate_rows_by_name.items()):
+            capture_paths[name] = str(capture_base / f"{name}.json")
+            _write_json(Path(capture_paths[name]), rows)
+        report["capture_paths"] = capture_paths
+        report["capture_bundle"] = str(capture_base)
+        _write_json(capture_base / "report.json", report)
     if args.output_json:
         _write_json(Path(args.output_json), report)
 
@@ -493,8 +523,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     for name, error in sorted(source_errors.items()):
         print(f"{name}: indisponível — {error}")
-    if best:
-        print(f"Mais próximo: {best[0]} ({comparison['ranking_basis']})")
+    if ranked:
+        if len(closest_candidates) > 1:
+            print(
+                f"Empate de paridade: {', '.join(closest_candidates)} "
+                f"({comparison['ranking_basis']})"
+            )
+        else:
+            print(f"Mais próximo: {closest_candidates[0]} ({comparison['ranking_basis']})")
         return 0
     print("Paridade ainda não calculável: nenhuma série candidata comparável.")
     return 2

@@ -162,6 +162,7 @@ def test_cli_nao_confunde_candidato_mais_proximo_com_vencedor_de_qualidade(tmp_p
     public = tmp_path / "public.json"
     candidate = tmp_path / "v2.json"
     output = tmp_path / "report.json"
+    captures = tmp_path / "captures"
     rows = [_bar("2026-07-16T15:00:00Z", 60.0)]
     public.write_text(json.dumps(rows), encoding="utf-8")
     candidate.write_text(json.dumps(rows), encoding="utf-8")
@@ -175,6 +176,8 @@ def test_cli_nao_confunde_candidato_mais_proximo_com_vencedor_de_qualidade(tmp_p
             f"v2={candidate}",
             "--output-json",
             str(output),
+            "--capture-dir",
+            str(captures),
         ]
     )
     conclusion = json.loads(output.read_text(encoding="utf-8"))["conclusion"]
@@ -184,3 +187,34 @@ def test_cli_nao_confunde_candidato_mais_proximo_com_vencedor_de_qualidade(tmp_p
     assert conclusion["closest_candidate"] == "v2"
     assert conclusion["quality_winner"] is None
     assert "OOS" in conclusion["promotion_warning"]
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert set(report["capture_paths"]) == {"miqueias", "v2"}
+    assert (tmp_path / "captures" / "2026-07-16").is_dir()
+
+
+def test_cli_preserva_empate_de_paridade_sem_escolher_v1_arbitrariamente(tmp_path):
+    source = tmp_path / "series.json"
+    output = tmp_path / "report.json"
+    source.write_text(
+        json.dumps([_bar("2026-07-16T15:00:00Z", 60.0)]), encoding="utf-8"
+    )
+
+    status = main(
+        [
+            "--public-source",
+            str(source),
+            "--skip-local-api",
+            "--candidate",
+            f"v1={source}",
+            "--candidate",
+            f"v2={source}",
+            "--output-json",
+            str(output),
+        ]
+    )
+    conclusion = json.loads(output.read_text(encoding="utf-8"))["conclusion"]
+
+    assert status == 0
+    assert conclusion["parity_tie"] is True
+    assert conclusion["closest_candidate"] is None
+    assert conclusion["closest_candidates"] == ["v1", "v2"]
