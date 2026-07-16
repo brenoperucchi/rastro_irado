@@ -1,11 +1,11 @@
 ---
 id: IRAI-17
 title: Comparar e avaliar o P Dinâmico do WIN
-status: In Progress
+status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:15'
-updated_date: '2026-07-16 04:28'
+updated_date: '2026-07-16 04:29'
 labels:
   - validation
   - win
@@ -34,12 +34,12 @@ Construir uma comparação reproduzível de caixa-preta entre a série pública 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A ferramenta lê a série pública WIN_N sem depender de código privado do Miqueias
-- [ ] #2 A ferramenta alinha barras por instante respeitando o contrato de timezone e permite comparar v1 e v2 locais
-- [ ] #3 O relatório de paridade apresenta cobertura, correlação, MAE, diferença máxima, concordância de regime 40/60 e primeiro ponto de divergência
-- [ ] #4 Testes permanentes cobrem alinhamento, seleção do campo público e métricas de paridade
-- [ ] #5 Uma execução real ou uma limitação ambiental objetiva fica registrada com comando reproduzível
-- [ ] #6 O resultado distingue explicitamente proximidade entre curvas de qualidade preditiva; nenhuma versão é promovida apenas por semelhança
+- [x] #1 A ferramenta lê a série pública WIN_N sem depender de código privado do Miqueias
+- [x] #2 A ferramenta alinha barras por instante respeitando o contrato de timezone e permite comparar v1 e v2 locais
+- [x] #3 O relatório de paridade apresenta cobertura, correlação, MAE, diferença máxima, concordância de regime 40/60 e primeiro ponto de divergência
+- [x] #4 Testes permanentes cobrem alinhamento, seleção do campo público e métricas de paridade
+- [x] #5 Uma execução real ou uma limitação ambiental objetiva fica registrada com comando reproduzível
+- [x] #6 O resultado distingue explicitamente proximidade entre curvas de qualidade preditiva; nenhuma versão é promovida apenas por semelhança
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -58,4 +58,16 @@ Construir uma comparação reproduzível de caixa-preta entre a série pública 
 Pesquisa concluída: o bundle público seleciona `p_up_v1` quando presente e cai para `p_up`; o Firebase público expõe `/series/WIN_N.json`. A API local fornece `/api/irai/series?...&version=v1|v2`, com timestamps no eixo Tickmill e `brt_offset_h` para reconstrução BRT. O comparador alinhará ISO timestamps exatamente e distinguirá todas as barras do subconjunto operacional sem ghost/preview.
 
 Execução real no Ryzen5WSL em 2026-07-16 04:27 UTC, após push/pull, contra Firebase público + API de produção local. Foram alinhadas 90/90 barras de pré-mercado. Miqueias versus v1/v2: correlação -0,596071; MAE 4,300889 pp; diferença máxima 12,83 pp; primeira divergência já em 00:00 do eixo Tickmill. v1 e v2 ficaram exatamente empatados porque ainda não havia barra real do WIN; 0 barras operacionais, portanto nenhum vencedor de qualidade pode ser declarado. A captura agora preserva Miqueias/v1/v2 e marca `quality_winner=null`. Próximo dado necessário: captura após o fechamento e acumulação de sessões intocadas para Brier/log-loss/AUC/calibração; a utilidade como gate tático será medida separadamente e líquida de custos.
+
+Validação executada: `pytest -q tests/test_compare_p_dynamic_parity.py` → 9 passed localmente e 9 passed no Ryzen5WSL; `python3 -m py_compile scripts/compare_p_dynamic_parity.py`; execução produtiva via `python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json`. Commits publicados e aplicados no WSL: `9f4631a`, `8ffb7b0`, `06f2f73`.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: @codex
+created: 2026-07-16 04:29
+---
+Implementação pronta para revisão. `quality_winner` permanece intencionalmente nulo: a captura disponível tinha 0 barras operacionais e não autoriza escolher Miqueias, v1 ou v2.
+---
+<!-- COMMENTS:END -->
