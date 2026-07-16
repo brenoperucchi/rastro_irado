@@ -40,6 +40,8 @@ from typing import Iterable, Mapping, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from backend.irai.timezones import brt_to_tickmill_offset_hours
+
 
 DEFAULT_PUBLIC_SOURCE = (
     "https://rastromacro-default-rtdb.firebaseio.com/series/WIN_N.json"
@@ -193,6 +195,15 @@ def capture_session_status(
         "last_operational_brt": last_brt,
         "close_not_before_brt": close_not_before,
     }
+
+
+def capture_brt_offset_h(session_date: str, documents: Mapping[str, object]) -> int:
+    """Resolve BRT→Tickmill pelo contrato local ou pela regra sazonal causal."""
+    for preferred in ("v2", "v1"):
+        document = documents.get(preferred)
+        if isinstance(document, dict) and document.get("brt_offset_h") is not None:
+            return int(document["brt_offset_h"])
+    return brt_to_tickmill_offset_hours(datetime.fromisoformat(session_date))
 
 
 def _regime(value: float, *, buy_threshold: float, sell_threshold: float) -> str:
@@ -572,13 +583,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             "reason": gex_error or "fonte GEX não configurada",
         }
         _write_json(Path(capture_paths["gex"]), stored_gex)
-        brt_offset_h = 6
-        for preferred in ("v2", "v1"):
-            document = candidate_documents.get(preferred)
-            if isinstance(document, dict) and document.get("brt_offset_h") is not None:
-                brt_offset_h = int(document["brt_offset_h"])
-                break
-        session_status = capture_session_status(reference, brt_offset_h=brt_offset_h)
+        brt_offset_h = capture_brt_offset_h(session_date, candidate_documents)
+        source_session_status = {
+            "miqueias": capture_session_status(reference, brt_offset_h=brt_offset_h),
+            **{
+                name: capture_session_status(points, brt_offset_h=brt_offset_h)
+                for name, points in sorted(candidate_points.items())
+            },
+        }
+        reference_status = source_session_status["miqueias"]
+        local_statuses = [
+            status for name, status in source_session_status.items()
+            if name != "miqueias"
+        ]
+        session_status = {
+            **reference_status,
+            "closed": bool(local_statuses)
+            and all(status["closed"] for status in source_session_status.values()),
+            "closed_requirement": "todas as fontes capturadas e ao menos uma fonte local",
+            "sources": source_session_status,
+        }
         walls = gex_document.get("walls", []) if isinstance(gex_document, dict) else []
         gex_status = {
             "status": "captured" if gex_document is not None else "unavailable",

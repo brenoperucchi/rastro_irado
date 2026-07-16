@@ -30,6 +30,8 @@ from scripts.compare_p_dynamic_parity import (
     LOCAL_VALUE_FIELDS,
     PUBLIC_VALUE_FIELDS,
     _extract_rows,
+    capture_brt_offset_h,
+    capture_session_status,
     normalize_series,
 )
 
@@ -137,6 +139,26 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                 model: _forecast_probabilities(document, public=model == "miqueias")
                 for model, document in documents.items()
             }
+            brt_offset_h = capture_brt_offset_h(session_date, documents)
+            source_statuses = {
+                model: capture_session_status(
+                    normalize_series(
+                        _extract_rows(document),
+                        value_fields=(
+                            PUBLIC_VALUE_FIELDS if model == "miqueias" else LOCAL_VALUE_FIELDS
+                        ),
+                    ),
+                    brt_offset_h=brt_offset_h,
+                )
+                for model, document in documents.items()
+            }
+            incomplete_sources = sorted(
+                model for model, status in source_statuses.items() if not status["closed"]
+            )
+            if incomplete_sources:
+                raise ValueError(
+                    "fontes sem fechamento operacional: " + ", ".join(incomplete_sources)
+                )
             if len(forecasts) < 2:
                 raise ValueError("bundle precisa de pelo menos dois modelos comparáveis")
             sessions.append(

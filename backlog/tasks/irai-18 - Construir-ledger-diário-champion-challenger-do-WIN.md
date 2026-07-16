@@ -1,11 +1,11 @@
 ---
 id: IRAI-18
 title: Construir ledger diário champion-challenger do WIN
-status: Review
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:06'
+updated_date: '2026-07-16 05:09'
 labels:
   - validation
   - win
@@ -70,6 +70,8 @@ Validação produtiva no Ryzen5WSL após pull de `4495ac2`: 16 testes específic
 Correção pós-revisão: a engine e `/api/irai/series` agora expõem `win_bar_open`, `win_high` e `win_low` por barra real, preservando `win_open` como abertura da sessão. Regressão permanente falhou antes com AttributeError em `IRAISnapshot.win_bar_open` e passou após a correção; o teste do bundle confirma persistência dos três campos.
 
 Validação pós-correção no Ryzen5WSL (`444cc00`): regressão engine OHLC 2 passed; regressão HTTP OHLC 1 passed; ledger/evaluator 7 passed. API Windows reiniciada com o mesmo Uvicorn e retornou health ok; payload v1 contém as três chaves novas. Serviço oneshot gerou bundle `2026-07-16T050637Z` com status 0 e contrato OHLC preservado; valores nulos são esperados nas barras ghost pré-mercado.
+
+Correção do NO-GO: fallback de `brt_offset_h` agora usa a regra sazonal compartilhada quando o envelope local não informa offset; o manifesto registra status de fechamento por fonte e só fecha com todas as fontes capturadas completas e ao menos uma local. O loader recalcula o fechamento dos documentos e rejeita manifesto antigo/corrompido com outcome parcial. Duas regressões novas falharam antes (janeiro +5h; v2 parando 17:30) e agora passam. Suíte mantida: 209 passed, 17 skipped.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -108,5 +110,11 @@ author: @codex
 created: 2026-07-16 05:06
 ---
 IRAI-18 pronto novamente para revisão independente após fechar a lacuna OHLC. Captura diária das 17:56 permanece habilitada.
+---
+
+author: @codex
+created: 2026-07-16 05:07
+---
+NO-GO do reviewer aceito. Reabrindo para corrigir offset sazonal no fallback e exigir fechamento consistente das fontes locais usadas para outcome antes de selecionar o bundle.
 ---
 <!-- COMMENTS:END -->

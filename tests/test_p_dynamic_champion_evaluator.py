@@ -48,6 +48,78 @@ def test_status_exige_barra_real_ate_1750_brt():
     assert status["last_operational_brt"] == "17:50"
 
 
+def test_captura_usa_offset_sazonal_quando_documento_local_nao_informa_fuso(tmp_path):
+    """Em janeiro, 22:55 no eixo Tickmill corresponde a 17:55 BRT (+5h)."""
+    public = tmp_path / "public.json"
+    candidate = tmp_path / "v2.json"
+    output = tmp_path / "report.json"
+    captures = tmp_path / "captures"
+    rows = [_row("2026-01-15T22:55:00Z", 60.0)]
+    public.write_text(json.dumps(rows), encoding="utf-8")
+    candidate.write_text(json.dumps(rows), encoding="utf-8")
+
+    capture_main([
+        "--public-source", str(public),
+        "--skip-local-api",
+        "--candidate", f"v2={candidate}",
+        "--capture-dir", str(captures),
+        "--output-json", str(output),
+    ])
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    with open(os.path.join(report["capture_bundle"], "manifest.json"), encoding="utf-8") as source:
+        manifest = json.load(source)
+    assert manifest["session"]["brt_offset_h"] == 5
+    assert manifest["session"]["closed"] is True
+    assert manifest["session"]["sources"]["v2"]["last_operational_brt"] == "17:55"
+
+
+def test_captura_e_loader_rejeitam_outcome_local_sem_fechamento(tmp_path):
+    public = tmp_path / "public.json"
+    candidate = tmp_path / "v2.json"
+    output = tmp_path / "report.json"
+    captures = tmp_path / "captures"
+    public.write_text(
+        json.dumps([_row("2026-07-16T23:55:00Z", 60.0)]), encoding="utf-8"
+    )
+    candidate.write_text(
+        json.dumps({
+            "brt_offset_h": 6,
+            "series": [_row("2026-07-16T23:30:00Z", 60.0)],
+        }),
+        encoding="utf-8",
+    )
+
+    capture_main([
+        "--public-source", str(public),
+        "--skip-local-api",
+        "--candidate", f"v2={candidate}",
+        "--capture-dir", str(captures),
+        "--output-json", str(output),
+    ])
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    with open(os.path.join(report["capture_bundle"], "manifest.json"), encoding="utf-8") as source:
+        manifest = json.load(source)
+    sessions, audit = load_ledger_sessions(captures)
+
+    assert manifest["session"]["sources"]["miqueias"]["closed"] is True
+    assert manifest["session"]["sources"]["v2"]["closed"] is False
+    assert manifest["session"]["closed"] is False
+    assert sessions == []
+    assert audit["incomplete_bundles"] == 1
+
+    # Defesa em profundidade: mesmo um manifesto antigo/corrompido que alegue
+    # fechamento não pode fazer o loader aceitar o outcome parcial.
+    manifest["session"]["closed"] = True
+    with open(os.path.join(report["capture_bundle"], "manifest.json"), "w", encoding="utf-8") as destination:
+        json.dump(manifest, destination)
+    sessions, audit = load_ledger_sessions(captures)
+    assert sessions == []
+    assert audit["invalid_bundles"] == 1
+    assert "fontes sem fechamento operacional: v2" in audit["invalid_reasons"][0]
+
+
 def test_captura_cria_manifest_preserva_envelope_e_tolera_gex_ausente(tmp_path):
     public_path = tmp_path / "miqueias.json"
     v1_path = tmp_path / "v1.json"
