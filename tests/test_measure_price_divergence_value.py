@@ -122,7 +122,7 @@ def test_run_do_pacote_z_usa_direction_of_e_limitations_proprios():
             return [_snap(0, 100.0, z_compra_val=100.0)] + [
                 _snap(j, 100.0 + j * 5.0) for j in range(1, 25)
             ]
-        yield compute
+        yield compute, None
 
     with patch.object(psv, "candidate_sessions", lambda db, target, limit: _FakeCandidates), \
          patch.object(psv, "chronological_replay", fake_replay):

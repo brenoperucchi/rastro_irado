@@ -87,6 +87,8 @@ from scripts.measure_pair_signal_value import (
     COMMON_LIMITATIONS,
     FORWARD_HORIZONS,
     MIN_EVENTS_FOR_GATE,
+    POINT_IN_TIME_LIMITATIONS,
+    RETROSPECTIVE_ONLY_LIMITATION,
     _real_snapshots,
     run,
     _print_report,
@@ -134,14 +136,11 @@ def _intersection_direction(snap) -> Optional[str]:
     return None
 
 
-LIMITATIONS = [
-    "C1-a (calibração in-sample) na interseção: herda os dois mecanismos "
-    "já documentados nos itens 1 e 2 — contaminação via `p_up` (cesta "
-    "selecionada por acurácia/R², pesos/sigmas/calibração logística "
-    "refeitos sobre TODO o histórico em `scripts/calibrate_universal.py`) "
-    "E via `target_div_sigma` (`scripts/calc_sigmas.py`, também sobre todo "
-    "o histórico disponível). A interseção exige AMBOS os markers "
-    "alinhados, então os dois vieses se somam, não se cancelam.",
+# EXTRA_LIMITATIONS não depende do modo — sobre semântica de campo do
+# relatório e sobre a garantia de causalidade da interseção em si (que vale
+# tanto no braço retrospectivo quanto no point-in-time, já que nenhum dos
+# dois muda o gating de bar_may_be_forming).
+EXTRA_LIMITATIONS = [
     "A definição de interseção usada aqui (`pair_signal == price_diverge_dir` "
     "na primeira barra alinhada) foi CONGELADA antes de rodar ou olhar "
     "qualquer resultado — não houve otimização de janela/definição "
@@ -152,12 +151,31 @@ LIMITATIONS = [
     "Este script depende de `candidate_sessions()` já excluir "
     "incondicionalmente a sessão mais recente/potencialmente parcial antes "
     "de qualquer sessão chegar aqui — ver docstring do módulo.",
-] + COMMON_LIMITATIONS + [
     "by_pair_factor no relatório reflete qual fator do Pair Signal estava "
     "ativo no momento do evento de interseção — aqui SIM é o fator "
     "relevante (a interseção exige o Pair Signal alinhado), diferente do "
     "caso do marker Z isolado (item 2), onde era só metadado incidental.",
 ]
+
+# C1-a herda os 2 mecanismos já documentados nos itens 1 e 2 — só relevante
+# no modo RETROSPECTIVO (default); no modo --point-in-time, um único
+# pit_schedule.apply_for_session() por sessão já decontamina AMBOS os
+# mecanismos ao mesmo tempo (pair_signal e price_diverge_dir do mesmo
+# target vêm do mesmo engine.models[slug] recalibrado) — substituído por
+# POINT_IN_TIME_LIMITATIONS (ver main()).
+C1A_LIMITATIONS = [
+    "C1-a (calibração in-sample) na interseção: herda os dois mecanismos "
+    "já documentados nos itens 1 e 2 — contaminação via `p_up` (cesta "
+    "selecionada por acurácia/R², pesos/sigmas/calibração logística "
+    "refeitos sobre TODO o histórico em `scripts/calibrate_universal.py`) "
+    "E via `target_div_sigma` (`scripts/calc_sigmas.py`, também sobre todo "
+    "o histórico disponível). A interseção exige AMBOS os markers "
+    "alinhados, então os dois vieses se somam, não se cancelam.",
+]
+
+LIMITATIONS = (
+    C1A_LIMITATIONS + COMMON_LIMITATIONS + [RETROSPECTIVE_ONLY_LIMITATION] + EXTRA_LIMITATIONS
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -177,6 +195,9 @@ def parse_args() -> argparse.Namespace:
                          help="Amostra mínima (agregado 'all') pra não rotular o alvo "
                               "INCONCLUSIVO (default: %(default)s, docs/plans/"
                               "2026-07-13-irai-tactical-layer-win-wdo.md §7.3).")
+    parser.add_argument("--point-in-time", action="store_true",
+                         help="Calibração point-in-time (achado C1-a) em vez dos pesos/cesta "
+                              "atuais de produção — ver scripts/pit_calibration.py.")
     parser.add_argument("--output-json", default=None)
     args = parser.parse_args()
     if args.target:
@@ -190,9 +211,17 @@ def main() -> int:
     print(f"Alvos: {args.targets} · limite de sessões: {args.limit} · bootstrap: {args.bootstrap} "
           f"· burn-in: {args.burn_in_sessions} sessões · mínimo p/ gate: {args.min_events_for_gate} eventos")
     print("Definição de interseção CONGELADA antes de olhar resultados — ver docstring deste módulo.")
+    pit_schedule = None
+    limitations = LIMITATIONS
+    if args.point_in_time:
+        import scripts.pit_calibration as pit_calibration
+        print("Modo POINT-IN-TIME ativo (achado C1-a) — construindo schedule de calibração...")
+        pit_schedule = pit_calibration.build_schedule(args.db, args.targets)
+        limitations = POINT_IN_TIME_LIMITATIONS + COMMON_LIMITATIONS + EXTRA_LIMITATIONS
     report = run(args.db, args.targets, args.limit, args.bootstrap, args.burn_in_sessions,
-                 direction_of=_intersection_direction, limitations=LIMITATIONS,
-                 preprocess=_mark_intersection, min_events_for_gate=args.min_events_for_gate)
+                 direction_of=_intersection_direction, limitations=limitations,
+                 preprocess=_mark_intersection, min_events_for_gate=args.min_events_for_gate,
+                 pit_schedule=pit_schedule)
     _print_report(report)
     if args.output_json:
         with open(args.output_json, "w", encoding="utf-8") as f:

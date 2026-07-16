@@ -69,6 +69,8 @@ from scripts.measure_pair_signal_value import (
     BOOTSTRAP_ITERATIONS,
     COMMON_LIMITATIONS,
     FORWARD_HORIZONS,
+    POINT_IN_TIME_LIMITATIONS,
+    RETROSPECTIVE_ONLY_LIMITATION,
     run,
     _print_report,
 )
@@ -86,16 +88,21 @@ def _divergence_direction(snap) -> Optional[str]:
     return None
 
 
-# Limitações — 2 itens de C1-a próprios do marker Z (mecanismo de
-# contaminação diferente do Pair Signal, ver docstring do módulo, corrigida
-# via /codex-r job relay-mrmta8qe-g59z0c) + COMMON_LIMITATIONS (idênticas às
-# de measure_pair_signal_value.py: custo, Kalman encadeado, MFE/MAE só
-# fechamento, burn-in, comparações múltiplas, replay retrospectivo != OOS) +
-# 1 item específico sobre a semântica de by_pair_factor neste script.
-# Sempre incluídas no relatório de saída (JSON e texto), nunca uma leitura
-# do número deve tratar isto como confirmação de edge econômico sem essas
-# ressalvas.
-LIMITATIONS = [
+# EXTRA_LIMITATIONS não depende do modo (retrospectivo vs. point-in-time) —
+# é sobre a semântica de um campo do relatório, não sobre calibração.
+EXTRA_LIMITATIONS = [
+    "by_pair_factor no relatório reflete qual fator do PAIR SIGNAL estava "
+    "ativo no momento do evento de divergência Z — é metadado descritivo "
+    "(o Pair e o Z podem estar ativos ao mesmo tempo sem relação causal "
+    "entre si), não o fator que disparou este evento.",
+]
+
+# 2 itens de C1-a próprios do marker Z (mecanismo de contaminação diferente
+# do Pair Signal, ver docstring do módulo, corrigida via /codex-r job
+# relay-mrmta8qe-g59z0c) — só relevantes no modo RETROSPECTIVO (default);
+# no modo --point-in-time são substituídos por POINT_IN_TIME_LIMITATIONS
+# (ver main()).
+C1A_LIMITATIONS = [
     "C1-a (calibração in-sample) pro marker Z, lado P_up: quem depende de "
     "`p_up` é a direção discreta `price_diverge_dir` (não `price_diverge_z` "
     "em si, que é só o z-score do retorno contra `target_div_sigma`) — mas "
@@ -110,12 +117,14 @@ LIMITATIONS = [
     "em `market_bars` (sem filtro de data) e aplicado retroativamente a "
     "cada sessão do replay — uma segunda fonte de contaminação in-sample "
     "independente da de `p_up`.",
-] + COMMON_LIMITATIONS + [
-    "by_pair_factor no relatório reflete qual fator do PAIR SIGNAL estava "
-    "ativo no momento do evento de divergência Z — é metadado descritivo "
-    "(o Pair e o Z podem estar ativos ao mesmo tempo sem relação causal "
-    "entre si), não o fator que disparou este evento.",
 ]
+
+# Sempre incluídas no relatório de saída (JSON e texto), nunca uma leitura
+# do número deve tratar isto como confirmação de edge econômico sem essas
+# ressalvas.
+LIMITATIONS = (
+    C1A_LIMITATIONS + COMMON_LIMITATIONS + [RETROSPECTIVE_ONLY_LIMITATION] + EXTRA_LIMITATIONS
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,6 +139,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--burn-in-sessions", type=int, default=DEFAULT_BURN_IN_SESSIONS,
                          help="Nº de sessões iniciais replayadas p/ esquentar o Kalman "
                               "encadeado, mas excluídas da medição (default: %(default)s).")
+    parser.add_argument("--point-in-time", action="store_true",
+                         help="Calibração point-in-time (achado C1-a) em vez dos pesos/cesta "
+                              "atuais de produção — ver scripts/pit_calibration.py.")
     parser.add_argument("--output-json", default=None)
     args = parser.parse_args()
     if args.target:
@@ -144,8 +156,16 @@ def main() -> int:
           f"· burn-in: {args.burn_in_sessions} sessões")
     print("Kalman encadeado cronologicamente entre sessões (achado C1-b) — mesma metodologia "
           "de scripts/measure_pair_signal_value.py, ver docstring deste módulo.")
+    pit_schedule = None
+    limitations = LIMITATIONS
+    if args.point_in_time:
+        import scripts.pit_calibration as pit_calibration
+        print("Modo POINT-IN-TIME ativo (achado C1-a) — construindo schedule de calibração...")
+        pit_schedule = pit_calibration.build_schedule(args.db, args.targets)
+        limitations = POINT_IN_TIME_LIMITATIONS + COMMON_LIMITATIONS + EXTRA_LIMITATIONS
     report = run(args.db, args.targets, args.limit, args.bootstrap, args.burn_in_sessions,
-                 direction_of=_divergence_direction, limitations=LIMITATIONS)
+                 direction_of=_divergence_direction, limitations=limitations,
+                 pit_schedule=pit_schedule)
     _print_report(report)
     if args.output_json:
         with open(args.output_json, "w", encoding="utf-8") as f:

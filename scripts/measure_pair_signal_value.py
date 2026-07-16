@@ -167,9 +167,13 @@ def _make_capturing_kalman(base_cls):
 def chronological_replay(db_path: str, *, kalman_cls=KalmanFilterWrapper):
     """Como `readonly_engine` de measure_d1_inflation.py, mas o estado do
     Kalman ENCADEIA entre sessões na ordem em que a função devolvida é
-    chamada, em vez de reiniciar frio a cada sessão. Yields uma função
-    `compute(session_date, target) -> list[IRAISnapshot]`; chame-a em
-    ordem cronológica estritamente crescente por target.
+    chamada, em vez de reiniciar frio a cada sessão. Yields `(compute,
+    instance)`: `compute(session_date, target) -> list[IRAISnapshot]`
+    (chame-a em ordem cronológica estritamente crescente por target) e
+    `instance`, o IRAIEngine subjacente — exposto pra permitir injetar
+    calibração point-in-time em memória (scripts/pit_calibration.py,
+    achado C1-a) ANTES de cada `compute()`, sem nunca reconstruir o
+    engine (o que reiniciaria o encadeamento do Kalman do zero).
 
     `kalman_cls` é injetável só pra teste (evita depender do pykalman real,
     ausente no ambiente Linux de dev) — produção sempre usa o default."""
@@ -202,7 +206,7 @@ def chronological_replay(db_path: str, *, kalman_cls=KalmanFilterWrapper):
                 }
             return snapshots
 
-        yield compute
+        yield compute, instance
 
 
 # ── Extração de eventos + medição forward ───────────────────────────────────
@@ -394,7 +398,8 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
         *, direction_of: Optional[Callable] = None,
         limitations: Optional[list] = None,
         preprocess: Optional[Callable] = None,
-        min_events_for_gate: int = MIN_EVENTS_FOR_GATE) -> dict:
+        min_events_for_gate: int = MIN_EVENTS_FOR_GATE,
+        pit_schedule=None) -> dict:
     """`direction_of`/`limitations` default ao Pair Signal (marker `P`) —
     scripts/measure_price_divergence_value.py e
     scripts/measure_intersection_value.py reusam esta função passando as
@@ -403,24 +408,37 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
     após `compute()` de cada sessão (antes da extração de eventos) — usado
     por measure_intersection_value.py pra estampar os campos sintéticos que
     seu `direction_of` lê (não há campo pronto no engine pra "interseção",
-    diferente de pair_compra/z_compra_val)."""
+    diferente de pair_compra/z_compra_val).
+
+    `pit_schedule` (scripts/pit_calibration.py::PitSchedule), se dado,
+    injeta calibração point-in-time em memória ANTES de cada `compute()`
+    (achado C1-a) — sessões anteriores ao 1º cutoff do schedule ainda são
+    replayadas (aquecem o Kalman, igual ao burn-in) mas ficam de fora da
+    medição, contadas separadamente em `sessions_before_first_pit_cutoff`."""
     direction_of = direction_of or _pair_direction
     report: dict = {"targets": {}}
     for target in targets:
         candidates = candidate_sessions(db_path, target, limit)
         is_b3 = target in ("WIN$N", "WDO$N")
         outcomes: list[TradeOutcome] = []
-        with chronological_replay(db_path) as compute:
+        sessions_before_first_pit_cutoff = 0
+        with chronological_replay(db_path) as (compute, instance):
             for idx, date in enumerate(candidates.dates):  # já ordenado ascendente
+                pit_valid = True
+                if pit_schedule is not None:
+                    pit_valid = pit_schedule.apply_for_session(instance, target, date)
                 snapshots = compute(date, target)
                 if not snapshots:
                     continue
                 if preprocess is not None:
                     preprocess(snapshots)
-                if idx < burn_in_sessions:
+                if not pit_valid:
+                    sessions_before_first_pit_cutoff += 1
+                if idx < burn_in_sessions or not pit_valid:
                     # Sessão ainda replayada (o Kalman precisa esquentar pra
                     # sessão seguinte encadear corretamente), mas seus
-                    # eventos não entram na medição — estado ainda frio.
+                    # eventos não entram na medição — estado ainda frio, ou
+                    # ainda sem calibração point-in-time válida.
                     continue
                 outcomes.extend(extract_trade_outcomes(
                     date, target, snapshots, is_b3, direction_of=direction_of))
@@ -435,6 +453,9 @@ def run(db_path: str, targets: Iterable[str], limit: int, iterations: int,
             "sessions_discarded": len(candidates.discarded),
             "sessions_burn_in": min(burn_in_sessions, len(candidates.dates)),
             "cost_points": TARGET_COST_POINTS.get(target, 0.0),
+            "pit_mode": pit_schedule is not None,
+            "sessions_before_first_pit_cutoff": sessions_before_first_pit_cutoff,
+            "pit_cutoffs_used": pit_schedule.cutoffs_used(target) if pit_schedule is not None else None,
             "by_direction": {},
         }
         for label, subset in by_direction.items():
@@ -548,11 +569,6 @@ COMMON_LIMITATIONS = [
     "correção pra comparações múltiplas (ex: Bonferroni implícito); é mais "
     "informativo olhar CONSISTÊNCIA do sinal ao longo de vários horizontes/ "
     "direções do que qualquer `***` isolado.",
-    "Sem calibração point-in-time (ver ressalva C1-a específica de cada "
-    "marker acima), isto é sempre um REPLAY RETROSPECTIVO com os parâmetros "
-    "ATUAIS de produção aplicados a todo o histórico — não um teste "
-    "out-of-sample no sentido estrito, mesmo quando a janela de replay "
-    "cobre anos anteriores à calibração mais recente.",
     "candidate_sessions() (scripts/measure_d1_inflation.py) só valida que a "
     "ÚLTIMA barra de uma sessão histórica bate com o horário de fechamento "
     "esperado — não valida contagem mínima de barras nem gaps internos. "
@@ -564,7 +580,47 @@ COMMON_LIMITATIONS = [
     "antes de confiar em quebras por ano/período de janelas expandidas.",
 ]
 
-LIMITATIONS = [
+# Só se aplica ao modo RETROSPECTIVO (default) — no modo point-in-time
+# (--point-in-time) esta ressalva seria falsa, por isso fica fora de
+# COMMON_LIMITATIONS e é montada separadamente em LIMITATIONS/main().
+RETROSPECTIVE_ONLY_LIMITATION = (
+    "Sem calibração point-in-time (ver ressalva C1-a específica de cada "
+    "marker acima), isto é sempre um REPLAY RETROSPECTIVO com os parâmetros "
+    "ATUAIS de produção aplicados a todo o histórico — não um teste "
+    "out-of-sample no sentido estrito, mesmo quando a janela de replay "
+    "cobre anos anteriores à calibração mais recente."
+)
+
+# Ressalvas do modo --point-in-time (achado C1-a, fechado via
+# scripts/pit_calibration.py) — substituem C1A_LIMITATIONS +
+# RETROSPECTIVE_ONLY_LIMITATION quando pit_schedule está ativo. Ver
+# docstring de pit_calibration.py pro desenho completo (revisado por 3
+# pareceres independentes: deep-reasoner, fable-reasoner, codex).
+POINT_IN_TIME_LIMITATIONS = [
+    "Modo point-in-time (achado C1-a): a cesta de fatores é FIXA e forçada "
+    "(scripts/pit_calibration.py::FIXED_BASKETS — história longa, sem "
+    "iShares, mesma cesta de scripts/run_walkforward_macro.sh) em vez da "
+    "cesta real de produção em cada momento histórico. Necessário pro "
+    "encadeamento do Kalman (achado C1-b) sobreviver às trocas de "
+    "calibração — engine.py:685 só reaproveita o estado quando a "
+    "assinatura da cesta não muda entre sessões. Isso remove o viés de "
+    "seleção retrospectiva da cesta e dos pesos/sigmas/calibração "
+    "logística (recalibrados a cada cutoff, só com dados <= cutoff), mas "
+    "mede o marker sobre uma cesta SUBSTITUTA — não é a cesta exata que "
+    "apareceu no dashboard historicamente. Contagens de eventos, "
+    "identidade do fator ativo e by_pair_factor mudam de universo em "
+    "relação ao braço retrospectivo (ver §11.3/11.4 do plano).",
+    "Sessões anteriores ao 1º cutoff do schedule point-in-time (ver "
+    "`sessions_before_first_pit_cutoff` no relatório) não têm calibração "
+    "válida ainda — são replayadas (aquecem o Kalman) mas excluídas da "
+    "medição, além do burn-in padrão.",
+    "Mesmo point-in-time por DATA DE MERCADO, isto não reconstrói "
+    "perfeitamente 'a informação disponível naquele dia': dados "
+    "posteriormente corrigidos/completados no banco (backfill) podem "
+    "aparecer em cutoffs antigos como se sempre tivessem estado lá.",
+]
+
+C1A_LIMITATIONS = [
     "C1-a (calibração in-sample): a cesta de fatores é selecionada por "
     "scripts/calibrate_universal.py num split treino/holdout temporal "
     "(holdout fica fora da escolha), mas os pesos finais usados em "
@@ -574,7 +630,9 @@ LIMITATIONS = [
     "retrospectivamente, favorecer um fator cujo resíduo pareça mais "
     "mean-reverting contra o alvo do que seria observável em tempo real — "
     "um viés otimista que este script NÃO isola nem quantifica.",
-] + COMMON_LIMITATIONS
+]
+
+LIMITATIONS = C1A_LIMITATIONS + COMMON_LIMITATIONS + [RETROSPECTIVE_ONLY_LIMITATION]
 
 
 def _print_report(report: dict) -> None:
@@ -584,6 +642,12 @@ def _print_report(report: dict) -> None:
               f"de burn-in excluídas da medição), custo={t['cost_points']} pts ===")
         print(f"  GATE: {t['gate_verdict']} (mínimo {t['min_events_for_gate']} eventos, "
               f"docs/plans/2026-07-13-irai-tactical-layer-win-wdo.md §7.3)")
+        if t["pit_mode"]:
+            cutoffs = t["pit_cutoffs_used"] or []
+            span = f"{cutoffs[0]}..{cutoffs[-1]}" if cutoffs else "NENHUM cutoff viável"
+            print(f"  PONTO-NO-TEMPO (achado C1-a): {len(cutoffs)} cutoffs ({span}), "
+                  f"{t['sessions_before_first_pit_cutoff']} sessões pré-1º-cutoff excluídas "
+                  "(cesta fixa, ver scripts/pit_calibration.py)")
         for label, d in t["by_direction"].items():
             if d["n_events"] == 0:
                 print(f"  [{label}] nenhum evento")
@@ -627,6 +691,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--burn-in-sessions", type=int, default=DEFAULT_BURN_IN_SESSIONS,
                          help="Nº de sessões iniciais replayadas p/ esquentar o Kalman "
                               "encadeado, mas excluídas da medição (default: %(default)s).")
+    parser.add_argument("--point-in-time", action="store_true",
+                         help="Calibração point-in-time (achado C1-a) em vez dos pesos/cesta "
+                              "atuais de produção — ver scripts/pit_calibration.py. Cesta FIXA "
+                              "forçada (história longa, sem iShares); --limit precisa ser grande "
+                              "o bastante pra alcançar o 1º cutoff do schedule.")
     parser.add_argument("--output-json", default=None)
     args = parser.parse_args()
     if args.target:
@@ -640,7 +709,16 @@ def main() -> int:
     print(f"Alvos: {args.targets} · limite de sessões: {args.limit} · bootstrap: {args.bootstrap} "
           f"· burn-in: {args.burn_in_sessions} sessões")
     print("Kalman encadeado cronologicamente entre sessões (achado C1-b) — ver docstring do módulo.")
-    report = run(args.db, args.targets, args.limit, args.bootstrap, args.burn_in_sessions)
+    pit_schedule = None
+    limitations = LIMITATIONS
+    if args.point_in_time:
+        import scripts.pit_calibration as pit_calibration
+        print("Modo POINT-IN-TIME ativo (achado C1-a) — construindo schedule de calibração "
+              "(cesta fixa, sem busca por força bruta)...")
+        pit_schedule = pit_calibration.build_schedule(args.db, args.targets)
+        limitations = POINT_IN_TIME_LIMITATIONS + COMMON_LIMITATIONS
+    report = run(args.db, args.targets, args.limit, args.bootstrap, args.burn_in_sessions,
+                 pit_schedule=pit_schedule, limitations=limitations)
     _print_report(report)
     if args.output_json:
         with open(args.output_json, "w", encoding="utf-8") as f:

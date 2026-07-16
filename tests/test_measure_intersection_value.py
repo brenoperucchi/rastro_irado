@@ -186,7 +186,7 @@ def test_run_usa_preprocess_e_direction_of_da_intersecao():
                 _snap(j, 100.0 + j * 5.0, pair_signal="buy", price_diverge_dir="buy")
                 for j in range(1, 25)
             ]
-        yield compute
+        yield compute, None
 
     with patch.object(psv, "candidate_sessions", lambda db, target, limit: _FakeCandidates), \
          patch.object(psv, "chronological_replay", fake_replay):

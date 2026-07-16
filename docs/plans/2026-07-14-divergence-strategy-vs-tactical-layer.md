@@ -484,6 +484,50 @@ dado o número de comparações testadas.
 
 Itens 4-6 da lista do início desta seção continuam pendentes.
 
+### 11.5 Calibração point-in-time (achado C1-a) — decisão de design, 2026-07-16
+
+Antes de continuar aprofundando os itens 4-6, o usuário escolheu atacar diretamente a
+limitação C1-a (calibração in-sample, presente em toda medição de §11.1-11.4): os 3 scripts
+usavam os pesos/cesta ATUAIS de produção aplicados retroativamente a todo o histórico do
+replay.
+
+Três pareceres independentes foram consultados EM PARALELO, sem que nenhum visse a resposta
+dos outros — `deep-reasoner`, `fable-reasoner` e `codex` (via agentrelay) — sobre como
+desenhar a correção. `deep-reasoner` e `fable-reasoner` convergiram **independentemente** na
+mesma arquitetura central (replay cronológico único, calibração trocada em memória dentro do
+loop de sessões via `apply_calibration`, sem nunca reconstruir o `IRAIEngine`); `codex`
+discordou num ponto específico:
+
+- **Cesta**: `deep-reasoner`/`fable-reasoner` recomendaram cesta FIXA e forçada entre todos
+  os cutoffs (mesma cesta de história longa de `scripts/run_walkforward_macro.sh`); `codex`
+  recomendou rebuscar a cesta por fold (força-bruta a cada cutoff). O motivo decisivo pra
+  escolher a cesta fixa é mecânico, não estilístico: `backend/irai/engine.py:685` só
+  reaproveita o estado do Kalman encadeado (achado C1-b) quando a assinatura da cesta
+  (`backend/db.py::factor_signature`) não muda entre sessões — uma cesta rebuscada por fold
+  quebraria esse encadeamento silenciosamente a cada fronteira (~4 em 4 meses), destruindo
+  a máquina de C1-b que já levou 3 rodadas de revisão pra ficar correta. O preço aceito e
+  documentado: os números point-in-time medem os markers sobre uma cesta SUBSTITUTA (sem
+  iShares, fatores diferentes da cesta real de produção em cada momento histórico), não a
+  cesta exata que apareceu no dashboard historicamente.
+- **Cadência**: quarters entre ~2022-12-30 e 2026-02-27 (`DEFAULT_CUTOFFS` em
+  `scripts/pit_calibration.py`) — mais cedo que o início do walk-forward macro (2023-10-25),
+  já que a cesta fixa tem dados suficientes ~1 ano antes.
+- **`target_div_sigma`**: calculado inline (`div_sigma_as_of`), replicando exatamente
+  `scripts/calc_sigmas.py`, sem modificar esse script.
+
+Implementação em `scripts/pit_calibration.py` (novo) + mudanças cirúrgicas em
+`scripts/measure_pair_signal_value.py` (`chronological_replay` expõe o engine subjacente;
+`run()` ganha `pit_schedule=`) — commit pendente. Revisado via `/codex-r` (job
+`relay-mrmxnu54-iqj8x5`) antes de rodar contra produção: veredito inicial "NO-GO" apontou 2
+problemas reais (arredondamento do sigma divergindo de `calc_sigmas.py`, e cold-restart do
+Kalman no instante em que a calibração point-in-time "liga" pela primeira vez) — ambos
+corrigidos: `div_sigma_as_of` agora arredonda a 4 casas (igual à produção); `apply_for_session`
+agora aplica a calibração do 1º cutoff disponível retroativamente às sessões de aquecimento
+(nunca medidas), eliminando a troca de cesta na fronteira.
+
+O braço "retrospectivo" (calibração atual de produção, já medido em §11.3/11.4) continua
+disponível e não é substituído — o braço point-in-time roda em paralelo, como comparação.
+
 ## 12. Estado verdadeiro do projeto em 2026-07-14
 
 ### Concluído

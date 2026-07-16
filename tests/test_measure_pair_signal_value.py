@@ -290,7 +290,7 @@ def test_chronological_replay_encadeia_estado_entre_sessoes():
     c.commit()
     c.close()
 
-    with chronological_replay(db, kalman_cls=_FakeKalman) as compute:
+    with chronological_replay(db, kalman_cls=_FakeKalman) as (compute, _instance):
         snaps_dia1 = compute("2026-07-10", tp.TARGET)
         reais_dia1 = [s for s in snaps_dia1 if not s.is_ghost]
         assert reais_dia1, "fixture inválida: sem barras reais no dia 1"
@@ -346,7 +346,7 @@ def test_run_exclui_eventos_das_sessoes_de_burn_in():
             return [_snap(0, 100.0, pair_compra=100.0)] + [
                 _snap(j, 100.0 + j * 5.0) for j in range(1, 25)
             ]
-        yield compute
+        yield compute, None
 
     with patch.object(psv, "candidate_sessions", lambda db, target, limit: _FakeCandidates), \
          patch.object(psv, "chronological_replay", fake_replay):
@@ -373,7 +373,7 @@ def _fake_run_com_n_sessoes(dates, *, min_events_for_gate=None):
             return [_snap(0, 100.0, pair_compra=100.0)] + [
                 _snap(j, 100.0 + j * 5.0) for j in range(1, 25)
             ]
-        yield compute
+        yield compute, None
 
     kwargs = {}
     if min_events_for_gate is not None:
