@@ -210,7 +210,7 @@ apresentava palpite não-checado com a mesma cara de fato.
 | Bloco | Status | Evidência |
 |---|---|---|
 | **Parte 1 — migração de charts** (Recharts → lightweight-charts, 5/5) | ✅ | bundle 752→419 kB; `recharts` removido (`eae208e`) |
-| **GEX — gamma walls IBOV → WIN$N e WDO$N** | ✅ | serviço ponta a ponta + timer systemd (`4dd1273`…`39e6822`) |
+| **GEX — gamma walls IBOV → WIN$N e WDO$N** | ✅ | WIN usa bundle oficial B3/BCB causal com paridade live↔backfill; WDO preserva BDI/MT5; timer 09:10 após primeira M5 (`3155c98`) |
 | **Pacote A — destravar o V2** (Fases 2, 3, 4 + B1) | ✅ **3/3** | `01e0b9b`, `28ecf2a`, `e5f513f`, `82e3727`, `ceec25d` |
 | **Pacote B — markers de sinal por barra** | ✅ | `e235c03` + fixes `0236f19`, `97f2cb7` |
 | **Fase 8.2 — corridas de request** | ✅ *(bônus)* | guard de `reqId` em `fetchSeries`, dentro de `39e6822` |

@@ -1,11 +1,11 @@
 ---
 id: IRAI-22
 title: Construir histórico causal GEX/Gamma Flip/Walls do WIN
-status: Review
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 18:16'
+updated_date: '2026-07-16 18:20'
 labels:
   - gex
   - validation
@@ -44,7 +44,7 @@ Disponibilizar histórico diário point-in-time suficiente dos níveis GEX do WI
 - [x] #6 O GEX LIVE do WIN usa exclusivamente o bundle oficial B3 fechado de D (SPRE, PE, IR, SPRD) e Selic causal, sem BDI parcial nem MT5 session_close
 - [x] #7 Para a mesma sessão e os mesmos arquivos/hashes, o caminho LIVE produz níveis, validade e walls idênticos ao backfill oficial
 - [x] #8 Ausência ou inconsistência do bundle oficial falha fechado, preserva proveniência auditável e não publica snapshot novo como ativo
-- [ ] #9 A automação de produção tenta somente sessões causais, notifica a API após persistência e é validada no Python Windows/Ryzen
+- [x] #9 A automação de produção tenta somente sessões causais, notifica a API após persistência e é validada no Python Windows/Ryzen
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -138,10 +138,15 @@ created: 2026-07-16 18:16
 ---
 Checagem operacional read-only no Ryzen/WSL após GO: `/home/brenoperucchi/Devs/rastro_irado` existe e está em f2484e5; unit instalado usa exatamente esse WorkingDirectory/ExecStart. Service está inactive/dead por ser oneshot; timer está active/waiting e ainda agenda 07:30 (template novo 09:10 ainda não foi implantado). Portanto o alerta de path do reviewer está refutado para produção; resta somente aprovação humana para commit/push/pull, instalar/reloadar o timer 09:10 e executar validação live.
 ---
+
+created: 2026-07-16 18:20
+---
+Deploy concluído com autorização humana. Commit 3155c98 em origin/main e checkout Ryzen. Timer instalado para 09:10 BRT. Execução manual WIN exit 0: sessão fonte 2026-07-15, 97 strikes, valid=true, Max 191863.354452, Flip 186364.052641, Min 171805.827309; API /api/irai/gex active=true. Collector e API ativos após execução; cache invalidado por notify_update.
+---
 <!-- COMMENTS:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Pipeline histórico causal GEX do WIN implementado e validado. Usa arquivos oficiais B3 EOD de D somente na próxima sessão WIN, Selic causal, hashes/proveniência, persistência idempotente e auditoria sem recomputação. A base produtiva agora possui 200 sessões homogêneas e 73 GEX válidos, suficiente para iniciar a contagem exploratória de eventos da regra manual, ainda sem promoção econômica.
+GEX WIN unificado no bundle oficial causal B3/BCB (SPRE, PE, IR, SPRD e Selic), com uma única implementação compartilhada por LIVE e backfill, validação cross-date, hashes determinísticos e fail-closed. Seleção source/effective usa sessões WIN M5 observadas, inclusive pós-feriado; timer roda às 09:10 BRT. WDO permanece BDI/MT5. Engineering-pipeline High-risk: regressões test-first, duas remediações e reviewer final GO sem P0-P3. Publicado em 3155c98 e validado no Ryzen/Windows: 44/44 worker, 72 testes relacionados, execução live valid=true (Max 191863, Flip 186364, Min 171806), API active=true, collector/API/timer ativos.
 <!-- SECTION:FINAL_SUMMARY:END -->
