@@ -1,11 +1,11 @@
 ---
 id: IRAI-19
 title: Especificar regra manual do Miqueias para WIN
-status: Review
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 04:47'
+updated_date: '2026-07-16 05:03'
 labels:
   - tactical
   - win
@@ -34,6 +34,7 @@ Transformar a leitura discricionária descrita pelo Miqueias em uma especificaç
 - [x] #3 GEX, MID, Pair e NWE têm papéis separados e sem dupla contagem
 - [x] #4 Alvo, stop, cooldown e invalidação são explicitados ou marcados como decisão pendente do Miqueias
 - [x] #5 A especificação não promove setup nem altera código de produção
+- [ ] #6 Auditoria identifica a implementação GEX já existente no IRAI e registra que o repositório público miqueiasa1/wdowin_pairtrading, main 7fce5bc e histórico público, não contém código GEX localizável
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -63,3 +64,13 @@ região/direção/inclinação como dado descritivo, sem esse evento.
 Nenhum código foi alterado. Nenhum item do NF-01 (docs/plans/2026-07-14-divergence-
 strategy-vs-tactical-layer.md §11, itens 4-6) foi continuado nesta tarefa.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: @codex
+created: 2026-07-16 05:03
+---
+Revisão encontrou erro factual nas §6.7/§7: `backend/workers/gex_worker.py` já integra GEX ponta a ponta desde os commits 4dd1273..39e6822. Para WIN, usa OI BDI/B3 + metadados/prêmio/spot/settle do MT5 XP, BSM/IV, netGEX call-put, flip cumulativo e conversão IBOV→WIN. O repo público indicado pelo Miqueias (`miqueiasa1/wdowin_pairtrading`, main 7fce5bc, tag e 17 commits) foi varrido sem encontrar GEX/Gamma/opções/strike/OI. Corrigir o documento, separar código confirmado do IRAI da alegação ainda não verificável sobre o repo externo e formular pedido de caminho/commit ao Miqueias.
+---
+<!-- COMMENTS:END -->

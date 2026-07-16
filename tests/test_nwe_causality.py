@@ -650,6 +650,13 @@ def test_engine_enriquece_snapshots_com_nwe(tmp_path, target, target_source, ses
     assert real[-1].atr_available is True
     assert real[-1].distance_to_nwe_atr is not None
 
+    # OHLC da própria barra precisa sobreviver à engine. ``win_open`` é a
+    # abertura da sessão e não pode ser sobrecarregado com essa finalidade.
+    assert real[0].win_bar_open == prices[0]
+    assert real[0].win_high == prices[0] + 3
+    assert real[0].win_low == prices[0] - 3
+    assert real[0].win_current == prices[0]
+
 
 def test_engine_ghost_pre_mercado_repete_ultimo_valor_causal(tmp_path):
     """Fatores globais negociam antes da abertura B3 → barras ghost de pré-mercado

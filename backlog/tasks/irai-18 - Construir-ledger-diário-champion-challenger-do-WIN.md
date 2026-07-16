@@ -1,11 +1,11 @@
 ---
 id: IRAI-18
 title: Construir ledger diário champion-challenger do WIN
-status: Review
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 04:51'
+updated_date: '2026-07-16 05:01'
 labels:
   - validation
   - win
@@ -23,6 +23,10 @@ modified_files:
   - tests/test_p_dynamic_champion_evaluator.py
   - scripts/systemd/rastro-irado-p-dynamic-ledger.service
   - scripts/systemd/rastro-irado-p-dynamic-ledger.timer
+  - backend/irai/engine.py
+  - backend/api/main.py
+  - tests/test_api_nwe_contract.py
+  - tests/test_nwe_causality.py
 priority: high
 type: feature
 ordinal: 18000
@@ -62,6 +66,8 @@ Auditoria no Ryzen5WSL: `/api/irai/series` já expõe P, WIN, Pair, NWE, VWAP e 
 Implementação local concluída: bundle versionado e atômico preserva documentos brutos Miqueias/v1/v2, manifesto de fechamento BRT, GEX/walls/mid_wall e relatório de paridade. Avaliador agrega Brier/log-loss dentro da sessão, inclui baseline climatológico causal Beta(1,1), exige 60 sessões comuns e bootstrap pareado IC95% contra todos os concorrentes; o gate tático permanece NOT_EVALUATED. Timer diário proposto para 17:56 BRT, somente leitura das APIs.
 
 Validação produtiva no Ryzen5WSL após pull de `4495ac2`: 16 testes específicos passaram; serviço oneshot executou com status 0; bundle real preservou envelopes v1/v2, WIN/Pair/NWE, GEX ativo com 17 walls e 16 mid_walls. Captura pré-mercado foi corretamente marcada `closed=false`; avaliador retornou `INCONCLUSIVE`, 0/60 sessões, `quality_winner=null` e gate tático `NOT_EVALUATED`. Timer diário `rastro-irado-p-dynamic-ledger.timer` habilitado para Mon..Fri 17:56 BRT. Suíte mantida: `pytest -q tests --ignore=tests/test_measure_tactical_gate3.py` → 207 passed, 16 skipped. `pytest -q` global não é utilizável neste Linux porque coleta scripts/archive que exigem MT5 e um teste que exige sklearn.
+
+Correção pós-revisão: a engine e `/api/irai/series` agora expõem `win_bar_open`, `win_high` e `win_low` por barra real, preservando `win_open` como abertura da sessão. Regressão permanente falhou antes com AttributeError em `IRAISnapshot.win_bar_open` e passou após a correção; o teste do bundle confirma persistência dos três campos.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -71,5 +77,11 @@ author: @codex
 created: 2026-07-16 04:51
 ---
 Implementação pronta para revisão. A primeira sessão fechada será capturada automaticamente hoje às 17:56 BRT; nenhuma promoção ocorrerá antes de 60 sessões comuns e IC95% favorável.
+---
+
+author: @codex
+created: 2026-07-16 04:59
+---
+Revisão pós-implementação encontrou lacuna no AC #2: o bundle preserva win_open (abertura da sessão) e win_current (close), mas a API ainda não expõe abertura da barra, máxima e mínima. Sem OHLC por barra não é possível medir MFE/MAE nem simular alvo/stop. Tarefa reaberta para corrigir o contrato com regressão permanente.
 ---
 <!-- COMMENTS:END -->

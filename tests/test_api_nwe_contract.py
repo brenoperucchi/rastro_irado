@@ -217,6 +217,26 @@ def test_series_expoe_15_campos_nwe_por_barra():
     json.dumps(data["series"], allow_nan=False)
 
 
+def test_series_expoe_ohlc_real_da_barra_sem_reusar_abertura_da_sessao():
+    """O ledger tático precisa do OHLC M5 real para medir MFE/MAE e stops.
+
+    ``win_open`` continua sendo a âncora de abertura da sessão. O contrato
+    aditivo ``win_bar_open``/``win_high``/``win_low`` expõe a barra corrente
+    sem alterar essa semântica histórica.
+    """
+    if _skip_if_no_fastapi():
+        return
+    data = _run_series(target="US30", source="tickmill", session_start_h=0,
+                       session="2026-01-15", n_bars=3)
+
+    first = next(bar for bar in data["series"] if not bar["is_ghost"])
+    assert first["win_open"] == 30000.0
+    assert first["win_bar_open"] == 30000.0
+    assert first["win_high"] == 30003.0
+    assert first["win_low"] == 29997.0
+    assert first["win_current"] == 30000.0
+
+
 def test_overview_expoe_nwe_causal_sem_slope_ambiguo():
     if _skip_if_no_fastapi():
         return

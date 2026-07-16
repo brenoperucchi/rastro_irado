@@ -69,6 +69,9 @@ def test_captura_cria_manifest_preserva_envelope_e_tolera_gex_ausente(tmp_path):
                         _row(
                             "2026-07-16T23:50:00Z",
                             probability,
+                            win_bar_open=108.0,
+                            win_high=112.0,
+                            win_low=107.0,
                             pair_z=2.1,
                             pair_signal="sell",
                             nwe_center_price=109.0,
@@ -108,6 +111,9 @@ def test_captura_cria_manifest_preserva_envelope_e_tolera_gex_ausente(tmp_path):
     assert stored_v2["brt_offset_h"] == 6
     assert stored_v2["series"][0]["pair_z"] == 2.1
     assert stored_v2["series"][0]["nwe_center_price"] == 109.0
+    assert stored_v2["series"][0]["win_bar_open"] == 108.0
+    assert stored_v2["series"][0]["win_high"] == 112.0
+    assert stored_v2["series"][0]["win_low"] == 107.0
 
 
 def test_captura_preserva_gex_mid_e_walls(tmp_path):

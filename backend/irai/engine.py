@@ -134,6 +134,11 @@ class IRAISnapshot:
     win_return: float = 0.0
     win_open: float = 0.0
     win_current: float = 0.0
+    # OHLC da barra alvo. ``win_open`` acima permanece a abertura/âncora da
+    # sessão por compatibilidade; não reutilizar esse campo como bar open.
+    win_bar_open: Optional[float] = None
+    win_high: Optional[float] = None
+    win_low: Optional[float] = None
     stale_factors: list = field(default_factory=list)
     # Cumulative Delta
     bar_delta: float = 0.0
@@ -889,6 +894,16 @@ class IRAIEngine:
             )
             snap.timestamp = ts.isoformat()
             snap.is_ghost = is_ghost_bar
+            if not is_ghost_bar:
+                snap.win_bar_open = (
+                    float(row["open"]) if row.get("open") is not None else None
+                )
+                snap.win_high = (
+                    float(row["high"]) if row.get("high") is not None else None
+                )
+                snap.win_low = (
+                    float(row["low"]) if row.get("low") is not None else None
+                )
 
             # Barra crua p/ o NWE (mesmo eixo já alinhado). Ghost/pré-mercado não
             # têm OHLC/volume reais — passam None e ficam de fora do kernel/ATR/VWAP.
