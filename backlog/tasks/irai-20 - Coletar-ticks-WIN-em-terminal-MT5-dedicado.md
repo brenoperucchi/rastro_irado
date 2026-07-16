@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 06:20'
-updated_date: '2026-07-16 06:31'
+updated_date: '2026-07-16 06:33'
 labels:
   - collection
   - mt5
@@ -27,11 +27,11 @@ ordinal: 20000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Terminal E:/MetaTradersWSL/wdowin/ira_ticks/terminal64.exe inicia obrigatoriamente com /portable e é validado antes da coleta
+- [x] #1 Terminal E:/MetaTradersWSL/wdowin/ira_ticks/terminal64.exe inicia obrigatoriamente com /portable e é validado antes da coleta
 - [ ] #2 WIN$N e o contrato WIN vigente têm ticks bid/ask/last/volume/time_msc/flags capturados sem interferir no coletor M5
-- [ ] #3 Ticks são deduplicados e persistidos em Parquet particionado por data e símbolo com estado recuperável após restart
-- [ ] #4 Serviço systemd --user dedicado fica instalado, habilitado e monitorável por status/health
-- [ ] #5 Testes permanentes e validação no sshWSL são registrados
+- [x] #3 Ticks são deduplicados e persistidos em Parquet particionado por data e símbolo com estado recuperável após restart
+- [x] #4 Serviço systemd --user dedicado fica instalado, habilitado e monitorável por status/health
+- [x] #5 Testes permanentes e validação no sshWSL são registrados
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -49,3 +49,13 @@ Implementação local test-first concluída: descoberta do contrato vigente, cur
 
 O requisito de performance foi incorporado antes do deploy: polling continua em 2s para não perder mercado, mas a persistência acumula até 5 minutos ou 250 mil linhas e só então grava Parquet ZSTD atômico. Isso evita milhares de arquivos minúsculos e deixa o dataset adequado a DuckDB/Polars. O cursor persistido só avança após o flush; queda do processo reconsulta o buffer perdido.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: @codex
+created: 2026-07-16 06:33
+---
+Deploy no Ryzen5WSL concluído em 2026-07-16 03:31 BRT. Runtime Windows Python 3.12 recebeu pyarrow 25.0.0. Validações: pytest -q tests/test_tick_collector.py => 8 passed no Windows; coleta --once conectou ao terminal dedicado, validou terminal_data_path=E:\MetaTradersWSL\wdowin\ira_ticks, descobriu WINQ26 e encerrou limpa; rastro-irado-win-ticks.service foi linked/enabled/started e está active/running; rastro-irado-collector.service permaneceu active/running. Health status=ok para WIN$N e WINQ26. Como a B3 está fechada, received/written=0 é esperado; AC #2 e o fechamento da tarefa aguardam o primeiro tick real da próxima sessão, sem backfill massivo artificial.
+---
+<!-- COMMENTS:END -->
