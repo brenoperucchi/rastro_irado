@@ -172,7 +172,7 @@ def _with_engine(db_path, fn):
         api_main.get_connection = orig_conn
 
 
-def _run_series(*, target, source, session_start_h, session, n_bars):
+def _run_series(*, target, source, session_start_h, session, n_bars, version="v2"):
     with tempfile.TemporaryDirectory() as tmp:
         db_path = os.path.join(tmp, "irai.db")
         _seed(db_path, target=target, source=source,
@@ -180,7 +180,7 @@ def _run_series(*, target, source, session_start_h, session, n_bars):
 
         def call():
             resp = asyncio.run(api_main.irai_series(
-                session_date=session, target=target, version="v2"))
+                session_date=session, target=target, version=version))
             return json.loads(resp.body) if hasattr(resp, "body") else resp
         return _with_engine(db_path, call)
 
@@ -227,7 +227,7 @@ def test_series_expoe_ohlc_real_da_barra_sem_reusar_abertura_da_sessao():
     if _skip_if_no_fastapi():
         return
     data = _run_series(target="US30", source="tickmill", session_start_h=0,
-                       session="2026-01-15", n_bars=3)
+                       session="2026-01-15", n_bars=3, version="v1")
 
     first = next(bar for bar in data["series"] if not bar["is_ghost"])
     assert first["win_open"] == 30000.0
