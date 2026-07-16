@@ -10,6 +10,7 @@ mantém esta etapa independente do replay caro e torna o recorte auditável.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import random
@@ -199,7 +200,11 @@ def build_sensitivity(
 
 
 def _load(path: str) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    artifact = Path(path)
+    if artifact.suffix == ".gz":
+        with gzip.open(artifact, "rt", encoding="utf-8") as stream:
+            return json.load(stream)
+    return json.loads(artifact.read_text(encoding="utf-8"))
 
 
 def parse_args() -> argparse.Namespace:
@@ -234,4 +239,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

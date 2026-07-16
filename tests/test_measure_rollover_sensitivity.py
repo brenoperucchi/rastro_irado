@@ -1,11 +1,13 @@
 """Specs da sensibilidade NF-01 com/sem sessões de rollover."""
 
+import gzip
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.measure_rollover_sensitivity import build_sensitivity
+from scripts.measure_rollover_sensitivity import _load, build_sensitivity
 
 
 def _event(session_date: str, direction: str, value: float) -> dict:
@@ -91,3 +93,11 @@ def test_rejeita_auditoria_de_outro_ativo():
     else:
         raise AssertionError("auditoria WDO não pode ser aplicada a eventos WIN")
 
+
+def test_carrega_artefato_nf01_compactado_em_gzip(tmp_path):
+    artifact = _nf01([_event("2026-04-20", "buy", 10.0)])
+    path = tmp_path / "nf01_pit.json.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        json.dump(artifact, stream)
+
+    assert _load(str(path)) == artifact
