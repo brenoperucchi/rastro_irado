@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 17:23'
+updated_date: '2026-07-16 18:16'
 labels:
   - gex
   - validation
@@ -15,9 +15,14 @@ references:
   - docs/plans/2026-07-16-regra-manual-miqueias-win.md
   - docs/plans/2026-07-13-irai-plano-consolidado.md
 modified_files:
-  - .gitignore
+  - backend/gex_official.py
+  - backend/workers/gex_worker.py
   - scripts/backfill_gex_history.py
+  - scripts/systemd/rastro-irado-gex.timer
+  - tests/test_gex_worker.py
   - tests/test_backfill_gex_history.py
+  - docs/plans/2026-07-16-regra-manual-miqueias-win.md
+  - docs/plans/2026-07-10-frontend-migration-status-and-forward-plan.md
 priority: high
 type: feature
 ordinal: 22000
@@ -36,12 +41,16 @@ Disponibilizar histórico diário point-in-time suficiente dos níveis GEX do WI
 - [x] #3 Backfill é idempotente, não sobrescreve silenciosamente dados válidos e reporta sessões aceitas, rejeitadas e motivos
 - [x] #4 Cobertura e qualidade do histórico são auditadas por sessão antes de autorizar backtest da regra manual
 - [x] #5 Testes permanentes e comando reproduzível no Windows/Ryzen são registrados
+- [x] #6 O GEX LIVE do WIN usa exclusivamente o bundle oficial B3 fechado de D (SPRE, PE, IR, SPRD) e Selic causal, sem BDI parcial nem MT5 session_close
+- [x] #7 Para a mesma sessão e os mesmos arquivos/hashes, o caminho LIVE produz níveis, validade e walls idênticos ao backfill oficial
+- [x] #8 Ausência ou inconsistência do bundle oficial falha fechado, preserva proveniência auditável e não publica snapshot novo como ativo
+- [ ] #9 A automação de produção tenta somente sessões causais, notifica a API após persistência e é validada no Python Windows/Ryzen
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Usar exclusivamente os arquivos históricos oficiais da B3 por pregão: preço/posição por série, prêmio de referência de opções e índice IBOV; não depender de símbolos expirados do MT5. 2. Criar parsers streaming e testes com fixtures mínimas para OI IBOV, metadados/prêmio, fechamento IBOV e escolha causal do contrato WIN mais líquido. 3. Montar o input de `compute_gex` sem alterar sua fórmula, registrando hashes/arquivos, source_session_date e effective_session_date (próximo pregão WIN); EOD de D só pode valer em D+1. 4. Implementar backfill idempotente com cache local, política explícita de skip/replace e relatório por data. 5. Rodar testes locais, publicar, executar no Windows/Ryzen sobre uma janela piloto e então ampliar conforme cobertura/qualidade observada; auditar válidos, inválidos e causas antes de liberar qualquer backtest da regra manual.
+Correção High-risk do pipeline LIVE GEX WIN: (1) criar regressões permanentes que reproduzam a divergência BDI/MT5 versus bundle oficial e provem paridade determinística LIVE↔backfill; (2) extrair/reutilizar uma única implementação de aquisição oficial B3/BCB, evitando dependência circular; (3) mudar somente a perna WIN do worker para SPRE+PE+IR+SPRD e Selic causal, mantendo WDO/MT5 isolado; (4) persistir hashes, source/effective dates, contagens e motivos de falha, sem publicar dados misturados; (5) validar testes locais e Windows, executar dry-run/paridade real em 15/07, revisar independentemente; (6) após aprovação humana para commit/deploy, publicar, atualizar timer se necessário, executar em produção com backup e verificar API/serviços.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -93,6 +102,41 @@ Frontend follow-up: botão GEX agora usa disabled={!gex.active}; o payload é re
 created: 2026-07-16 17:23
 ---
 Gate GEX corrigido após comparação com MagicGEX/Miqueias. Causa: valid exigia GammaMax > GammaFlip > GammaMin, mas Flip é zero do acumulado e Max/Min são extremos pontuais; não há essa invariante. Regressão test-first falhou com snapshot líquido/próximo e Flip fora dos extremos, depois passou. Commits a13a547/7f12db0. Produção: WIN 15/07 agora valid=true e API active=true (Min 171874, Max 182497, Flip 186421); API/collector ativos. Histórico reclassificado com backup quick_check=ok: 200 sessões, 73→119 válidas, 46 promovidas, 0 rebaixadas; 81 inválidas (50 sem Flip, 31 Flip distante). Auditoria gex_history_200_audit.json regenerada. Validação Windows: 60 passed.
+---
+
+created: 2026-07-16 17:43
+---
+Pipeline engineering iniciado. Risco High: cálculo financeiro + fonte EOD + runtime. Evidência: LIVE BDI=663 séries/596 enriquecidas vs bundle oficial=789; 144 séries oficiais ausentes, 18 extras, 56 OI divergentes. MT5 session_close é sessão corrente. Timer 07:30 falhou com IBOV=None em 15/07 e 16/07. Correção deve unificar LIVE e backfill no bundle oficial causal.
+---
+
+created: 2026-07-16 17:53
+---
+Implementação High-risk pronta para revisão independente, sem commit/deploy. Regressão test-first test_live_e_backfill_compartilham_exatamente_o_mesmo_snapshot_oficial falhou no código antigo porque o backfill não chamava o snapshot compartilhado e agora passa. A perna WIN usa exclusivamente SPRE/PE/IR/SPRD + Selic causal no módulo backend/gex_official.py; LIVE e backfill chamam compute_official_win_snapshot. Bundle ausente/incompleto levanta antes de save/notify; WIN não inicializa MT5 nem consulta BDI. WDO permanece no fluxo BDI/MT5 existente. Validação local: 60 passed GEX; 302 passed/18 skipped excluindo test_measure_tactical_gate3.py (ambiente sem sklearn); py_compile e git diff --check verdes. Prova real read-only 2026-07-15: 789 OI, 2338 prêmios, 789 joins; Max 191863.354452, Flip 186364.052641, Min 171805.827309, valid=true, Selic 14,15%, quatro hashes persistidos; backfill dry-run retornou exatamente os mesmos níveis. AC9 aguarda Python Windows/Ryzen e revisão.
+---
+
+created: 2026-07-16 18:02
+---
+Engineering-pipeline remediation round 1 após NO-GO: P1 seleção temporal corrigido — LIVE calcula exatamente o D-1 útil esperado, pulando somente fim de semana; bundle ausente/inconsistente nessa data falha fechado e nunca recua para sessão anterior. Feriado em dia útil é deliberadamente fail-closed, sem inferência de calendário. P1 integridade corrigido — parse_official_bundle exige source_session_date, valida nomes e data interna CreDtAndTm de SPRE/SPRD/IR e cabeçalho AAAAMMDD do PE; mismatch de um ou quatro arquivos é rejeitado antes do cálculo. P2 determinismo corrigido — retrieved_at/mtime removido da proveniência autoritativa; nome+SHA256 tornam meta determinística. Testes novos cobrem D-1 ausente sem fallback, segunda->sexta, adulteração interna >=50 séries, divergência cross-file, mtime e integração real LIVE/backfill com bundle ZIP compartilhado, cálculo/walls/meta/hashes persistidos idênticos. Validação: 66 related passed; 308 passed/18 skipped excluindo test_measure_tactical_gate3.py por sklearn ausente; py_compile e diff-check verdes. Bundle real 15/07 continua 789/2338/789 e níveis 191863.354452/186364.052641/171805.827309 valid=true, com quatro hashes. Sem commit/push/deploy; aguarda re-review e Windows/Ryzen.
+---
+
+created: 2026-07-16 18:11
+---
+Engineering-pipeline remediation round 2 (última): REV-001/REV-005 tratados test-first. Removida toda heurística weekday. Automático exige que effective=today já exista como WIN/M5 no ledger e escolhe source=MAX sessão WIN observada anterior; pós-feriado 08/09 resolve exatamente 04/09. Bundle dessa fonte é a única tentativa; falha não recua. Em feriado/today sem WIN, falha antes de download/cálculo/save.  exige próxima sessão WIN observada e confirma que a data pedida é exatamente a sessão anterior; sem próxima sessão não cai em today. Timer versionado mudou 07:30 para 09:10:00 America/Sao_Paulo, após primeira M5; nenhum deploy externo. WDO preservado. Regressões novas falharam antes por ausência de  e passam agora. Validação: 72 related passed; 314 passed/18 skipped excluindo sklearn ausente; py_compile/diff-check verdes; teste manual test_gex_worker 44/44. systemd-analyze aceitou a sintaxe do timer, mas o service reportou caminho absoluto de produção inexistente neste checkout (), limitação preexistente. Documentação de fonte e horário atualizada. Sem commit/push/deploy; AC9 continua aguardando Windows/Ryzen e re-review final.
+---
+
+created: 2026-07-16 18:11
+---
+Correção do comentário 11, que perdeu trechos por interpretação do shell: automático exige effective=today observado como WIN$N/M5 e source=MAX sessão WIN anterior. O modo --date exige próxima sessão observada, sem fallback para today. As regressões falharam antes por ausência da função _observed_win_session_pair. O aviso de systemd-analyze foi somente o caminho absoluto preexistente do serviço: /home/brenoperucchi/Devs/rastro_irado.
+---
+
+created: 2026-07-16 18:14
+---
+Engineering-pipeline High-risk concluído em código após 2 rodadas de remediação. Reviewer final: GO; REV-001..REV-005 fixed, sem novos P0-P3. LIVE WIN resolve effective/source exclusivamente pelo ledger WIN M5, valida o bundle oficial exato sem fallback, rejeita datas cross-file, usa provenance determinística e mantém paridade LIVE↔backfill; WDO preservado. Timer versionado alterado de 07:30 para 09:10 BRT após primeira M5. Validação: 72 testes relacionados; 314 passed/18 skipped na suíte ampla (sklearn ausente); worker manual 44/44; py_compile e diff-check. AC9 permanece aberto até aprovação humana para commit/deploy e validação do unit no Ryzen/Windows. Residual operacional: confirmar/corrigir path instalado, pois o template aponta /home/brenoperucchi/Devs/rastro_irado e este checkout está em /home/brenoperucchi/Devs/miqueias/rastro_irado. Nenhum commit/push/deploy foi realizado.
+---
+
+created: 2026-07-16 18:16
+---
+Checagem operacional read-only no Ryzen/WSL após GO: `/home/brenoperucchi/Devs/rastro_irado` existe e está em f2484e5; unit instalado usa exatamente esse WorkingDirectory/ExecStart. Service está inactive/dead por ser oneshot; timer está active/waiting e ainda agenda 07:30 (template novo 09:10 ainda não foi implantado). Portanto o alerta de path do reviewer está refutado para produção; resta somente aprovação humana para commit/push/pull, instalar/reloadar o timer 09:10 e executar validação live.
 ---
 <!-- COMMENTS:END -->
 

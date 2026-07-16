@@ -35,7 +35,8 @@ import os
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -701,6 +702,10 @@ def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():
 
     orig = dict(
         load_mt5_terminal=gw.load_mt5_terminal, get_connection=gw.get_connection,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
         last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
@@ -710,6 +715,10 @@ def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():
     )
     gw.load_mt5_terminal = fake_load_mt5_terminal
     gw.get_connection = fake_get_connection
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = _raise("bundle oficial indisponível pro WIN$N nesse teste")
     gw.last_session_with_oi = fake_last_session_with_oi
     gw.fetch_bdi_oi = fake_fetch_bdi_oi
     gw.fetch_bdi_option_data = fake_fetch_bdi_option_data
@@ -737,64 +746,247 @@ def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():
         "WDO$N tinha que salvar mesmo com WIN$N tendo explodido", calls["save"])
     assert calls["notify"] == 1, "saved_any (não exit_code==0) tem que gatear o notify_update"
     assert calls["fetch_bdi_oi"] == ["DOL"], (
-        "WIN$N devia reusar os oi_rows de last_session_with_oi (sem --date) -- "
-        "só a perna DOL deveria chamar fetch_bdi_oi", calls["fetch_bdi_oi"])
+        "WIN$N não pode consultar BDI; só a perna DOL chama fetch_bdi_oi",
+        calls["fetch_bdi_oi"])
     assert calls["load_mt5"] == 1 and calls["get_conn"] == 1, (
         "uma sessão MT5 e uma conexão DB compartilhadas entre os targets", calls)
 
 
-def test_main_com_date_explicito_refaz_fetch_bdi_oi_do_ibov():
-    """Com --date (reprocessamento histórico), NÃO existe um last_session_with_oi()
-    já rodado pra reusar -- o WIN$N tem que chamar fetch_bdi_oi(asset='IBOV')
-    de propósito, e trust_session_close tem que ir False (session_close só
-    bate com o pregão do OI no fluxo automático, não em reprocessamento)."""
-    calls = {"fetch_bdi_oi": [], "trust_session_close": None}
-
-    class _FakeMT5Handle:
-        def shutdown(self):
-            pass
+def test_main_com_date_explicito_win_usa_oficial_sem_bdi_nem_mt5():
+    calls = {"official": [], "bdi": 0, "mt5": 0}
 
     class _FakeConn:
+        def execute(self, sql, *_args):
+            class _Cursor:
+                def __init__(self, row):
+                    self.row = row
+                def fetchone(self):
+                    return self.row
+            if "MIN(date" in sql:
+                return _Cursor(("2026-06-02",))
+            if "MAX(date" in sql:
+                return _Cursor(("2026-06-01",))
+            return _Cursor((1,))
         def close(self):
             pass
 
-    def fake_fetch_bdi_oi(session_date, asset="IBOV"):
-        calls["fetch_bdi_oi"].append(asset)
-        return [{"ticker": f"{asset}FAKE", "oi": 50.0}]
+    result = {
+        "gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+        "gamma_max": 1.0, "gamma_min": -1.0, "gamma_flip": 0.0,
+        "spot": 1.0, "future_settle": 1.0, "conv_factor": 1.0,
+        "n_strikes": 10, "liquid_strikes": 10, "valid": True, "walls": [],
+        "meta": {},
+    }
+    orig = dict(
+        get_connection=gw.get_connection,
+        load_mt5_terminal=gw.load_mt5_terminal,
+        fetch_bdi_oi=gw.fetch_bdi_oi,
+        _official_rate=gw._official_rate,
+        _validate_official_source=gw._validate_official_source,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        argv=sys.argv,
+    )
+    gw.get_connection = lambda db: _FakeConn()
+    gw.load_mt5_terminal = lambda: calls.__setitem__("mt5", calls["mt5"] + 1)
+    gw.fetch_bdi_oi = lambda *a, **k: calls.__setitem__("bdi", calls["bdi"] + 1)
+    gw._official_rate = lambda source, cache: (source, 0.149)
+    gw._validate_official_source = lambda source, cache: source
+    gw.compute_official_win_snapshot = lambda *a, **k: (calls["official"].append(a) or result)
+    sys.argv = ["gex_worker.py", "--date", "2026-06-01", "--target", "WIN$N", "--dry-run"]
+    try:
+        assert gw.main() == 0
+    finally:
+        _restore_main_env(orig)
 
-    def fake_fetch_ibov_mt5_leg(mt5, oi_rows, session_date, trust_session_close=True):
-        calls["trust_session_close"] = trust_session_close
-        return {"spot": 130000.0, "win_settle": 131500.0, "options": []}
+    assert calls["official"] == [("2026-06-01", "2026-06-02", 0.149, "2026-06-01")]
+    assert calls["bdi"] == 0
+    assert calls["mt5"] == 0
 
-    def fake_compute_gex(spot, future_settle, options, session_date, **kw):
-        return None  # netGEX insuficiente -- só nos interessa o que foi chamado antes
+
+def test_main_win_bundle_oficial_inconsistente_falha_fechado_sem_publicar():
+    calls = {"save": 0, "notify": 0, "mt5": 0}
+
+    class _FakeConn:
+        def execute(self, sql, *_args):
+            class _Cursor:
+                def __init__(self, row):
+                    self.row = row
+                def fetchone(self):
+                    return self.row
+            if "MIN(date" in sql:
+                return _Cursor(("2026-07-16",))
+            if "MAX(date" in sql:
+                return _Cursor(("2026-07-15",))
+            return _Cursor((1,))
+        def close(self):
+            pass
 
     orig = dict(
-        load_mt5_terminal=gw.load_mt5_terminal, get_connection=gw.get_connection,
-        fetch_bdi_oi=gw.fetch_bdi_oi, fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg,
-        compute_gex=gw.compute_gex, argv=sys.argv,
+        get_connection=gw.get_connection,
+        load_mt5_terminal=gw.load_mt5_terminal,
+        _official_rate=gw._official_rate,
+        _validate_official_source=gw._validate_official_source,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        save=gw.save,
+        urlopen=gw.urllib.request.urlopen,
+        argv=sys.argv,
     )
-    gw.load_mt5_terminal = lambda: _FakeMT5Handle()
     gw.get_connection = lambda db: _FakeConn()
-    gw.fetch_bdi_oi = fake_fetch_bdi_oi
-    gw.fetch_ibov_mt5_leg = fake_fetch_ibov_mt5_leg
-    gw.compute_gex = fake_compute_gex
-    sys.argv = ["gex_worker.py", "--date", "2026-06-01", "--target", "WIN$N"]
+    gw.load_mt5_terminal = lambda: calls.__setitem__("mt5", calls["mt5"] + 1)
+    gw._official_rate = lambda source, cache: (source, 0.149)
+    gw._validate_official_source = lambda source, cache: source
+    gw.compute_official_win_snapshot = _raise("bundle oficial incompleto")
+    gw.save = lambda *a, **k: calls.__setitem__("save", calls["save"] + 1)
+    gw.urllib.request.urlopen = lambda *a, **k: calls.__setitem__("notify", calls["notify"] + 1)
+    sys.argv = ["gex_worker.py", "--date", "2026-07-15", "--target", "WIN$N"]
     try:
-        gw.main()
+        assert gw.main() == 1
     finally:
-        for k, v in orig.items():
-            if k == "argv":
-                sys.argv = v
-            else:
-                setattr(gw, k, v)
+        _restore_main_env(orig)
 
-    assert calls["fetch_bdi_oi"] == ["IBOV"], (
-        "com --date, WIN$N tem que buscar oi_rows explicitamente (sem "
-        "last_session_with_oi pra reusar)", calls["fetch_bdi_oi"])
-    assert calls["trust_session_close"] is False, (
-        "com --date (reprocessamento histórico), trust_session_close tem que "
-        "ser False -- session_close só é confiável no fluxo automático")
+    assert calls == {"save": 0, "notify": 0, "mt5": 0}
+
+
+def test_fonte_live_nao_recua_para_bundle_antigo_quando_d1_falha():
+    calls = []
+    original_download = gw.gex_official.download_b3_bundle
+    original_parse = gw.gex_official.parse_official_bundle
+
+    def fake_download(source, cache):
+        calls.append(source)
+        if source == "2026-07-13":
+            raise ValueError("bundle esperado ausente")
+        return {"unexpected": source}
+
+    gw.gex_official.download_b3_bundle = fake_download
+    gw.gex_official.parse_official_bundle = lambda paths, source: {}
+    try:
+        try:
+            gw._validate_official_source("2026-07-13", "/tmp/cache")
+            raise AssertionError("deveria falhar fechado no D-1 esperado")
+        except ValueError as exc:
+            assert "2026-07-13" in str(exc)
+    finally:
+        gw.gex_official.download_b3_bundle = original_download
+        gw.gex_official.parse_official_bundle = original_parse
+
+    assert calls == ["2026-07-13"], calls
+
+
+def test_fonte_causal_de_segunda_feira_e_sexta_anterior():
+    conn = _win_ledger("2026-07-10", "2026-07-13")
+    assert gw._observed_win_session_pair(conn, "2026-07-13") == (
+        "2026-07-10", "2026-07-13",
+    )
+
+
+def _win_ledger(*session_dates):
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE market_bars(symbol TEXT, timeframe TEXT, timestamp_utc TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO market_bars VALUES ('WIN$N','M5',?)",
+        [(f"{session}T09:00:00",) for session in session_dates],
+    )
+    return conn
+
+
+def test_par_causal_pos_feriado_vem_exatamente_do_ledger_win():
+    conn = _win_ledger("2026-09-04", "2026-09-08")
+    assert gw._observed_win_session_pair(conn, "2026-09-08") == (
+        "2026-09-04", "2026-09-08",
+    )
+
+
+def test_sessao_efetiva_sem_barra_win_falha_fechado_como_feriado():
+    conn = _win_ledger("2026-09-04")
+    try:
+        gw._observed_win_session_pair(conn, "2026-09-07")
+        raise AssertionError("feriado sem sessão WIN não pode publicar GEX")
+    except ValueError as exc:
+        assert "sessão WIN efetiva não observada" in str(exc)
+
+
+def test_date_sem_proxima_sessao_observada_nao_cai_em_today():
+    conn = _win_ledger("2026-07-15")
+    assert gw._next_observed_win_session(conn, "2026-07-15") is None
+
+
+def test_main_date_sem_proxima_sessao_nao_calcula_nem_publica():
+    calls = {"compute": 0, "save": 0}
+
+    class _FakeConn:
+        def execute(self, *_args):
+            class _Cursor:
+                @staticmethod
+                def fetchone():
+                    return (None,)
+            return _Cursor()
+        def close(self):
+            pass
+
+    orig = dict(
+        get_connection=gw.get_connection,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        save=gw.save,
+        argv=sys.argv,
+    )
+    gw.get_connection = lambda db: _FakeConn()
+    gw.compute_official_win_snapshot = lambda *a, **k: calls.__setitem__(
+        "compute", calls["compute"] + 1,
+    )
+    gw.save = lambda *a, **k: calls.__setitem__("save", calls["save"] + 1)
+    sys.argv = ["gex_worker.py", "--date", "2026-07-15", "--target", "WIN$N"]
+    try:
+        assert gw.main() == 1
+    finally:
+        _restore_main_env(orig)
+
+    assert calls == {"compute": 0, "save": 0}
+
+
+def test_main_automatico_em_feriado_sem_win_nao_publica():
+    calls = {"validate": 0, "compute": 0, "save": 0}
+
+    class _FakeConn:
+        def execute(self, *_args):
+            class _Cursor:
+                @staticmethod
+                def fetchone():
+                    return None
+            return _Cursor()
+        def close(self):
+            pass
+
+    orig = dict(
+        get_connection=gw.get_connection,
+        _validate_official_source=gw._validate_official_source,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        save=gw.save,
+        argv=sys.argv,
+    )
+    gw.get_connection = lambda db: _FakeConn()
+    gw._validate_official_source = lambda *a: calls.__setitem__(
+        "validate", calls["validate"] + 1,
+    )
+    gw.compute_official_win_snapshot = lambda *a, **k: calls.__setitem__(
+        "compute", calls["compute"] + 1,
+    )
+    gw.save = lambda *a, **k: calls.__setitem__("save", calls["save"] + 1)
+    sys.argv = ["gex_worker.py", "--target", "WIN$N"]
+    try:
+        assert gw.main() == 1
+    finally:
+        _restore_main_env(orig)
+
+    assert calls == {"validate": 0, "compute": 0, "save": 0}
+
+
+def test_timer_gex_roda_apos_primeira_barra_win():
+    timer = Path("scripts/systemd/rastro-irado-gex.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=Mon..Fri *-*-* 09:10:00 America/Sao_Paulo" in timer
+    assert "07:30" not in timer
 
 
 def _raise(msg):
@@ -830,6 +1022,10 @@ def _patch_main_success_env(calls, extra_argv=None):
 
     orig = dict(
         load_mt5_terminal=gw.load_mt5_terminal, get_connection=gw.get_connection,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
         last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
@@ -839,6 +1035,11 @@ def _patch_main_success_env(calls, extra_argv=None):
     )
     gw.load_mt5_terminal = lambda: _FakeMT5Handle()
     gw.get_connection = lambda db: _FakeConn()
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = (
+        lambda *a, **k: fake_result(130000.0, 131500.0))
     gw.last_session_with_oi = lambda max_back=5: (
         "2026-07-13", [{"ticker": "IBOVFAKE", "oi": 100.0}])
     gw.fetch_bdi_oi = lambda session_date, asset="IBOV": [{"ticker": "DOLFAKE", "oi": 50.0}]
@@ -921,6 +1122,10 @@ def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
 
     orig = dict(
         load_mt5_terminal=gw.load_mt5_terminal, get_connection=gw.get_connection,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
         last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
@@ -928,6 +1133,10 @@ def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
     )
     gw.load_mt5_terminal = lambda: _FakeMT5Handle()
     gw.get_connection = lambda db: _FakeConn()
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = _raise("bundle oficial indisponível")
     gw.last_session_with_oi = lambda max_back=5: (
         "2026-07-13", [{"ticker": "IBOVFAKE", "oi": 100.0}])
     gw.fetch_bdi_oi = lambda session_date, asset="IBOV": [{"ticker": "DOLFAKE", "oi": 50.0}]
@@ -984,7 +1193,16 @@ TESTS = [
     test_compute_gex_f_sanity_clamp_none_nao_interfere_no_basis_real_do_ibov,
     test_compute_gex_grid_step_alimenta_o_gate_liquid_strikes,
     test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo,
-    test_main_com_date_explicito_refaz_fetch_bdi_oi_do_ibov,
+    test_main_com_date_explicito_win_usa_oficial_sem_bdi_nem_mt5,
+    test_main_win_bundle_oficial_inconsistente_falha_fechado_sem_publicar,
+    test_fonte_live_nao_recua_para_bundle_antigo_quando_d1_falha,
+    test_fonte_causal_de_segunda_feira_e_sexta_anterior,
+    test_par_causal_pos_feriado_vem_exatamente_do_ledger_win,
+    test_sessao_efetiva_sem_barra_win_falha_fechado_como_feriado,
+    test_date_sem_proxima_sessao_observada_nao_cai_em_today,
+    test_main_date_sem_proxima_sessao_nao_calcula_nem_publica,
+    test_main_automatico_em_feriado_sem_win_nao_publica,
+    test_timer_gex_roda_apos_primeira_barra_win,
     test_main_sucesso_completo_retorna_exit_code_0_e_notifica_uma_vez,
     test_main_dry_run_nao_grava_nem_notifica_mesmo_com_sucesso,
     test_main_ambos_targets_falhando_nao_salva_nem_notifica,

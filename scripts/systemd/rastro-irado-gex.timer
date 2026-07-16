@@ -1,8 +1,11 @@
 [Unit]
-Description=IRAI GEX worker — diário antes da abertura B3 (OI EOD D-1 sai de madrugada)
+Description=IRAI GEX worker — após primeira barra WIN confirmar a sessão efetiva
 
 [Timer]
-OnCalendar=Mon..Fri 07:30
+# O LIVE resolve source/effective pelo ledger WIN. Às 09:10 a barra M5 de
+# 09:00 já deve estar fechada/coletada; em feriado não há barra e o worker
+# falha fechado sem publicar snapshot.
+OnCalendar=Mon..Fri *-*-* 09:10:00 America/Sao_Paulo
 Persistent=true
 Unit=rastro-irado-gex.service
 

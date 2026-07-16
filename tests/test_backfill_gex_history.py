@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -34,7 +35,9 @@ from scripts.backfill_gex_history import (
     migrate_historical_rows_from_live,
     reclassify_history_validity,
     open_backfill_database,
+    process_session,
 )
+from backend import gex_official
 
 
 PRICE_XML = b"""<?xml version="1.0" encoding="utf-8"?>
@@ -395,3 +398,178 @@ def test_politica_idempotente_nao_sobrescreve_valido_silenciosamente(
     existing_valid, candidate_valid, replace, expected,
 ):
     assert decide_persistence(existing_valid, candidate_valid, replace=replace) == expected
+
+
+def test_live_e_backfill_compartilham_exatamente_o_mesmo_snapshot_oficial(monkeypatch, tmp_path):
+    """Regressão da divergência LIVE BDI/MT5 vs. backfill SPRE/PE/IR/SPRD.
+
+    O backfill não pode reconstruir sua própria perna oficial em paralelo ao
+    LIVE: ambos precisam chamar a mesma implementação, para que os mesmos
+    arquivos/hashes/Selic gerem níveis, validade e walls idênticos.
+    """
+    from backend.workers import gex_worker as worker
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_history_schema(conn)
+    expected = {
+        "gamma_max": 191863.0,
+        "gamma_min": 171806.0,
+        "gamma_flip": 186364.0,
+        "gamma_max_ibov": 189885.0,
+        "gamma_min_ibov": 170034.0,
+        "gamma_flip_ibov": 184443.0,
+        "spot": 176010.9,
+        "future_settle": 177844.0,
+        "conv_factor": 1.0104,
+        "n_strikes": 97,
+        "liquid_strikes": 12,
+        "valid": True,
+        "walls": [{"type": "wall", "price": 177000}],
+        "meta": {
+            "source_session_date": "2026-07-15",
+            "effective_session_date": "2026-07-16",
+            "source_files": {
+                name: {"name": name, "sha256": name * 8, "retrieved_at": "2026-07-16T07:00:00Z"}
+                for name in ("equities", "derivatives", "premiums", "index")
+            },
+            "source_counts": {"oi_series": 789, "premium_series": 789, "joined_series": 789},
+            "win_contract": {"ticker": "WINQ26", "settle": 177844.0},
+            "risk_free_source": "BCB SGS 1178",
+            "risk_free_source_date": "2026-07-15",
+            "risk_free": 0.149,
+            "validity_reasons": [],
+            "diagnostic_warnings": [],
+        },
+    }
+    calls = []
+
+    def shared_snapshot(source, effective, risk_free, rate_source, *, cache_dir):
+        calls.append((source, effective, risk_free, rate_source, cache_dir))
+        return expected
+
+    monkeypatch.setattr(worker, "compute_official_win_snapshot", shared_snapshot, raising=False)
+
+    row = process_session(
+        conn,
+        "2026-07-15",
+        "2026-07-16",
+        0.149,
+        "2026-07-15",
+        cache_dir=tmp_path,
+        replace=False,
+        dry_run=False,
+    )
+
+    assert calls == [("2026-07-15", "2026-07-16", 0.149, "2026-07-15", tmp_path)]
+    stored = conn.execute(
+        "SELECT gamma_max, gamma_flip, gamma_min, valid, walls, meta FROM gex_history_levels"
+    ).fetchone()
+    assert tuple(stored[:4]) == (191863.0, 186364.0, 171806.0, 1)
+    assert json.loads(stored[4]) == expected["walls"]
+    assert json.loads(stored[5]) == expected["meta"]
+    assert row["valid"] is True
+
+
+def _bundle_fixture(tmp_path, filename_date="260715", internal_date="2026-07-15", count=50):
+    paths = {
+        "equities": tmp_path / f"SPRE{filename_date}.zip",
+        "derivatives": tmp_path / f"SPRD{filename_date}.zip",
+        "premiums": tmp_path / f"PE{filename_date}.ex_",
+        "index": tmp_path / f"IR{filename_date}.zip",
+    }
+    compact = internal_date.replace("-", "")
+    reports = "".join(
+        f"<PricRpt><TckrSymb>IBOVX{i:03}</TckrSymb><OpnIntrst>100</OpnIntrst></PricRpt>"
+        for i in range(count)
+    )
+    equities = (
+        f"<Document><CreDtAndTm>{internal_date}T20:00:00</CreDtAndTm>{reports}</Document>"
+    ).encode()
+    derivatives = (
+        f"<Document><CreDtAndTm>{internal_date}T20:00:00</CreDtAndTm>"
+        "<PricRpt><TckrSymb>WINQ26</TckrSymb><AdjstdQt>177844</AdjstdQt>"
+        "<RglrTxsQty>100</RglrTxsQty><OpnIntrst>1000</OpnIntrst></PricRpt></Document>"
+    ).encode()
+    index = (
+        f"<Document><CreDtAndTm>{internal_date}T20:00:00</CreDtAndTm>"
+        "<IndxInf><TckrSymb>IBOV</TckrSymb><ClsgPric>176010.9</ClsgPric></IndxInf></Document>"
+    ).encode()
+    premiums = (compact + "\n" + "".join(
+        f"IBOVX{i:03};{'C' if i >= count // 2 else 'V'};E;20260819;"
+        f"{151000 + i * 1000}.0;5000.0;20.0\n"
+        for i in range(count)
+    )).encode("latin-1")
+    for kind, payload in {
+        "equities": equities, "derivatives": derivatives,
+        "premiums": premiums, "index": index,
+    }.items():
+        with zipfile.ZipFile(paths[kind], "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(f"{kind}-{internal_date}.txt", payload)
+    return paths
+
+
+def test_bundle_com_nome_correto_e_data_interna_adulterada_e_rejeitado(tmp_path):
+    paths = _bundle_fixture(tmp_path, internal_date="2020-01-02")
+
+    with pytest.raises(ValueError, match="data.*2020-01-02.*2026-07-15"):
+        gex_official.parse_official_bundle(paths, "2026-07-15")
+
+
+def test_bundle_rejeita_data_divergente_em_apenas_um_dos_quatro_arquivos(tmp_path):
+    paths = _bundle_fixture(tmp_path)
+    with zipfile.ZipFile(paths["index"], "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "index.xml",
+            "<Document><CreDtAndTm>2026-07-14T20:00:00</CreDtAndTm>"
+            "<IndxInf><TckrSymb>IBOV</TckrSymb><ClsgPric>176010.9</ClsgPric>"
+            "</IndxInf></Document>",
+        )
+
+    with pytest.raises(ValueError, match="index=2026-07-14"):
+        gex_official.parse_official_bundle(paths, "2026-07-15")
+
+
+def test_proveniencia_dos_mesmos_bytes_independe_do_mtime(tmp_path):
+    paths = _bundle_fixture(tmp_path)
+    first = gex_official.source_file_provenance(paths)
+    for path in paths.values():
+        os.utime(path, (1_700_000_000, 1_700_000_000))
+    second = gex_official.source_file_provenance(paths)
+
+    assert first == second
+    assert all("retrieved_at" not in item for item in first.values())
+
+
+def test_integracao_live_backfill_com_bundle_real_de_fixture_e_byte_identica(tmp_path):
+    from backend.workers import gex_worker as worker
+
+    source, effective = "2026-07-15", "2026-07-16"
+    cache = tmp_path / "cache"
+    bundle_dir = cache / source
+    bundle_dir.mkdir(parents=True)
+    _bundle_fixture(bundle_dir)
+
+    live = worker.compute_official_win_snapshot(
+        source, effective, 0.1415, source, cache_dir=cache,
+    )
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_history_schema(conn)
+    process_session(
+        conn, source, effective, 0.1415, source,
+        cache_dir=cache, replace=False, dry_run=False,
+    )
+    stored = conn.execute(
+        """SELECT gamma_max, gamma_min, gamma_flip, valid, walls, meta
+           FROM gex_history_levels WHERE source_session_date=?""",
+        (source,),
+    ).fetchone()
+
+    assert tuple(stored[:4]) == (
+        live["gamma_max"], live["gamma_min"], live["gamma_flip"], int(live["valid"]),
+    )
+    assert json.loads(stored[4]) == live["walls"]
+    assert json.loads(stored[5]) == live["meta"]
+    assert len(live["meta"]["source_files"]) == 4
+    assert all(item["sha256"] for item in live["meta"]["source_files"].values())

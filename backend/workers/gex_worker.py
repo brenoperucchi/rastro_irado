@@ -1,13 +1,9 @@
 """IRAI — Worker diário de GEX (Gamma Exposure) das opções do índice IBOV.
 
-Calcula os níveis de gamma walls do WIN$N a partir de dados EOD:
-  1. Open interest por série: API pública do BDI/B3 (arquivos.b3.com.br)
-     POST /bdi/table/OpenPositionsEquities/{d}/{d}/{pág}/1000?sort=TckrSymb
-     (o sort é OBRIGATÓRIO: sem ele a paginação não é estável e gera
-     duplicatas/faltantes — validado contra a consulta em tela da B3).
-  2. Strike/call-put/vencimento/prêmio (D1) e spot IBOV + settle WIN: MT5 XP
-     (as 2396 séries IBOV* existem no terminal; session_interest vem 0,
-     por isso o OI vem do BDI — join por ticker).
+Calcula os níveis de gamma walls do WIN$N a partir do bundle oficial EOD da
+sessão WIN anterior observada no ledger: SPRE (OI), PE (cadastro/prêmio), IR
+(IBOV), SPRD (ajuste WIN) e Selic causal BCB. A perna WIN não usa BDI parcial
+nem ``session_close`` do MT5. A perna WDO preserva o fluxo BDI/MT5 existente.
 
 Metodologia (ver docs/plans e o protótipo scripts/explorations):
   netGEX(K) = Σ_venc [ Γcall(K)·OIcall(K) − Γput(K)·OIput(K) ]   (dealer +call/−put)
@@ -33,6 +29,7 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.db import get_connection, DB_PATH
+from backend import gex_official
 
 R_FREE = 0.1425          # taxa livre de risco a.a. (aprox. DI; refinar depois)
 BDI_TAKE = 1000          # máximo aceito pela API
@@ -479,6 +476,125 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
     }
 
 
+def _official_validity_reasons(result: dict, grid_step: float = GRID_STEP) -> list[str]:
+    reasons = []
+    flip = result.get("gamma_flip_ibov")
+    if flip is None:
+        reasons.append("missing_gamma_flip")
+    elif abs(flip - result["spot"]) >= 15 * grid_step:
+        reasons.append("gamma_flip_too_far_from_spot")
+    if result.get("liquid_strikes", 0) < 8:
+        reasons.append("insufficient_liquid_strikes")
+    return reasons
+
+
+def compute_official_win_snapshot(
+    source_session_date: str,
+    effective_session_date: str,
+    risk_free: float,
+    rate_source_date: str,
+    *,
+    cache_dir=gex_official.DEFAULT_CACHE_DIR,
+) -> dict:
+    """Calcula o snapshot WIN usado, sem divergência, por LIVE e backfill.
+
+    A aquisição é exclusivamente o bundle oficial fechado SPRE/PE/IR/SPRD.
+    Qualquer arquivo ausente/incompleto levanta exceção antes da persistência.
+    """
+    paths = gex_official.download_b3_bundle(source_session_date, cache_dir)
+    bundle = gex_official.parse_official_bundle(paths, source_session_date)
+    result = compute_gex(
+        bundle["spot"],
+        bundle["win"]["settle"],
+        bundle["options"],
+        source_session_date,
+        grid_step=GRID_STEP,
+        risk_free=risk_free,
+        iv_source="b3_reference_premium",
+    )
+    if result is None:
+        raise ValueError("bundle oficial sem strikes suficientes para netGEX")
+
+    validity_reasons = _official_validity_reasons(result)
+    # compute_gex é a autoridade do gate; este espelho torna o motivo auditável
+    # e deve permanecer equivalente ao booleano persistido.
+    if bool(result["valid"]) != (not validity_reasons):
+        raise RuntimeError("gate GEX divergente dos motivos de validade")
+    result["meta"].update({
+        "source_session_date": source_session_date,
+        "effective_session_date": effective_session_date,
+        "available_from": f"{effective_session_date}T00:00:00-03:00",
+        "causal_policy": "B3 EOD D usable only in next WIN session",
+        "risk_free_source": "BCB SGS 1178",
+        "risk_free_source_date": rate_source_date,
+        "risk_free": risk_free,
+        "win_contract": bundle["win"],
+        "source_files": gex_official.source_file_provenance(paths),
+        "source_counts": {
+            key: bundle[key]
+            for key in ("oi_series", "premium_series", "joined_series")
+        },
+        "liquid_strikes": result["liquid_strikes"],
+        "validity_reasons": validity_reasons,
+    })
+    return result
+
+
+def _next_observed_win_session(conn, source_session_date: str) -> str | None:
+    row = conn.execute(
+        """SELECT MIN(date(timestamp_utc)) FROM market_bars
+           WHERE symbol='WIN$N' AND timeframe='M5' AND date(timestamp_utc)>?""",
+        (source_session_date,),
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def _observed_win_session_pair(
+    conn, effective_session_date: str,
+) -> tuple[str, str]:
+    """Resolve source/effective somente pelo ledger WIN observado.
+
+    A sessão efetiva precisa ter ao menos uma M5; a fonte é exatamente a
+    sessão WIN imediatamente anterior, incluindo corretamente feriados.
+    """
+    effective = conn.execute(
+        """SELECT 1 FROM market_bars
+           WHERE symbol='WIN$N' AND timeframe='M5' AND date(timestamp_utc)=?
+           LIMIT 1""",
+        (effective_session_date,),
+    ).fetchone()
+    if effective is None:
+        raise ValueError(
+            f"sessão WIN efetiva não observada no ledger: {effective_session_date}"
+        )
+    previous = conn.execute(
+        """SELECT MAX(date(timestamp_utc)) FROM market_bars
+           WHERE symbol='WIN$N' AND timeframe='M5' AND date(timestamp_utc)<?""",
+        (effective_session_date,),
+    ).fetchone()
+    if previous is None or previous[0] is None:
+        raise ValueError(
+            f"sessão WIN fonte anterior não observada: {effective_session_date}"
+        )
+    return previous[0], effective_session_date
+
+
+def _validate_official_source(source: str, cache_dir) -> str:
+    """Valida exatamente a fonte dada pelo ledger, sem fallback temporal."""
+    try:
+        paths = gex_official.download_b3_bundle(source, cache_dir)
+        gex_official.parse_official_bundle(paths, source)
+    except Exception as exc:
+        raise ValueError(f"bundle oficial esperado {source} indisponível: {exc}") from exc
+    return source
+
+
+def _official_rate(source_session_date: str, cache_dir) -> tuple[str, float]:
+    start = (date.fromisoformat(source_session_date) - timedelta(days=10)).isoformat()
+    rates = gex_official.fetch_selic_history(start, source_session_date, cache_dir)
+    return gex_official.rate_at_or_before(rates, source_session_date)
+
+
 # ── 4) Persistência ──────────────────────────────────────────
 SCHEMA_GEX = """
 CREATE TABLE IF NOT EXISTS gex_levels (
@@ -534,6 +650,8 @@ def main():
     ap.add_argument("--date", help="pregão de referência YYYY-MM-DD (default: último com OI)")
     ap.add_argument("--db", default=DB_PATH)
     ap.add_argument("--dry-run", action="store_true", help="não grava no banco")
+    ap.add_argument("--cache-dir", default=str(gex_official.DEFAULT_CACHE_DIR),
+                    help="cache dos bundles oficiais B3/BCB")
     ap.add_argument("--target", choices=sorted(TARGETS), action="append",
                      help="restringe a 1+ targets (default: todos os configurados em TARGETS)")
     args = ap.parse_args()
@@ -543,18 +661,9 @@ def main():
     log(f"IRAI GEX worker — gamma walls ({', '.join(targets)})")
     log("=" * 50)
 
-    if args.date:
-        session_date, ibov_oi_rows = args.date, None
-    else:
-        session_date, ibov_oi_rows = last_session_with_oi()
-        if not session_date:
-            log("FALHA: nenhum pregão recente com OI no BDI")
-            return 1
-    log(f"pregão de referência: {session_date}")
-
     fmt = lambda v: f"{v:,.0f}" if v is not None else "N/A"
     conn = get_connection(args.db)
-    mt5 = load_mt5_terminal()
+    mt5 = None
     exit_code, saved_any = 0, False
     try:
         for target in targets:
@@ -563,16 +672,48 @@ def main():
             log(f"-- {target} ({asset}) --")
             try:
                 if target == "WIN$N":
-                    # session_close = "fechamento da sessão anterior" do terminal —
-                    # só bate com o pregão do OI no fluxo automático (timer
-                    # pré-abertura). Com --date explícito (reprocessamento
-                    # histórico), usa as barras D1 datadas.
-                    oi_rows = ibov_oi_rows if ibov_oi_rows is not None else fetch_bdi_oi(session_date, asset=asset)
-                    data = fetch_ibov_mt5_leg(mt5, oi_rows, session_date, trust_session_close=not args.date)
-                    spot, future_settle, options = data["spot"], data["win_settle"], data["options"]
-                    grid_step, risk_free = GRID_STEP, R_FREE
-                    iv_fallback_by_expiry, iv_source, f_clamp = None, "premium", None
+                    if args.date:
+                        session_date = args.date
+                        effective_session_date = _next_observed_win_session(
+                            conn, session_date,
+                        )
+                        if effective_session_date is None:
+                            raise ValueError(
+                                f"sem próxima sessão WIN observada após {session_date}"
+                            )
+                        observed_source, _ = _observed_win_session_pair(
+                            conn, effective_session_date,
+                        )
+                        if observed_source != session_date:
+                            raise ValueError(
+                                f"fonte {session_date} não é a sessão WIN anterior "
+                                f"a {effective_session_date} ({observed_source})"
+                            )
+                    else:
+                        session_date, effective_session_date = _observed_win_session_pair(
+                            conn, date.today().isoformat(),
+                        )
+                    _validate_official_source(session_date, args.cache_dir)
+                    rate_source_date, risk_free = _official_rate(
+                        session_date, args.cache_dir,
+                    )
+                    result = compute_official_win_snapshot(
+                        session_date,
+                        effective_session_date,
+                        risk_free,
+                        rate_source_date,
+                        cache_dir=args.cache_dir,
+                    )
+                    grid_step = GRID_STEP
                 else:
+                    if args.date:
+                        session_date = args.date
+                    else:
+                        session_date, _rows = last_session_with_oi()
+                        if not session_date:
+                            raise ValueError("nenhum pregão recente com OI no BDI")
+                    if mt5 is None:
+                        mt5 = load_mt5_terminal()
                     oi_rows = fetch_bdi_oi(session_date, asset=asset)
                     options = fetch_bdi_option_data(oi_rows, session_date, asset=asset)
                     leg = fetch_dol_mt5_leg(mt5, session_date)
@@ -587,20 +728,18 @@ def main():
                     iv_fallback_by_expiry = realized_iv_by_expiry(conn, cfg["vol_symbol"], session_date, expiries)
                     iv_source, f_clamp = "realized", cfg.get("f_sanity_clamp")
 
-                if not spot or not future_settle:
-                    log(f"FALHA [{target}]: sem spot ou settle no MT5 p/ a data")
-                    exit_code = 1
-                    continue
-                if not grid_step:
-                    log(f"FALHA [{target}]: strikes insuficientes perto do spot p/ inferir "
-                        f"grid_step (dado esparso demais pra confiar no GEX)")
-                    exit_code = 1
-                    continue
-
-                result = compute_gex(spot, future_settle, options, session_date,
-                                      grid_step=grid_step, risk_free=risk_free,
-                                      iv_fallback_by_expiry=iv_fallback_by_expiry,
-                                      iv_source=iv_source, f_sanity_clamp=f_clamp)
+                    if not spot or not future_settle:
+                        raise ValueError("sem spot ou settle no MT5 p/ a data")
+                    if not grid_step:
+                        raise ValueError(
+                            "strikes insuficientes perto do spot p/ inferir grid_step"
+                        )
+                    result = compute_gex(
+                        spot, future_settle, options, session_date,
+                        grid_step=grid_step, risk_free=risk_free,
+                        iv_fallback_by_expiry=iv_fallback_by_expiry,
+                        iv_source=iv_source, f_sanity_clamp=f_clamp,
+                    )
                 if not result:
                     log(f"FALHA [{target}]: netGEX insuficiente")
                     exit_code = 1
@@ -622,7 +761,8 @@ def main():
                 log(f"FALHA [{target}]: {e}")
                 exit_code = 1
     finally:
-        mt5.shutdown()
+        if mt5 is not None:
+            mt5.shutdown()
         conn.close()
 
     if saved_any:

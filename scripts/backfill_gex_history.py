@@ -36,6 +36,7 @@ from typing import BinaryIO, Iterable, TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.db import DB_PATH, get_connection
+from backend import gex_official
 from backend.workers import gex_worker as gex
 
 
@@ -323,6 +324,23 @@ def rate_at_or_before(rates: dict[str, float], session_date: str) -> tuple[str, 
     return source, rates[source]
 
 
+# API pública preservada para os testes/CLI existentes, mas a implementação
+# autoritativa é única e vive fora do worker e do script para evitar
+# circularidade. LIVE e backfill resolvem exatamente estes mesmos callables.
+assemble_ibov_options = gex_official.assemble_ibov_options
+download_b3_bundle = gex_official.download_b3_bundle
+expected_bundle_names = gex_official.expected_bundle_names
+fetch_selic_history = gex_official.fetch_selic_history
+open_zip_member = gex_official.open_zip_member
+parse_equity_premiums = gex_official.parse_equity_premiums
+parse_ibov_open_interest = gex_official.parse_ibov_open_interest
+parse_ibov_spot = gex_official.parse_ibov_spot
+parse_official_bundle = gex_official.parse_official_bundle
+parse_win_front_settle = gex_official.parse_win_front_settle
+rate_at_or_before = gex_official.rate_at_or_before
+_sha256 = gex_official.sha256_file
+
+
 def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, replace: bool) -> str:
     if existing_valid is None:
         return "insert_valid" if candidate_valid else "insert_invalid"
@@ -561,50 +579,15 @@ def process_session(
     replace: bool,
     dry_run: bool,
 ) -> dict:
-    paths = download_b3_bundle(source_session_date, cache_dir)
-    bundle = parse_official_bundle(paths)
-    result = gex.compute_gex(
-        bundle["spot"], bundle["win"]["settle"], bundle["options"],
-        source_session_date, grid_step=gex.GRID_STEP, risk_free=risk_free,
-        iv_source="b3_reference_premium",
+    result = gex.compute_official_win_snapshot(
+        source_session_date,
+        effective_session_date,
+        risk_free,
+        rate_source_date,
+        cache_dir=cache_dir,
     )
-    if result is None:
-        return {
-            "source_session_date": source_session_date,
-            "effective_session_date": effective_session_date,
-            "action": "reject_insufficient_netgex",
-            "valid": False,
-            "validity_reasons": ["insufficient_netgex_strikes"],
-            "counts": {key: bundle[key] for key in ("oi_series", "premium_series", "joined_series")},
-        }
-
-    validity_reasons = gex_validity_reasons(result, grid_step=gex.GRID_STEP)
-    diagnostic_warnings = gex_diagnostic_warnings(result)
-    result["meta"].update({
-        "source_session_date": source_session_date,
-        "effective_session_date": effective_session_date,
-        "available_from": f"{effective_session_date}T00:00:00-03:00",
-        "causal_policy": "B3 EOD D usable only in next WIN session",
-        "risk_free_source": "BCB SGS 1178",
-        "risk_free_source_date": rate_source_date,
-        "win_contract": bundle["win"],
-        "source_files": {
-            kind: {
-                "name": path.name,
-                "sha256": _sha256(path),
-                "retrieved_at": datetime.fromtimestamp(
-                    path.stat().st_mtime, tz=timezone.utc,
-                ).isoformat(),
-            }
-            for kind, path in paths.items()
-        },
-        "source_counts": {
-            key: bundle[key] for key in ("oi_series", "premium_series", "joined_series")
-        },
-        "liquid_strikes": result["liquid_strikes"],
-        "validity_reasons": validity_reasons,
-        "diagnostic_warnings": diagnostic_warnings,
-    })
+    validity_reasons = list(result["meta"].get("validity_reasons", []))
+    diagnostic_warnings = list(result["meta"].get("diagnostic_warnings", []))
 
     try:
         previous = existing_validity(conn, source_session_date)
@@ -629,7 +612,7 @@ def process_session(
         "wall_count": sum(wall["type"] == "wall" for wall in result["walls"]),
         "mid_wall_count": sum(wall["type"] == "mid_wall" for wall in result["walls"]),
         "counts": result["meta"]["source_counts"],
-        "win_contract": bundle["win"]["ticker"],
+        "win_contract": result["meta"]["win_contract"]["ticker"],
         "risk_free": risk_free,
         "risk_free_source_date": rate_source_date,
     }
