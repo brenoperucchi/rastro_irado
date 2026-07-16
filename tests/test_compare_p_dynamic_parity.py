@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +22,20 @@ from scripts.compare_p_dynamic_parity import (
 
 def _bar(timestamp, p_up, **extra):
     return {"timestamp": timestamp, "p_up": p_up, **extra}
+
+
+def test_cli_importa_backend_quando_executado_fora_da_raiz(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "scripts" / "compare_p_dynamic_parity.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_publico_replica_prioridade_do_bundle_p_up_v1_depois_p_up():

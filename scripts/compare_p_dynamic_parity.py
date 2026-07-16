@@ -40,6 +40,8 @@ from typing import Iterable, Mapping, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from backend.irai.timezones import brt_to_tickmill_offset_hours
 
 

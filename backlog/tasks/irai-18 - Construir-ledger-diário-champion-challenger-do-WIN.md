@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:09'
+updated_date: '2026-07-16 05:10'
 labels:
   - validation
   - win
@@ -72,6 +72,8 @@ Correção pós-revisão: a engine e `/api/irai/series` agora expõem `win_bar_o
 Validação pós-correção no Ryzen5WSL (`444cc00`): regressão engine OHLC 2 passed; regressão HTTP OHLC 1 passed; ledger/evaluator 7 passed. API Windows reiniciada com o mesmo Uvicorn e retornou health ok; payload v1 contém as três chaves novas. Serviço oneshot gerou bundle `2026-07-16T050637Z` com status 0 e contrato OHLC preservado; valores nulos são esperados nas barras ghost pré-mercado.
 
 Correção do NO-GO: fallback de `brt_offset_h` agora usa a regra sazonal compartilhada quando o envelope local não informa offset; o manifesto registra status de fechamento por fonte e só fecha com todas as fontes capturadas completas e ao menos uma local. O loader recalcula o fechamento dos documentos e rejeita manifesto antigo/corrompido com outcome parcial. Duas regressões novas falharam antes (janeiro +5h; v2 parando 17:30) e agora passam. Suíte mantida: 209 passed, 17 skipped.
+
+Validação systemd revelou que o novo import de timezone dependia do cwd. Regressão subprocess fora da raiz falhou antes com `ModuleNotFoundError: backend`; o CLI agora adiciona explicitamente a raiz do repositório ao `sys.path`. Suíte mantida atual: 210 passed, 17 skipped.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
