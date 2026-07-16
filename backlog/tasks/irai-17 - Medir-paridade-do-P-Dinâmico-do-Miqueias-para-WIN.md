@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:15'
-updated_date: '2026-07-16 04:20'
+updated_date: '2026-07-16 04:28'
 labels:
   - validation
   - win
@@ -15,6 +15,11 @@ references:
   - 'https://rastromacro.web.app/'
   - 'https://rastromacro-default-rtdb.firebaseio.com/series/WIN_N.json'
 documentation:
+  - docs/plans/2026-07-13-irai-plano-consolidado.md
+modified_files:
+  - scripts/compare_p_dynamic_parity.py
+  - tests/test_compare_p_dynamic_parity.py
+  - .gitignore
   - docs/plans/2026-07-13-irai-plano-consolidado.md
 priority: high
 type: spike
@@ -51,4 +56,6 @@ Construir uma comparação reproduzível de caixa-preta entre a série pública 
 
 <!-- SECTION:NOTES:BEGIN -->
 Pesquisa concluída: o bundle público seleciona `p_up_v1` quando presente e cai para `p_up`; o Firebase público expõe `/series/WIN_N.json`. A API local fornece `/api/irai/series?...&version=v1|v2`, com timestamps no eixo Tickmill e `brt_offset_h` para reconstrução BRT. O comparador alinhará ISO timestamps exatamente e distinguirá todas as barras do subconjunto operacional sem ghost/preview.
+
+Execução real no Ryzen5WSL em 2026-07-16 04:27 UTC, após push/pull, contra Firebase público + API de produção local. Foram alinhadas 90/90 barras de pré-mercado. Miqueias versus v1/v2: correlação -0,596071; MAE 4,300889 pp; diferença máxima 12,83 pp; primeira divergência já em 00:00 do eixo Tickmill. v1 e v2 ficaram exatamente empatados porque ainda não havia barra real do WIN; 0 barras operacionais, portanto nenhum vencedor de qualidade pode ser declarado. A captura agora preserva Miqueias/v1/v2 e marca `quality_winner=null`. Próximo dado necessário: captura após o fechamento e acumulação de sessões intocadas para Brier/log-loss/AUC/calibração; a utilidade como gate tático será medida separadamente e líquida de custos.
 <!-- SECTION:NOTES:END -->
