@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "artifact": "challenger-pair-fixo-win-wdo",
-  "generated_at": "2026-07-16T15:15:43+00:00",
+  "generated_at": "2026-07-16T15:36:22+00:00",
   "git": {
-    "commit": "5b671007c1ea32598909f2a83fd42441a599429e",
-    "origin_main": "5b671007c1ea32598909f2a83fd42441a599429e",
+    "commit": "7a24348f537abc1a358f82fab954f2c31b464ecd",
+    "origin_main": "7a24348f537abc1a358f82fab954f2c31b464ecd",
     "head_in_origin_main": true,
     "dirty": true
   },
@@ -27,7 +27,7 @@
     "generated_at": "2026-07-16T12:46:47+00:00",
     "git_commit": "8b9ac122b086cd079833885233103b50c3a4c0c8",
     "point_in_time": true,
-    "note": "Pair dinâmico + baselines são point-in-time (~2022-12+); o challenger mede toda a base (~2021+). Expectativa por sessão normaliza a FREQUÊNCIA, não a janela temporal — ver metodologia §3."
+    "note": "Pair dinâmico + baselines são point-in-time (~2022-12+); o challenger mede toda a base (~2021+). Expectativa por sessão normaliza a FREQUÊNCIA, não a janela temporal — use `pair_fixo_windowed` na comparação para o ranking apples-to-apples (mesma janela)."
   },
   "comparison": {
     "WIN$N": {
@@ -214,6 +214,53 @@
             "win_rate_pct": 48.96
           }
         }
+      },
+      "pair_fixo_windowed": {
+        "sessions_measured": 877,
+        "n_events_window": 3689,
+        "note": "challenger restrito à janela do dinâmico PIT (session_date > 2022-12-30); denominador de sessões = o do dinâmico (aprox.)",
+        "horizons": {
+          "3": {
+            "mean_per_event": -6.6976,
+            "significant": true,
+            "ci_low": -13.2631,
+            "ci_high": -0.0677,
+            "events": 3605,
+            "events_per_session": 4.1106,
+            "expectancy_per_session": -27.5314,
+            "win_rate_pct": 48.27
+          },
+          "6": {
+            "mean_per_event": -11.0239,
+            "significant": true,
+            "ci_low": -20.7848,
+            "ci_high": -1.39,
+            "events": 3521,
+            "events_per_session": 4.0148,
+            "expectancy_per_session": -44.2588,
+            "win_rate_pct": 47.63
+          },
+          "10": {
+            "mean_per_event": -12.0978,
+            "significant": false,
+            "ci_low": -24.8685,
+            "ci_high": 0.98,
+            "events": 3406,
+            "events_per_session": 3.8837,
+            "expectancy_per_session": -46.984,
+            "win_rate_pct": 48.44
+          },
+          "20": {
+            "mean_per_event": 0.0503,
+            "significant": false,
+            "ci_low": -19.0308,
+            "ci_high": 19.4962,
+            "events": 3083,
+            "events_per_session": 3.5154,
+            "expectancy_per_session": 0.1767,
+            "win_rate_pct": 49.34
+          }
+        }
       }
     },
     "WDO$N": {
@@ -398,6 +445,53 @@
             "events_per_session": 2.3425,
             "expectancy_per_session": -2.7563,
             "win_rate_pct": 44.88
+          }
+        }
+      },
+      "pair_fixo_windowed": {
+        "sessions_measured": 876,
+        "n_events_window": 3722,
+        "note": "challenger restrito à janela do dinâmico PIT (session_date > 2022-12-30); denominador de sessões = o do dinâmico (aprox.)",
+        "horizons": {
+          "3": {
+            "mean_per_event": -0.8447,
+            "significant": true,
+            "ci_low": -1.048,
+            "ci_high": -0.6408,
+            "events": 3641,
+            "events_per_session": 4.1564,
+            "expectancy_per_session": -3.5108,
+            "win_rate_pct": 38.31
+          },
+          "6": {
+            "mean_per_event": -0.7164,
+            "significant": true,
+            "ci_low": -1.0159,
+            "ci_high": -0.4209,
+            "events": 3552,
+            "events_per_session": 4.0548,
+            "expectancy_per_session": -2.9047,
+            "win_rate_pct": 42.43
+          },
+          "10": {
+            "mean_per_event": -0.7396,
+            "significant": true,
+            "ci_low": -1.1256,
+            "ci_high": -0.341,
+            "events": 3445,
+            "events_per_session": 3.9326,
+            "expectancy_per_session": -2.9087,
+            "win_rate_pct": 44.82
+          },
+          "20": {
+            "mean_per_event": -0.9143,
+            "significant": true,
+            "ci_low": -1.4618,
+            "ci_high": -0.357,
+            "events": 3115,
+            "events_per_session": 3.5559,
+            "expectancy_per_session": -3.2511,
+            "win_rate_pct": 45.87
           }
         }
       }
@@ -2392,6 +2486,8 @@
     },
     "limitations": [
       "Challenger Pair FIXO WIN↔WDO: par sempre WIN-WDO (nunca escolhido pelo Kalman), computado INDEPENDENTE do engine/calibração (market_bars, β OLS rolling 20 sem intercepto). Não sofre de C1-a — é uma régua limpa contra o Pair dinâmico calibrado, no espírito da regra de negócio 8 (regra simples vs modelo complexo). β OLS é parâmetro de convenção, não otimizado; não reproduz o encadeamento do Kalman nem o warm-up de σ do par que o dinâmico tem no início da sessão (intencional).",
+      "Barras presentes em SÓ um dos dois símbolos (WIN xor WDO — halt, leilão, gap de liquidez) são DESCARTADAS do ledger (só timestamps comuns entram), diferente do dinâmico que mantém a grade do target e forward-filla o fator. Ver `data_quality` no relatório para quanto é descartado na base real (achado do /fable-reasoner).",
+      "Diferente do dinâmico (select_active_pair exclui fatores de σ quase-nula, zscore.py), o challenger NÃO tem guarda de σ-quase-nula do fator: se WDO ficasse quase congelado numa janela (Σret_f²≈0+), β poderia explodir. Risco prático baixo (ambas as pernas são futuros líquidos), mas é uma diferença de tratamento vs. o dinâmico.",
       "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) nunca foi derivado de P&L executável real — ver docs/adr/ADR-002-minimum-useful-delta-auc.md. Assume-se custo único (round-trip) por evento, coerente com o uso do mesmo valor no plano tático, mas não validado independentemente.",
       "O encadeamento cronológico do Kalman (achado C1-b) pula sessões descartadas por candidate_sessions() sem processá-las: o estado NÃO é atualizado nesses dias, diferente do que aconteceria ao vivo (que processaria qualquer dado parcial disponível). Introduz uma descontinuidade pequena, porém real, entre este replay e produção.",
       "MFE/MAE usam HIGH/LOW M5 desde a barra de entrada, mas OHLC não informa a ordem intrabarra. Se stop e alvo forem tocados na mesma M5, a sequência é ambígua e exige política conservadora ou replay de ticks no IRAI-4.",
@@ -2402,6 +2498,20 @@
       "Sem calibração point-in-time (ver ressalva C1-a específica de cada marker acima), isto é sempre um REPLAY RETROSPECTIVO com os parâmetros ATUAIS de produção aplicados a todo o histórico — não um teste out-of-sample no sentido estrito, mesmo quando a janela de replay cobre anos anteriores à calibração mais recente."
     ],
     "challenger": "pair_fixo_win_wdo",
+    "data_quality": {
+      "WIN$N": {
+        "sessions": 1251,
+        "target_bars": 138646,
+        "factor_bars": 139893,
+        "common_bars": 138614
+      },
+      "WDO$N": {
+        "sessions": 1250,
+        "target_bars": 139790,
+        "factor_bars": 138533,
+        "common_bars": 138511
+      }
+    },
     "events_moved_to": "pair_fixo_challenger.json.gz",
     "event_counts": {
       "WIN$N": 5207,

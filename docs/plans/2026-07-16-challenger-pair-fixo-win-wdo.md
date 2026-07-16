@@ -120,15 +120,20 @@ líquido de custo por evento (`***` = IC95% exclui zero):
 
 ```
                      WIN$N méd/ev   exp/sessão   WDO$N méd/ev  exp/sessão
-pair_fixo (chall.)   -10.89 ***     -43.24       -0.84 ***     -3.36
+pair_fixo (base)     -10.89 ***     -43.24       -0.84 ***     -3.36
+pair_fixo_windowed   -11.02 ***     -44.26       -0.72 ***     -2.90   (mesma janela do PIT)
 pair (dinâmico PIT)   -7.47         -30.04       -1.00 ***     -4.18
 baseline_momentum    -12.39 ***     -33.61       -0.90 ***     -2.50
 baseline_reversao     -7.61         -20.66       -1.10 ***     -3.04
 ```
 
-Conclusão: TODOS os sinais são negativos em ambos os alvos. Fixar o par WIN-WDO
-NÃO recupera edge — em WIN$N é mais negativo que o dinâmico, em WDO$N são
-parecidos e adversos. A regra simples (par fixo) não vence a complexa: as duas
-perdem, e os baselines também. Reforça, com um controle limpo (sem C1-a), que os
-markers de distorção não têm valor econômico como estão. Ver README do artefato
+Conclusão (revisão /fable-reasoner aplicada — ranking agora apples-to-apples via
+pair_fixo_windowed): TODOS os sinais são negativos em ambos os alvos. Fixar o par
+WIN-WDO NÃO recupera edge — em WIN$N o challenger é mais negativo que o dinâmico
+MESMO na mesma janela (-11.02 vs -7.47), então a diferença de janela não explicava
+o gap; em WDO$N são parecidos e adversos. A regra simples (par fixo) não vence a
+complexa: as duas perdem, e os baselines também. Reforça, com um controle limpo
+(sem C1-a), que os markers de distorção não têm valor econômico como estão. O
+descarte por alinhamento é negligível (data_quality: WIN 0,02%, WDO 0,9%). Ver
+README do artefato
 para a ressalva de janela (challenger mede toda a base; dinâmico é PIT ~2022-12+).
