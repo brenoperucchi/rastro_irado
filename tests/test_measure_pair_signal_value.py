@@ -68,13 +68,16 @@ def _mk_outcome(session_date, target, direction, hour_brt, pair_factor, entry_pr
 
 
 def _snap(i, close, *, pair_compra=None, pair_venda=None, pair_factor="us500",
-          ts_hour=10):
+          ts_hour=10, bar_open=None, high=None, low=None):
     s = IRAISnapshot(
         timestamp=f"2026-07-10T{ts_hour:02d}:{(i * 5) % 60:02d}:00+00:00",
         session_date="2026-07-10", bar_idx=i, t_frac=1.0, p_up=50.0,
         score=0.0, verdict="", verdict_color="",
     )
     s.win_current = close
+    s.win_bar_open = close if bar_open is None else bar_open
+    s.win_high = close if high is None else high
+    s.win_low = close if low is None else low
     s.pair_compra = pair_compra
     s.pair_venda = pair_venda
     s.pair_factor = pair_factor
@@ -84,11 +87,9 @@ def _snap(i, close, *, pair_compra=None, pair_venda=None, pair_factor="us500",
 # ── 1. extract_trade_outcomes ───────────────────────────────────────────────
 
 def test_extrai_evento_de_compra_com_retorno_liquido_de_custo():
-    """Sinal de compra na barra 0 (close=100); entrada usa o fechamento da
-    barra SEGUINTE (barra 1, close=105) — não o próprio fechamento do
-    sinal (achado do /codex-r: primeiro preço realisticamente executável).
-    Preço sobe 5pts/barra; h=3 a partir da entrada -> barra 4 (120): retorno
-    bruto +15, líquido = 15 - custo (WIN$N=10) = +5."""
+    """Sinal de compra na barra 0; entrada usa o open da barra seguinte.
+    Preço sobe 5pts/barra; h=3 encerra no close da barra 3 (115): retorno
+    bruto +10, líquido = 10 - custo (WIN$N=10) = 0."""
     snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
         _snap(i, 100.0 + i * 5.0) for i in range(1, 25)
     ]
@@ -97,13 +98,50 @@ def test_extrai_evento_de_compra_com_retorno_liquido_de_custo():
     o = outcomes[0]
     assert o.direction == "buy"
     assert o.entry_price == 105.0
-    assert o.fwd[3] == (120.0 - 105.0) - TARGET_COST_POINTS["WIN$N"]
+    assert o.fwd[3] == (115.0 - 105.0) - TARGET_COST_POINTS["WIN$N"]
+
+
+def test_entry_usa_open_da_barra_seguinte_no_instante_em_que_sinal_fica_disponivel():
+    """Ao fechar a barra do sinal às 10:05, o primeiro preço M5 observável é
+    o OPEN da barra seguinte, também às 10:05 — não o close dessa barra às
+    10:10. O close seguinte era o fill provisório do NF-01A e este teste deve
+    impedir que ele volte depois do VAL-04."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)]
+    snaps += [
+        _snap(1, 105.0, bar_open=107.0, high=110.0, low=103.0),
+        *[_snap(i, 105.0 + i) for i in range(2, 25)],
+    ]
+
+    outcome = extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True)[0]
+
+    assert outcome.entry_price == 107.0
+    assert outcome.signal_available_at == "2026-07-10T10:05:00"
+    assert outcome.entry_at == outcome.signal_available_at
+
+
+def test_h3_fecha_apos_tres_barras_completas_a_partir_do_open_de_entrada():
+    """Entrada no open da barra 1. Três barras completas são 1, 2 e 3;
+    portanto h=3 usa o close da barra 3, e não o da barra 4."""
+    snaps = [
+        _snap(0, 100.0, pair_compra=100.0),
+        _snap(1, 106.0, bar_open=105.0),
+        _snap(2, 107.0),
+        _snap(3, 120.0),
+        _snap(4, 999.0),
+        *[_snap(i, 120.0) for i in range(5, 25)],
+    ]
+
+    outcome = extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True)[0]
+
+    assert outcome.fwd[3] == (120.0 - 105.0) - TARGET_COST_POINTS["WIN$N"]
 
 
 def test_evento_de_venda_tem_sinal_invertido():
-    """Venda no sinal da barra 0; entrada na barra 1 (close=95). Preço CAI
-    5pts/barra -> favorável pro vendedor. h=3 a partir da entrada -> barra 4
-    (80): retorno bruto +15 (não -15), líquido = 15 - custo (WDO$N=1)."""
+    """Venda no sinal da barra 0; entrada no open da barra 1 (95). Preço CAI
+    5pts/barra -> favorável. h=3 encerra no close da barra 3 (85): retorno
+    bruto +10 (não -10), líquido = 10 - custo (WDO$N=1)."""
     snaps = [_snap(0, 100.0, pair_venda=100.0)] + [
         _snap(i, 100.0 - i * 5.0) for i in range(1, 25)
     ]
@@ -112,7 +150,7 @@ def test_evento_de_venda_tem_sinal_invertido():
     o = outcomes[0]
     assert o.direction == "sell"
     assert o.entry_price == 95.0
-    assert o.fwd[3] == (95.0 - 80.0) - TARGET_COST_POINTS["WDO$N"]
+    assert o.fwd[3] == (95.0 - 85.0) - TARGET_COST_POINTS["WDO$N"]
 
 
 def test_sinal_na_ultima_barra_da_sessao_nao_gera_evento():
@@ -125,6 +163,18 @@ def test_sinal_na_ultima_barra_da_sessao_nao_gera_evento():
     assert outcomes == []
 
 
+def test_evento_sem_open_executavel_e_rejeitado_sem_fallback_para_close():
+    """VAL-04 não pode chamar o close seguinte de primeiro preço quando o
+    OHLC está ausente. Sem open real, o evento fica fora da amostra."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
+        _snap(i, 100.0 + i) for i in range(1, 25)
+    ]
+    snaps[1].win_bar_open = None
+
+    assert extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True) == []
+
+
 def test_quatro_timestamps_causais_do_evento():
     """Sinal na barra 0 (início 10:00, eixo Tickmill), entrada na barra 1
     (início 10:05). Contrato temporal (barra M5, timestamp = início; fecha
@@ -133,8 +183,8 @@ def test_quatro_timestamps_causais_do_evento():
       confirmation_bar_end = == observation (marker X3 confirmado no
                              fechamento da própria barra 0)
       signal_available_at  = == confirmation
-      entry_at             = fim da barra 1 (de entrada) = 10:10
-    E signal_available_at <= entry_at (causal, com 1 barra de defasagem)."""
+      entry_at             = open da barra 1 = 10:05
+    E signal_available_at == entry_at (causal, primeiro preço M5)."""
     snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
         _snap(i, 100.0 + i * 5.0) for i in range(1, 25)
     ]
@@ -142,7 +192,7 @@ def test_quatro_timestamps_causais_do_evento():
     assert o.observation_bar_end == "2026-07-10T10:05:00"
     assert o.confirmation_bar_end == o.observation_bar_end
     assert o.signal_available_at == o.confirmation_bar_end
-    assert o.entry_at == "2026-07-10T10:10:00"
+    assert o.entry_at == "2026-07-10T10:05:00"
     assert o.signal_available_at <= o.entry_at  # nunca entra antes do sinal existir
 
 
@@ -217,6 +267,23 @@ def test_mfe_mae_direcionados_corretamente():
     o = outcomes[0]
     assert o.mfe == 20.0
     assert o.mae == -10.0
+
+
+def test_mfe_mae_usam_extremos_ohlc_desde_a_barra_de_entrada():
+    """Com fill no open da barra seguinte, os extremos dessa própria barra
+    já ocorrem depois da entrada e pertencem ao caminho econômico. MFE/MAE
+    devem usar HIGH/LOW, não somente os closes M5."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)]
+    snaps += [
+        _snap(1, 101.0, bar_open=100.0, high=125.0, low=92.0),
+        *[_snap(i, 101.0, high=110.0, low=95.0) for i in range(2, 25)],
+    ]
+
+    outcome = extract_trade_outcomes(
+        "2026-07-10", "WIN$N", snaps, is_b3=True)[0]
+
+    assert outcome.mfe == 25.0
+    assert outcome.mae == -8.0
 
 
 def test_mfe_mae_clampados_em_zero_quando_trajetoria_e_monotonica():

@@ -53,6 +53,9 @@ def _snap(i, close):
         score=0.0, verdict="", verdict_color="",
     )
     s.win_current = close
+    s.win_bar_open = close
+    s.win_high = close
+    s.win_low = close
     return s
 
 

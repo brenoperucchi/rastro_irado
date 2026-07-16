@@ -92,8 +92,10 @@ def test_git_state_registra_head_e_origin_main():
 def test_politicas_provisorias_documentadas():
     a = _build(point_in_time=False)
     pol = a["provisional_policies"]
-    assert "HIPOTÉTICO" in pol["entry_price"]
-    assert "intrabar" in pol["mfe_mae"]
+    assert "OPEN" in pol["entry_price"]
+    assert "proxy do primeiro preço executável" in pol["entry_price"]
+    assert "HIGH/LOW" in pol["mfe_mae"]
+    assert "qual ocorreu primeiro" in pol["mfe_mae"]
     assert "IRAI-4/VAL-04" in pol["costs"]
     assert "confirmatório" in pol["significance"]
 

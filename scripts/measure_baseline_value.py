@@ -10,8 +10,9 @@ Os markers Pair/Z do dashboard são essencialmente sinais de REVERSÃO À MÉDIA
 (distorção -> convergência). Pra saber se eles agregam algo além do trivial, é
 preciso compará-los contra baselines que NÃO usam nenhum modelo calibrado — só
 o preço do próprio WIN. Este script GERA esses eventos de baseline de forma
-reproduzível; a AVALIAÇÃO ECONÔMICA comparativa (líquida de custo, primeiro
-preço executável, sensibilidade) pertence ao IRAI-4/VAL-04, NÃO a este módulo.
+reproduzível; a AVALIAÇÃO ECONÔMICA comparativa (custos, frequência comparável
+e sensibilidade) pertence ao IRAI-4/VAL-04, NÃO a este módulo. A primitiva
+compartilhada já usa o open M5 seguinte como proxy do primeiro preço executável.
 
 DEFINIÇÃO DOS BASELINES — CONGELADA, não otimizada (senão deixaria de ser
 baseline honesto e viraria data-snooping):
@@ -138,7 +139,7 @@ def _limitations(baseline: str, point_in_time: bool) -> list:
         "reproduzível pra comparar contra os markers Pair/Z — NÃO um setup "
         "proposto. Os parâmetros (6/20) são convenção redonda, não otimizados.",
         "Este script só GERA eventos reproduzíveis do baseline. A comparação "
-        "econômica (líquida de custo completo, primeiro preço executável, "
+        "econômica (líquida de custo completo, frequência comparável e "
         "sensibilidade a parâmetros) contra os markers pertence ao "
         "IRAI-4/VAL-04 — não é feita aqui.",
         "O baseline usa só `win_current` (preço do target), sem nenhum "

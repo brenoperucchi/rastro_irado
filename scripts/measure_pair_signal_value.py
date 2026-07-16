@@ -60,19 +60,18 @@ deslocar quando |z_pair| cruza o threshold logo na abertura.
 Metodologia por evento (transição pair_compra/pair_venda, já causal e só
 em barra fechada — reaproveita engine.py inalterado, incluindo o achado
 X3 corrigido nesta mesma sessão de trabalho):
-  - Entrada = fechamento da barra SEGUINTE à da transição, não da própria
-    barra que gerou o marker — o marker só é confirmado quando a barra
-    fecha (X3), então o próprio fechamento do sinal já não é mais
-    executável no instante em que a decisão pode ser tomada; usá-lo seria
-    otimista (achado do /codex-r sobre "primeiro preço negociável"). Sinal
-    na última barra da sessão não gera evento (sem barra seguinte pra
-    preencher).
+  - Entrada = abertura da barra SEGUINTE à da transição. No contrato M5 do
+    MT5 essa abertura é o primeiro tick observado em/apos o fechamento da
+    barra do sinal e funciona como proxy do primeiro preço executável. Não
+    reutiliza o fechamento que formou o marker nem espera o fechamento da
+    barra seguinte. Sinal na última barra da sessão não gera evento.
   - Cooldown: uma entrada só conta se estiver a >= COOLDOWN_BARS barras da
     entrada contada anterior NA MESMA SESSÃO — evita janelas de medição
     sobrepostas.
-  - Retorno forward (h=3,6,10,20 barras) e MFE/MAE (até 20 barras) medidos
-    só dentro da MESMA sessão — nunca atravessam a fronteira (A5 do
-    plano). Trunca (não mede) o horizonte se a sessão acabar antes.
+  - Retorno forward (h=3,6,10,20 barras) fecha depois de h barras completas
+    contadas desde a barra de entrada. MFE/MAE usa HIGH/LOW dessas barras,
+    até 20 barras. Tudo fica na MESMA sessão — nunca atravessa a fronteira
+    (A5 do plano); horizonte incompleto é truncado, não preenchido.
   - Custo: TARGET_COST_POINTS (mesma fonte que measure_tactical_gate3.py,
     documentada no ADR-002) debitado uma vez do retorno bruto em pontos.
   - IC95%: bootstrap clusterizado por SESSÃO (não por evento), 10k
@@ -241,10 +240,10 @@ class TradeOutcome:
     #     (VAL-04/tactical), sem quebrar o schema.
     #   signal_available_at  = instante em que o sinal fica ACIONÁVEL =
     #     confirmation_bar_end (existe assim que a barra de confirmação fecha).
-    #   entry_at             = instante do FILL. Política atual: close da barra
-    #     SEGUINTE (i+1), que ocorre em fim_da_barra(i+1). Portanto
-    #     signal_available_at <= entry_at SEMPRE (o sinal existe antes da
-    #     entrada — causal, e conservador: há 1 barra M5 de defasagem).
+    #   entry_at             = instante do FILL: abertura da barra SEGUINTE
+    #     (i+1), que coincide com o fechamento de i. O open M5 é o primeiro
+    #     tick observado em/apos esse limite e serve de proxy executável.
+    #     Portanto signal_available_at <= entry_at SEMPRE (hoje, igualdade).
     observation_bar_end: str
     confirmation_bar_end: str
     signal_available_at: str
@@ -318,40 +317,60 @@ def extract_trade_outcomes(
         if i - last_counted_index < COOLDOWN_BARS:
             continue  # dentro do cooldown da última entrada contada
 
-        # Entrada = fechamento da barra SEGUINTE à do sinal, não da própria
-        # barra que gerou o marker. O marker só é confirmado quando a barra
-        # fecha (achado X3), então o preço da própria barra do sinal já não
-        # é mais executável no instante em que a decisão pode ser tomada —
-        # usá-lo seria otimista (achado do /codex-r sobre "primeiro preço
-        # negociável", docs/plans/2026-07-13-irai-plano-consolidado.md).
+        # Entrada = OPEN da barra SEGUINTE. O marker só existe ao fechar a
+        # barra i; a abertura de i+1 é o primeiro tick agregado pelo MT5 em/
+        # após esse instante e a melhor proxy M5 do primeiro preço executável.
+        # Não reutiliza o close de i (retroativo) nem o close de i+1 (5min de
+        # latência artificial da política provisória do NF-01A).
         entry_index = i + 1
         if entry_index >= len(real):
             continue  # sinal na última barra da sessão — sem preço executável real
+        entry_open = getattr(real[entry_index], "win_bar_open", None)
+        if entry_open is None or not math.isfinite(float(entry_open)):
+            # Sem OHLC real não há como provar o primeiro preço executável;
+            # rejeita o evento em vez de recair silenciosamente no close.
+            continue
         last_counted_index = i
-        entry_price = float(real[entry_index].win_current)
+        entry_price = float(entry_open)
 
         sign = 1.0 if direction == "buy" else -1.0
 
         fwd: dict[int, Optional[float]] = {}
         for h in FORWARD_HORIZONS:
-            if entry_index + h < len(real):
-                raw = float(real[entry_index + h].win_current) - entry_price
+            # Entrada no OPEN de entry_index: h barras completas encerram no
+            # CLOSE de entry_index+h-1 (barra de entrada conta como a 1ª).
+            exit_index = entry_index + h - 1
+            if exit_index < len(real):
+                raw = float(real[exit_index].win_current) - entry_price
                 fwd[h] = sign * raw - cost
             else:
                 fwd[h] = None  # trunca na fronteira da sessão (A5) — não mede
 
-        window_end = min(entry_index + MFE_MAE_HORIZON, len(real) - 1)
-        excursions = [
-            sign * (float(real[j].win_current) - entry_price)
-            for j in range(entry_index + 1, window_end + 1)
-        ]
+        window_end = min(entry_index + MFE_MAE_HORIZON - 1, len(real) - 1)
+        window = real[entry_index:window_end + 1]
+        has_complete_ohlc = all(
+            getattr(bar, "win_high", None) is not None
+            and getattr(bar, "win_low", None) is not None
+            and math.isfinite(float(bar.win_high))
+            and math.isfinite(float(bar.win_low))
+            for bar in window
+        )
+        favorable_excursions: list[float] = []
+        adverse_excursions: list[float] = []
+        if has_complete_ohlc:
+            if direction == "buy":
+                favorable_excursions = [float(bar.win_high) - entry_price for bar in window]
+                adverse_excursions = [float(bar.win_low) - entry_price for bar in window]
+            else:
+                favorable_excursions = [entry_price - float(bar.win_low) for bar in window]
+                adverse_excursions = [entry_price - float(bar.win_high) for bar in window]
         # Piso em 0 pro MFE e teto em 0 pro MAE: numa trajetória
         # monotonicamente perdedora (ou vencedora), a excursão mais favorável
         # (ou mais adversa) medida não deve trocar de sinal em relação à
         # convenção usual da métrica — achado do /codex-r ("contraria as
         # definições usuais" quando não clampado).
-        mfe = max(0.0, max(excursions)) if excursions else None
-        mae = min(0.0, min(excursions)) if excursions else None
+        mfe = max(0.0, max(favorable_excursions)) if favorable_excursions else None
+        mae = min(0.0, min(adverse_excursions)) if adverse_excursions else None
 
         # Contrato temporal causal (ver docstring de TradeOutcome). A barra do
         # sinal é `i`; a barra de entrada é `entry_index` (i+1). observação e
@@ -360,7 +379,7 @@ def extract_trade_outcomes(
         observation_bar_end = _bar_end_iso(snap.timestamp)
         confirmation_bar_end = observation_bar_end
         signal_available_at = confirmation_bar_end
-        entry_at = _bar_end_iso(real[entry_index].timestamp)
+        entry_at = _parse_axis_ts(real[entry_index].timestamp).isoformat()
 
         outcomes.append(TradeOutcome(
             session_date=session_date,
@@ -641,8 +660,9 @@ COMMON_LIMITATIONS = [
     "atualizado nesses dias, diferente do que aconteceria ao vivo (que "
     "processaria qualquer dado parcial disponível). Introduz uma "
     "descontinuidade pequena, porém real, entre este replay e produção.",
-    "MFE/MAE usam apenas o fechamento de cada barra de 5 min, não os "
-    "extremos intrabarra (H/L) — podem subestimar a excursão real.",
+    "MFE/MAE usam HIGH/LOW M5 desde a barra de entrada, mas OHLC não informa "
+    "a ordem intrabarra. Se stop e alvo forem tocados na mesma M5, a sequência "
+    "é ambígua e exige política conservadora ou replay de ticks no IRAI-4.",
     "As primeiras `sessions_burn_in` sessões de cada alvo são replayadas "
     "(pra o Kalman encadeado esquentar) mas EXCLUÍDAS da medição — estado "
     "inicial frio não reflete o que existiria em produção (achado do "

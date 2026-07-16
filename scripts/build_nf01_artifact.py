@@ -11,14 +11,13 @@ num único JSON versionado/localizável no repositório (não em /tmp) contendo:
   - limitações (incluindo as políticas PROVISÓRIAS abaixo);
   - resultados agregados Pair, Z, interseção e baselines.
 
-POLÍTICAS PROVISÓRIAS deste artefato (escopo IRAI-2; o realismo econômico é
-IRAI-4/VAL-04, NÃO ampliar aqui):
-  - `entry_price` = close da PRÓXIMA barra M5 — é um FILL HIPOTÉTICO, não o
-    primeiro preço realmente executável (que seria ~o open logo após
-    `signal_available_at`);
-  - MFE/MAE usam só o CLOSE de cada barra M5, não os extremos intrabar (OHLC);
-  - primeiro preço executável, OHLC intrabar, custos completos e análise de
-    sensibilidade pertencem ao IRAI-4/VAL-04.
+POLÍTICAS ECONÔMICAS deste artefato (IRAI-4/VAL-04):
+  - `entry_price` = OPEN da barra M5 seguinte ao sinal — primeiro tick agregado
+    pelo MT5 em/apos `signal_available_at`, proxy do primeiro preço executável;
+  - MFE/MAE usam HIGH/LOW M5 desde a barra de entrada; a ordem intrabarra entre
+    stop e alvo continua ambígua sem ticks;
+  - custos completos, slippage e sensibilidade pertencem ao restante do
+    IRAI-4/VAL-04 e ao shadow live.
 
 Uso (rodar no host com sklearn/pykalman — ex.: ryzen5wsl):
   python3 -X utf8 scripts/build_nf01_artifact.py --db data/irai.db --point-in-time \\
@@ -46,13 +45,14 @@ ARTIFACT_SCHEMA_VERSION = 1
 
 PROVISIONAL_POLICIES = {
     "entry_price": (
-        "close da PRÓXIMA barra M5 após o sinal — FILL HIPOTÉTICO, não o "
-        "primeiro preço realmente executável. O primeiro preço executável "
-        "(≈open logo após signal_available_at) é IRAI-4/VAL-04."
+        "OPEN da PRÓXIMA barra M5 após o sinal — primeiro tick agregado pelo "
+        "MT5 em/apos signal_available_at e proxy do primeiro preço executável. "
+        "Slippage/latência de ticks ainda exigem sensibilidade e shadow live."
     ),
     "mfe_mae": (
-        "calculados só com o CLOSE de cada barra M5, não com os extremos "
-        "intrabar (OHLC). MFE/MAE OHLC é IRAI-4/VAL-04."
+        "calculados com HIGH/LOW M5 desde a barra de entrada. Se stop e alvo "
+        "forem tocados na mesma barra, OHLC não revela qual ocorreu primeiro; "
+        "essa ambiguidade exige ticks ou política conservadora."
     ),
     "costs": (
         "TARGET_COST_POINTS (WIN$N=10, WDO$N=1) é custo único aproximado, "

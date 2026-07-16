@@ -53,6 +53,9 @@ def _snap(i, close, *, pair_signal=None, price_diverge_dir=None, pair_factor=Non
         score=0.0, verdict="", verdict_color="",
     )
     s.win_current = close
+    s.win_bar_open = close
+    s.win_high = close
+    s.win_low = close
     s.pair_signal = pair_signal
     s.price_diverge_dir = price_diverge_dir
     s.pair_factor = pair_factor

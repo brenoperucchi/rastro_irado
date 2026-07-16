@@ -52,6 +52,9 @@ def _snap(i, close, *, z_compra_val=None, z_venda_val=None, pair_factor=None, ts
         score=0.0, verdict="", verdict_color="",
     )
     s.win_current = close
+    s.win_bar_open = close
+    s.win_high = close
+    s.win_low = close
     s.z_compra_val = z_compra_val
     s.z_venda_val = z_venda_val
     s.pair_factor = pair_factor
