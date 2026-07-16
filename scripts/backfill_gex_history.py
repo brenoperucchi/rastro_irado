@@ -442,6 +442,48 @@ def save_history_result(
     conn.commit()
 
 
+def migrate_historical_rows_from_live(conn) -> int:
+    """Move somente linhas reconhecíveis do backfill legado para o histórico.
+
+    A presença de ``meta.source_files`` é a assinatura do pipeline histórico;
+    o worker LIVE não produz esse campo. Cada linha é inserida no destino antes
+    de ser removida da tabela LIVE, dentro da mesma transação.
+    """
+    ensure_history_schema(conn)
+    rows = conn.execute(
+        """SELECT session_date, target, gamma_max, gamma_min, gamma_flip,
+                  gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
+                  spot, future_settle, conv_factor, n_strikes, valid,
+                  walls, meta, computed_at
+           FROM gex_levels"""
+    ).fetchall()
+    historical = []
+    for row in rows:
+        meta = json.loads(row[14] or "{}")
+        effective = meta.get("effective_session_date")
+        if not meta.get("source_files") or not effective:
+            continue
+        historical.append((row, effective))
+
+    with conn:
+        for row, effective in historical:
+            conn.execute(
+                """INSERT OR REPLACE INTO gex_history_levels
+                   (source_session_date, effective_session_date, target,
+                    gamma_max, gamma_min, gamma_flip,
+                    gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
+                    spot, future_settle, conv_factor, n_strikes, valid,
+                    walls, meta, computed_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (row[0], effective, *row[1:]),
+            )
+            conn.execute(
+                "DELETE FROM gex_levels WHERE session_date=? AND target=?",
+                (row[0], row[1]),
+            )
+    return len(historical)
+
+
 def existing_validity(conn, source_session_date: str) -> bool | None:
     ensure_history_schema(conn)
     row = conn.execute(

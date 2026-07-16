@@ -30,6 +30,7 @@ from scripts.backfill_gex_history import (
     parse_win_front_settle,
     rate_at_or_before,
     save_history_result,
+    migrate_historical_rows_from_live,
     open_backfill_database,
 )
 
@@ -268,6 +269,44 @@ def test_backfill_historico_nunca_sobrescreve_tabela_gex_live():
     ).fetchone()
     assert tuple(live) == (0, 182497.0, 186421.0)
     assert tuple(history) == (1, 191863.0, 186364.0, "2026-07-16")
+
+
+def test_migracao_remove_somente_backfill_legado_da_tabela_live():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, gamma_max REAL, gamma_min REAL,
+               gamma_flip REAL, gamma_max_ibov REAL, gamma_min_ibov REAL,
+               gamma_flip_ibov REAL, spot REAL, future_settle REAL,
+               conv_factor REAL, n_strikes INTEGER, valid INTEGER,
+               walls TEXT, meta TEXT, computed_at TEXT,
+               PRIMARY KEY(session_date, target)
+           )"""
+    )
+    historical_meta = json.dumps({
+        "effective_session_date": "2026-07-16",
+        "source_files": {"equities": {"sha256": "abc"}},
+    })
+    conn.executemany(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("2026-07-15", "WIN$N", 191863, 171806, 186364,
+             189885, 170034, 184443, 176010, 177844, 1.0104, 97, 1,
+             "[]", historical_meta, "2026-07-16T12:00:00Z"),
+            ("2026-07-15", "WDO$N", 5601, 4995, None,
+             5602, 4996, None, 5099, 5098, 0.9998, 72, 0,
+             "[]", json.dumps({"iv_source": "mt5"}), "2026-07-16T11:34:00Z"),
+        ],
+    )
+
+    assert migrate_historical_rows_from_live(conn) == 1
+    assert conn.execute(
+        "SELECT session_date, target FROM gex_levels"
+    ).fetchall() == [("2026-07-15", "WDO$N")]
+    assert conn.execute(
+        """SELECT source_session_date, effective_session_date, target
+           FROM gex_history_levels"""
+    ).fetchall() == [("2026-07-15", "2026-07-16", "WIN$N")]
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():
