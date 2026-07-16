@@ -1,0 +1,1521 @@
+{
+  "schema_version": "irai.rollover-sensitivity.v1",
+  "generated_at": "2026-07-16T14:09:56+00:00",
+  "target": "WIN$N",
+  "bootstrap_iterations": 10000,
+  "rollover_window_sessions_each_side": 1,
+  "excluded_sessions": [
+    "2021-08-17",
+    "2021-08-18",
+    "2021-08-19",
+    "2021-10-11",
+    "2021-10-13",
+    "2021-10-14",
+    "2021-12-14",
+    "2021-12-15",
+    "2021-12-16",
+    "2022-02-15",
+    "2022-02-16",
+    "2022-02-17",
+    "2022-04-12",
+    "2022-04-13",
+    "2022-04-14",
+    "2022-06-14",
+    "2022-06-15",
+    "2022-06-17",
+    "2022-08-16",
+    "2022-08-17",
+    "2022-08-18",
+    "2022-10-11",
+    "2022-10-13",
+    "2022-10-14",
+    "2022-12-13",
+    "2022-12-14",
+    "2022-12-15",
+    "2023-02-14",
+    "2023-02-15",
+    "2023-02-16",
+    "2023-04-11",
+    "2023-04-12",
+    "2023-04-13",
+    "2023-06-13",
+    "2023-06-14",
+    "2023-06-15",
+    "2023-08-15",
+    "2023-08-16",
+    "2023-08-17",
+    "2023-10-17",
+    "2023-10-18",
+    "2023-10-19",
+    "2023-12-12",
+    "2023-12-13",
+    "2023-12-14",
+    "2024-02-09",
+    "2024-02-14",
+    "2024-02-15",
+    "2024-04-16",
+    "2024-04-17",
+    "2024-04-18",
+    "2024-06-11",
+    "2024-06-12",
+    "2024-06-13",
+    "2024-08-13",
+    "2024-08-14",
+    "2024-08-15",
+    "2024-10-15",
+    "2024-10-16",
+    "2024-10-17",
+    "2024-12-17",
+    "2024-12-18",
+    "2024-12-19",
+    "2025-02-11",
+    "2025-02-12",
+    "2025-02-13",
+    "2025-04-15",
+    "2025-04-16",
+    "2025-04-17",
+    "2025-06-17",
+    "2025-06-18",
+    "2025-06-20",
+    "2025-08-12",
+    "2025-08-13",
+    "2025-08-14",
+    "2025-10-14",
+    "2025-10-15",
+    "2025-10-16",
+    "2025-12-16",
+    "2025-12-17",
+    "2025-12-18",
+    "2026-02-13",
+    "2026-02-18",
+    "2026-02-19",
+    "2026-04-14",
+    "2026-04-15",
+    "2026-04-16",
+    "2026-06-16",
+    "2026-06-17",
+    "2026-06-18"
+  ],
+  "nf01_source": {
+    "schema_version": 1,
+    "git": {
+      "commit": "8b9ac122b086cd079833885233103b50c3a4c0c8",
+      "origin_main": "8b9ac122b086cd079833885233103b50c3a4c0c8",
+      "head_in_origin_main": true,
+      "dirty": true
+    },
+    "command": "python3 -X utf8 scripts/build_nf01_artifact.py --db data/irai.db --targets WIN$N WDO$N --point-in-time --limit 2000 --bootstrap 10000 --output docs/artifacts/irai-4/nf01_executable_pit.json.gz --summary-output docs/artifacts/irai-4/nf01_executable_pit_summary.json"
+  },
+  "rollover_source": {
+    "schema_version": "irai.rollover-audit.v1",
+    "continuous_method": "liquidity_continuous_unadjusted"
+  },
+  "signals": {
+    "pair": {
+      "events_total": 3697,
+      "events_excluded": 261,
+      "events_kept": 3436,
+      "rollover_exposure_pct": 7.059778198539356,
+      "by_direction": {
+        "all": {
+          "events_total": 3697,
+          "events_excluded": 261,
+          "events_kept": 3436,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 3607,
+                "n_sessions": 882,
+                "mean_net_points": -6.824230662600499,
+                "win_rate_pct": 47.54643748267258,
+                "ci95_low": -13.94722512088655,
+                "ci95_high": 0.37355851356893754,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 3350,
+                "n_sessions": 819,
+                "mean_net_points": -7.502985074626865,
+                "win_rate_pct": 47.37313432835821,
+                "ci95_low": -15.037249471157978,
+                "ci95_high": -0.10094918083402614,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": -0.6787544120263664
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 3528,
+                "n_sessions": 882,
+                "mean_net_points": -7.467403628117914,
+                "win_rate_pct": 49.48979591836735,
+                "ci95_low": -17.402520366191325,
+                "ci95_high": 2.2922488731080244,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 3277,
+                "n_sessions": 819,
+                "mean_net_points": -8.179737564845896,
+                "win_rate_pct": 49.37442783033262,
+                "ci95_low": -18.425221441188416,
+                "ci95_high": 2.4279928041412644,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -0.7123339367279815
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 3436,
+                "n_sessions": 882,
+                "mean_net_points": -5.710128055878929,
+                "win_rate_pct": 49.18509895227008,
+                "ci95_low": -18.518036452278448,
+                "ci95_high": 6.913799734068956,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 3191,
+                "n_sessions": 819,
+                "mean_net_points": -4.855844562832968,
+                "win_rate_pct": 49.263553744907554,
+                "ci95_low": -17.92826496588755,
+                "ci95_high": 8.272623000412656,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.8542834930459611
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 3108,
+                "n_sessions": 882,
+                "mean_net_points": -13.536036036036036,
+                "win_rate_pct": 48.455598455598455,
+                "ci95_low": -33.136088385219104,
+                "ci95_high": 5.751666262495965,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 2882,
+                "n_sessions": 819,
+                "mean_net_points": -15.487508674531576,
+                "win_rate_pct": 48.438584316446914,
+                "ci95_low": -35.28782739783829,
+                "ci95_high": 4.5546331780057665,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.9514726384955399
+            }
+          }
+        },
+        "buy": {
+          "events_total": 1782,
+          "events_excluded": 136,
+          "events_kept": 1646,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1742,
+                "n_sessions": 803,
+                "mean_net_points": -8.917910447761194,
+                "win_rate_pct": 46.211251435132034,
+                "ci95_low": -18.84722884376212,
+                "ci95_high": 0.9919345466791876,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1608,
+                "n_sessions": 744,
+                "mean_net_points": -8.51679104477612,
+                "win_rate_pct": 46.39303482587065,
+                "ci95_low": -18.8392299303961,
+                "ci95_high": 1.7925818411350756,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.4011194029850742
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1705,
+                "n_sessions": 799,
+                "mean_net_points": -13.642228739002933,
+                "win_rate_pct": 48.97360703812317,
+                "ci95_low": -27.56850577731092,
+                "ci95_high": 0.7174513915364052,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1574,
+                "n_sessions": 741,
+                "mean_net_points": -13.735705209656926,
+                "win_rate_pct": 49.04701397712834,
+                "ci95_low": -28.328695560089635,
+                "ci95_high": 0.34687136518947154,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -0.093476470653993
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1664,
+                "n_sessions": 794,
+                "mean_net_points": -12.259615384615385,
+                "win_rate_pct": 47.95673076923077,
+                "ci95_low": -29.746825957762994,
+                "ci95_high": 5.004929315476163,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1536,
+                "n_sessions": 737,
+                "mean_net_points": -11.585286458333334,
+                "win_rate_pct": 47.981770833333336,
+                "ci95_low": -29.44748945657019,
+                "ci95_high": 5.8647949728764415,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.6743289262820511
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 1509,
+                "n_sessions": 776,
+                "mean_net_points": -19.327369118621604,
+                "win_rate_pct": 47.38237243207422,
+                "ci95_low": -47.39051663154462,
+                "ci95_high": 8.813449131464239,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1392,
+                "n_sessions": 720,
+                "mean_net_points": -20.826149425287355,
+                "win_rate_pct": 47.41379310344828,
+                "ci95_low": -49.68956132795325,
+                "ci95_high": 7.4220473878857,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.4987803066657506
+            }
+          }
+        },
+        "sell": {
+          "events_total": 1915,
+          "events_excluded": 125,
+          "events_kept": 1790,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1865,
+                "n_sessions": 823,
+                "mean_net_points": -4.868632707774799,
+                "win_rate_pct": 48.793565683646115,
+                "ci95_low": -15.526990071723846,
+                "ci95_high": 5.206617112464747,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1742,
+                "n_sessions": 766,
+                "mean_net_points": -6.567164179104478,
+                "win_rate_pct": 48.27784156142365,
+                "ci95_low": -17.555319471871787,
+                "ci95_high": 3.9737736174246447,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.6985314713296793
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1823,
+                "n_sessions": 823,
+                "mean_net_points": -1.6922654964344488,
+                "win_rate_pct": 49.972572682391665,
+                "ci95_low": -15.831503319660733,
+                "ci95_high": 12.56712275589869,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1703,
+                "n_sessions": 766,
+                "mean_net_points": -3.0446271285965945,
+                "win_rate_pct": 49.677040516735175,
+                "ci95_low": -17.984484645646045,
+                "ci95_high": 12.222718098364963,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.3523616321621457
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1772,
+                "n_sessions": 819,
+                "mean_net_points": 0.4401805869074492,
+                "win_rate_pct": 50.33860045146727,
+                "ci95_low": -18.954081066180386,
+                "ci95_high": 19.511075891328797,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1655,
+                "n_sessions": 762,
+                "mean_net_points": 1.3897280966767371,
+                "win_rate_pct": 50.453172205438065,
+                "ci95_low": -17.972408950243118,
+                "ci95_high": 21.49149998657385,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.9495475097692879
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 1599,
+                "n_sessions": 801,
+                "mean_net_points": -8.070669168230143,
+                "win_rate_pct": 49.46841776110069,
+                "ci95_low": -36.92472357443674,
+                "ci95_high": 20.336626131992364,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1490,
+                "n_sessions": 744,
+                "mean_net_points": -10.5,
+                "win_rate_pct": 49.395973154362416,
+                "ci95_low": -39.43828825307483,
+                "ci95_high": 18.832635442514448,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.4293308317698568
+            }
+          }
+        }
+      }
+    },
+    "z": {
+      "events_total": 119,
+      "events_excluded": 8,
+      "events_kept": 111,
+      "rollover_exposure_pct": 6.722689075630252,
+      "by_direction": {
+        "all": {
+          "events_total": 119,
+          "events_excluded": 8,
+          "events_kept": 111,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 118,
+                "n_sessions": 82,
+                "mean_net_points": -14.830508474576272,
+                "win_rate_pct": 41.52542372881356,
+                "ci95_low": -65.18001265466816,
+                "ci95_high": 33.87156558275481,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 110,
+                "n_sessions": 77,
+                "mean_net_points": -9.863636363636363,
+                "win_rate_pct": 42.72727272727273,
+                "ci95_low": -62.0,
+                "ci95_high": 40.263654419066526,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 4.966872110939908
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 118,
+                "n_sessions": 82,
+                "mean_net_points": 24.915254237288135,
+                "win_rate_pct": 53.389830508474574,
+                "ci95_low": -39.78915869911633,
+                "ci95_high": 89.34530486051192,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 110,
+                "n_sessions": 77,
+                "mean_net_points": 31.681818181818183,
+                "win_rate_pct": 55.45454545454545,
+                "ci95_low": -37.40744949494949,
+                "ci95_high": 97.76403307580877,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 6.7665639445300485
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 116,
+                "n_sessions": 81,
+                "mean_net_points": 48.189655172413794,
+                "win_rate_pct": 55.172413793103445,
+                "ci95_low": -33.3204153342753,
+                "ci95_high": 128.2913076385654,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 108,
+                "n_sessions": 76,
+                "mean_net_points": 55.78703703703704,
+                "win_rate_pct": 56.48148148148148,
+                "ci95_low": -29.32335994918791,
+                "ci95_high": 140.04641439909298,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 7.5973818646232445
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 106,
+                "n_sessions": 76,
+                "mean_net_points": 35.37735849056604,
+                "win_rate_pct": 50.0,
+                "ci95_low": -96.296977124183,
+                "ci95_high": 168.3263387213291,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 98,
+                "n_sessions": 71,
+                "mean_net_points": 44.03061224489796,
+                "win_rate_pct": 50.0,
+                "ci95_low": -96.8065206185567,
+                "ci95_high": 186.27588051349574,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 8.65325375433192
+            }
+          }
+        },
+        "buy": {
+          "events_total": 68,
+          "events_excluded": 5,
+          "events_kept": 63,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 67,
+                "n_sessions": 46,
+                "mean_net_points": -12.537313432835822,
+                "win_rate_pct": 40.298507462686565,
+                "ci95_low": -75.00396825396825,
+                "ci95_high": 51.46219758064501,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 62,
+                "n_sessions": 44,
+                "mean_net_points": -9.435483870967742,
+                "win_rate_pct": 41.935483870967744,
+                "ci95_low": -73.50268987341772,
+                "ci95_high": 55.27804487179487,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 3.1018295618680796
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 67,
+                "n_sessions": 46,
+                "mean_net_points": 26.492537313432837,
+                "win_rate_pct": 53.73134328358209,
+                "ci95_low": -59.65326161202186,
+                "ci95_high": 109.76199776785714,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 62,
+                "n_sessions": 44,
+                "mean_net_points": 26.774193548387096,
+                "win_rate_pct": 54.83870967741935,
+                "ci95_low": -65.00201612903226,
+                "ci95_high": 113.49102118503805,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.2816562349542586
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 66,
+                "n_sessions": 46,
+                "mean_net_points": 47.196969696969695,
+                "win_rate_pct": 56.06060606060606,
+                "ci95_low": -67.5,
+                "ci95_high": 162.37276984834963,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 61,
+                "n_sessions": 44,
+                "mean_net_points": 47.21311475409836,
+                "win_rate_pct": 57.377049180327866,
+                "ci95_low": -78.05856064618644,
+                "ci95_high": 170.65134099616853,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.016145057128667872
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 60,
+                "n_sessions": 44,
+                "mean_net_points": 100.83333333333333,
+                "win_rate_pct": 56.666666666666664,
+                "ci95_low": -46.59280303030303,
+                "ci95_high": 264.8340895341802,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 55,
+                "n_sessions": 42,
+                "mean_net_points": 116.81818181818181,
+                "win_rate_pct": 56.36363636363637,
+                "ci95_low": -40.9708820662768,
+                "ci95_high": 295.2835964574509,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 15.984848484848484
+            }
+          }
+        },
+        "sell": {
+          "events_total": 51,
+          "events_excluded": 3,
+          "events_kept": 48,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 51,
+                "n_sessions": 36,
+                "mean_net_points": -17.84313725490196,
+                "win_rate_pct": 43.13725490196079,
+                "ci95_low": -96.25066489361701,
+                "ci95_high": 55.43616794543902,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 48,
+                "n_sessions": 33,
+                "mean_net_points": -10.416666666666666,
+                "win_rate_pct": 43.75,
+                "ci95_low": -91.2533244680851,
+                "ci95_high": 67.17011149228131,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 7.426470588235295
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 51,
+                "n_sessions": 36,
+                "mean_net_points": 22.84313725490196,
+                "win_rate_pct": 52.94117647058823,
+                "ci95_low": -81.49379432624113,
+                "ci95_high": 123.61805555555546,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 48,
+                "n_sessions": 33,
+                "mean_net_points": 38.020833333333336,
+                "win_rate_pct": 56.25,
+                "ci95_low": -71.4005594559017,
+                "ci95_high": 146.28042635658912,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 15.177696078431374
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 50,
+                "n_sessions": 35,
+                "mean_net_points": 49.5,
+                "win_rate_pct": 54.0,
+                "ci95_low": -69.40141304347827,
+                "ci95_high": 166.19826086956516,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 47,
+                "n_sessions": 32,
+                "mean_net_points": 66.91489361702128,
+                "win_rate_pct": 55.319148936170215,
+                "ci95_low": -51.95923913043478,
+                "ci95_high": 184.77870370370368,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 17.414893617021278
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 46,
+                "n_sessions": 32,
+                "mean_net_points": -50.0,
+                "win_rate_pct": 41.30434782608695,
+                "ci95_low": -285.3415327050998,
+                "ci95_high": 171.02616279069767,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 43,
+                "n_sessions": 29,
+                "mean_net_points": -49.06976744186046,
+                "win_rate_pct": 41.86046511627907,
+                "ci95_low": -302.56410256410254,
+                "ci95_high": 180.80556818181813,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.9302325581395365
+            }
+          }
+        }
+      }
+    },
+    "intersection": {
+      "events_total": 93,
+      "events_excluded": 5,
+      "events_kept": 88,
+      "rollover_exposure_pct": 5.376344086021505,
+      "by_direction": {
+        "all": {
+          "events_total": 93,
+          "events_excluded": 5,
+          "events_kept": 88,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 91,
+                "n_sessions": 65,
+                "mean_net_points": -7.6923076923076925,
+                "win_rate_pct": 48.35164835164835,
+                "ci95_low": -64.9426068215892,
+                "ci95_high": 48.42865772622928,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 86,
+                "n_sessions": 61,
+                "mean_net_points": -13.430232558139535,
+                "win_rate_pct": 48.83720930232558,
+                "ci95_low": -71.33052463016624,
+                "ci95_high": 43.16119762699295,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -5.737924865831842
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 91,
+                "n_sessions": 65,
+                "mean_net_points": 46.37362637362637,
+                "win_rate_pct": 56.043956043956044,
+                "ci95_low": -33.07712765957447,
+                "ci95_high": 129.09679933969184,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 86,
+                "n_sessions": 61,
+                "mean_net_points": 51.33720930232558,
+                "win_rate_pct": 56.97674418604651,
+                "ci95_low": -31.706656346749227,
+                "ci95_high": 135.7649544324772,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 4.963582928699211
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 86,
+                "n_sessions": 64,
+                "mean_net_points": 46.74418604651163,
+                "win_rate_pct": 56.97674418604651,
+                "ci95_low": -51.74309184740005,
+                "ci95_high": 136.47117985125084,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 82,
+                "n_sessions": 60,
+                "mean_net_points": 53.23170731707317,
+                "win_rate_pct": 58.53658536585366,
+                "ci95_low": -43.45878500451671,
+                "ci95_high": 145.49845679012338,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 6.487521270561544
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 85,
+                "n_sessions": 63,
+                "mean_net_points": 10.411764705882353,
+                "win_rate_pct": 50.588235294117645,
+                "ci95_low": -140.2636812200957,
+                "ci95_high": 156.19376026272573,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 81,
+                "n_sessions": 59,
+                "mean_net_points": 10.802469135802468,
+                "win_rate_pct": 50.617283950617285,
+                "ci95_low": -141.54521404521407,
+                "ci95_high": 159.94331395348837,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.390704429920115
+            }
+          }
+        },
+        "buy": {
+          "events_total": 53,
+          "events_excluded": 3,
+          "events_kept": 50,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 51,
+                "n_sessions": 38,
+                "mean_net_points": -6.470588235294118,
+                "win_rate_pct": 49.01960784313726,
+                "ci95_low": -83.84953703703704,
+                "ci95_high": 73.29792553191488,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 48,
+                "n_sessions": 36,
+                "mean_net_points": -19.791666666666668,
+                "win_rate_pct": 50.0,
+                "ci95_low": -95.87078527062998,
+                "ci95_high": 57.18963068181815,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -13.32107843137255
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 51,
+                "n_sessions": 38,
+                "mean_net_points": 32.15686274509804,
+                "win_rate_pct": 56.86274509803921,
+                "ci95_low": -79.81818181818181,
+                "ci95_high": 150.83499999999998,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 48,
+                "n_sessions": 36,
+                "mean_net_points": 25.0,
+                "win_rate_pct": 56.25,
+                "ci95_low": -89.36515957446808,
+                "ci95_high": 144.77609672304428,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -7.156862745098039
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 48,
+                "n_sessions": 38,
+                "mean_net_points": 29.479166666666668,
+                "win_rate_pct": 60.416666666666664,
+                "ci95_low": -105.90143617021278,
+                "ci95_high": 159.43465909090904,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 46,
+                "n_sessions": 36,
+                "mean_net_points": 21.52173913043478,
+                "win_rate_pct": 60.869565217391305,
+                "ci95_low": -117.60572916666666,
+                "ci95_high": 153.6941445182724,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -7.9574275362318865
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 47,
+                "n_sessions": 37,
+                "mean_net_points": 105.2127659574468,
+                "win_rate_pct": 57.4468085106383,
+                "ci95_low": -71.19762361466326,
+                "ci95_high": 286.7872670807453,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 45,
+                "n_sessions": 35,
+                "mean_net_points": 88.33333333333333,
+                "win_rate_pct": 55.55555555555556,
+                "ci95_low": -94.66875,
+                "ci95_high": 272.90816596194503,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -16.879432624113477
+            }
+          }
+        },
+        "sell": {
+          "events_total": 40,
+          "events_excluded": 2,
+          "events_kept": 38,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 40,
+                "n_sessions": 27,
+                "mean_net_points": -9.25,
+                "win_rate_pct": 47.5,
+                "ci95_low": -100.51315789473685,
+                "ci95_high": 69.86495376955904,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 38,
+                "n_sessions": 25,
+                "mean_net_points": -5.394736842105263,
+                "win_rate_pct": 47.36842105263158,
+                "ci95_low": -100.42013888888889,
+                "ci95_high": 75.78359374999997,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 3.855263157894737
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 40,
+                "n_sessions": 27,
+                "mean_net_points": 64.5,
+                "win_rate_pct": 55.0,
+                "ci95_low": -51.7073973042362,
+                "ci95_high": 177.5660610465115,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 38,
+                "n_sessions": 25,
+                "mean_net_points": 84.60526315789474,
+                "win_rate_pct": 57.89473684210526,
+                "ci95_low": -35.500320512820515,
+                "ci95_high": 200.88529411764702,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 20.10526315789474
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 38,
+                "n_sessions": 26,
+                "mean_net_points": 68.55263157894737,
+                "win_rate_pct": 52.63157894736842,
+                "ci95_low": -63.33928571428571,
+                "ci95_high": 187.83980855855853,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 36,
+                "n_sessions": 24,
+                "mean_net_points": 93.75,
+                "win_rate_pct": 55.55555555555556,
+                "ci95_low": -34.717261904761905,
+                "ci95_high": 216.2518382352941,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 25.19736842105263
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 38,
+                "n_sessions": 26,
+                "mean_net_points": -106.84210526315789,
+                "win_rate_pct": 42.10526315789474,
+                "ci95_low": -377.1433397683398,
+                "ci95_high": 131.61887254901958,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 36,
+                "n_sessions": 24,
+                "mean_net_points": -86.11111111111111,
+                "win_rate_pct": 44.44444444444444,
+                "ci95_low": -368.16814516129034,
+                "ci95_high": 166.6292892156861,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 20.730994152046776
+            }
+          }
+        }
+      }
+    },
+    "baseline_momentum": {
+      "events_total": 2482,
+      "events_excluded": 183,
+      "events_kept": 2299,
+      "rollover_exposure_pct": 7.373086220789686,
+      "by_direction": {
+        "all": {
+          "events_total": 2482,
+          "events_excluded": 183,
+          "events_kept": 2299,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 2435,
+                "n_sessions": 881,
+                "mean_net_points": -12.174537987679672,
+                "win_rate_pct": 43.61396303901437,
+                "ci95_low": -19.230638357748415,
+                "ci95_high": -5.209825487971383,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 2255,
+                "n_sessions": 818,
+                "mean_net_points": -11.403547671840355,
+                "win_rate_pct": 43.50332594235033,
+                "ci95_low": -18.69265470352652,
+                "ci95_high": -3.9756124637864714,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": 0.7709903158393168
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 2380,
+                "n_sessions": 879,
+                "mean_net_points": -12.38655462184874,
+                "win_rate_pct": 46.09243697478992,
+                "ci95_low": -22.684707799859243,
+                "ci95_high": -1.4967329551640336,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 2205,
+                "n_sessions": 816,
+                "mean_net_points": -13.043083900226758,
+                "win_rate_pct": 45.80498866213152,
+                "ci95_low": -23.51546416809396,
+                "ci95_high": -2.3545617015458946,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": -0.6565292783780183
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 2270,
+                "n_sessions": 879,
+                "mean_net_points": -5.143171806167401,
+                "win_rate_pct": 48.06167400881057,
+                "ci95_low": -18.856499956810918,
+                "ci95_high": 8.320256007773226,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 2103,
+                "n_sessions": 816,
+                "mean_net_points": -7.546362339514979,
+                "win_rate_pct": 47.93152639087018,
+                "ci95_low": -21.684743831956382,
+                "ci95_high": 6.749400866789812,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.403190533347578
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 2012,
+                "n_sessions": 876,
+                "mean_net_points": -4.532803180914513,
+                "win_rate_pct": 48.260437375745525,
+                "ci95_low": -24.01688427434768,
+                "ci95_high": 15.594907632433118,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1862,
+                "n_sessions": 813,
+                "mean_net_points": -8.866809881847475,
+                "win_rate_pct": 47.95918367346939,
+                "ci95_low": -29.48284899629835,
+                "ci95_high": 11.196980018165299,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -4.334006700932962
+            }
+          }
+        },
+        "buy": {
+          "events_total": 1283,
+          "events_excluded": 89,
+          "events_kept": 1194,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1257,
+                "n_sessions": 724,
+                "mean_net_points": -5.652346857597454,
+                "win_rate_pct": 45.425616547334926,
+                "ci95_low": -16.054221050944637,
+                "ci95_high": 4.947414941017235,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1170,
+                "n_sessions": 672,
+                "mean_net_points": -7.316239316239316,
+                "win_rate_pct": 44.957264957264954,
+                "ci95_low": -18.040288545230048,
+                "ci95_high": 3.1703478986414155,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.663892458641862
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1230,
+                "n_sessions": 715,
+                "mean_net_points": -6.353658536585366,
+                "win_rate_pct": 47.235772357723576,
+                "ci95_low": -20.65876953125,
+                "ci95_high": 8.185208735485697,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1146,
+                "n_sessions": 664,
+                "mean_net_points": -8.756544502617801,
+                "win_rate_pct": 47.12041884816754,
+                "ci95_low": -23.6406638958037,
+                "ci95_high": 5.705482938492647,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.4028859660324358
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1174,
+                "n_sessions": 705,
+                "mean_net_points": -3.0110732538330494,
+                "win_rate_pct": 48.21124361158433,
+                "ci95_low": -21.551662784679085,
+                "ci95_high": 15.772411527954453,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1094,
+                "n_sessions": 654,
+                "mean_net_points": -5.214808043875686,
+                "win_rate_pct": 48.17184643510055,
+                "ci95_low": -24.15664819294913,
+                "ci95_high": 14.783165570796184,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.2037347900426365
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 1038,
+                "n_sessions": 667,
+                "mean_net_points": -1.5847784200385358,
+                "win_rate_pct": 48.26589595375722,
+                "ci95_low": -29.534005314474623,
+                "ci95_high": 27.169356423853213,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 968,
+                "n_sessions": 619,
+                "mean_net_points": -3.7345041322314048,
+                "win_rate_pct": 48.03719008264463,
+                "ci95_low": -32.586305482207976,
+                "ci95_high": 25.400780065798486,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.1497257121928692
+            }
+          }
+        },
+        "sell": {
+          "events_total": 1199,
+          "events_excluded": 94,
+          "events_kept": 1105,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1178,
+                "n_sessions": 716,
+                "mean_net_points": -19.134125636672326,
+                "win_rate_pct": 41.68081494057725,
+                "ci95_low": -28.606308432992055,
+                "ci95_high": -9.509534177010536,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 1085,
+                "n_sessions": 659,
+                "mean_net_points": -15.811059907834101,
+                "win_rate_pct": 41.935483870967744,
+                "ci95_low": -25.400368140075706,
+                "ci95_high": -6.323896329365082,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": 3.323065728838225
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1150,
+                "n_sessions": 709,
+                "mean_net_points": -18.839130434782607,
+                "win_rate_pct": 44.869565217391305,
+                "ci95_low": -33.13682432432432,
+                "ci95_high": -3.920057589809879,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 1059,
+                "n_sessions": 652,
+                "mean_net_points": -17.681775259678943,
+                "win_rate_pct": 44.38149197355996,
+                "ci95_low": -32.50494692302307,
+                "ci95_high": -2.8869865275998903,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": 1.157355175103664
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1096,
+                "n_sessions": 693,
+                "mean_net_points": -7.427007299270073,
+                "win_rate_pct": 47.9014598540146,
+                "ci95_low": -26.582511213561965,
+                "ci95_high": 12.057683303680117,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1009,
+                "n_sessions": 638,
+                "mean_net_points": -10.074331020812686,
+                "win_rate_pct": 47.67096134786918,
+                "ci95_low": -29.854434758047528,
+                "ci95_high": 9.939486382564814,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -2.6473237215426124
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 974,
+                "n_sessions": 662,
+                "mean_net_points": -7.674537987679671,
+                "win_rate_pct": 48.25462012320329,
+                "ci95_low": -35.37119973797629,
+                "ci95_high": 19.604050353433404,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 894,
+                "n_sessions": 608,
+                "mean_net_points": -14.423937360178972,
+                "win_rate_pct": 47.87472035794183,
+                "ci95_low": -43.069846984698465,
+                "ci95_high": 14.861837119509225,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -6.7493993724993
+            }
+          }
+        }
+      }
+    },
+    "baseline_reversao": {
+      "events_total": 2482,
+      "events_excluded": 183,
+      "events_kept": 2299,
+      "rollover_exposure_pct": 7.373086220789686,
+      "by_direction": {
+        "all": {
+          "events_total": 2482,
+          "events_excluded": 183,
+          "events_kept": 2299,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 2435,
+                "n_sessions": 881,
+                "mean_net_points": -7.825462012320329,
+                "win_rate_pct": 47.84394250513347,
+                "ci95_low": -14.79017451202862,
+                "ci95_high": -0.7693616422515862,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 2255,
+                "n_sessions": 818,
+                "mean_net_points": -8.596452328159645,
+                "win_rate_pct": 47.76053215077605,
+                "ci95_low": -16.024387536213528,
+                "ci95_high": -1.3073452964734789,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": -0.7709903158393159
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 2380,
+                "n_sessions": 879,
+                "mean_net_points": -7.61344537815126,
+                "win_rate_pct": 48.319327731092436,
+                "ci95_low": -18.503267044835965,
+                "ci95_high": 2.6847077998592423,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 2205,
+                "n_sessions": 816,
+                "mean_net_points": -6.956916099773243,
+                "win_rate_pct": 48.52607709750567,
+                "ci95_low": -17.645438298454103,
+                "ci95_high": 3.515464168093956,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 0.6565292783780174
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 2270,
+                "n_sessions": 879,
+                "mean_net_points": -14.8568281938326,
+                "win_rate_pct": 48.14977973568282,
+                "ci95_low": -28.320256007773228,
+                "ci95_high": -1.143500043189086,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 2103,
+                "n_sessions": 816,
+                "mean_net_points": -12.453637660485022,
+                "win_rate_pct": 48.35948644793152,
+                "ci95_low": -26.749400866789834,
+                "ci95_high": 1.6847438319563781,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 2.403190533347578
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 2012,
+                "n_sessions": 876,
+                "mean_net_points": -15.467196819085487,
+                "win_rate_pct": 48.95626242544731,
+                "ci95_low": -35.59490763243313,
+                "ci95_high": 4.016884274347677,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1862,
+                "n_sessions": 813,
+                "mean_net_points": -11.133190118152525,
+                "win_rate_pct": 49.462943071965626,
+                "ci95_low": -31.196980018165302,
+                "ci95_high": 9.48284899629835,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 4.334006700932962
+            }
+          }
+        },
+        "buy": {
+          "events_total": 1199,
+          "events_excluded": 94,
+          "events_kept": 1105,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1178,
+                "n_sessions": 716,
+                "mean_net_points": -0.865874363327674,
+                "win_rate_pct": 49.40577249575552,
+                "ci95_low": -10.471182766562796,
+                "ci95_high": 8.688275341452343,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1085,
+                "n_sessions": 659,
+                "mean_net_points": -4.188940092165899,
+                "win_rate_pct": 49.12442396313364,
+                "ci95_low": -13.947545734689884,
+                "ci95_high": 5.3251148794916086,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -3.3230657288382246
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1150,
+                "n_sessions": 709,
+                "mean_net_points": -1.1608695652173913,
+                "win_rate_pct": 49.56521739130435,
+                "ci95_low": -15.451753046008365,
+                "ci95_high": 13.410120409297134,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1059,
+                "n_sessions": 652,
+                "mean_net_points": -2.3182247403210576,
+                "win_rate_pct": 50.04721435316336,
+                "ci95_low": -17.21049960058581,
+                "ci95_high": 12.694301594259022,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": -1.1573551751036664
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1096,
+                "n_sessions": 693,
+                "mean_net_points": -12.572992700729927,
+                "win_rate_pct": 48.54014598540146,
+                "ci95_low": -32.46978149995391,
+                "ci95_high": 6.984568492276261,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1009,
+                "n_sessions": 638,
+                "mean_net_points": -9.925668979187314,
+                "win_rate_pct": 48.9593657086224,
+                "ci95_low": -29.84363081177623,
+                "ci95_high": 9.833317864877072,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 2.6473237215426124
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 974,
+                "n_sessions": 662,
+                "mean_net_points": -12.325462012320328,
+                "win_rate_pct": 48.6652977412731,
+                "ci95_low": -40.76807393793023,
+                "ci95_high": 15.434418644257438,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 894,
+                "n_sessions": 608,
+                "mean_net_points": -5.576062639821029,
+                "win_rate_pct": 49.21700223713646,
+                "ci95_low": -35.204885103647754,
+                "ci95_high": 23.11022378046141,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 6.749399372499298
+            }
+          }
+        },
+        "sell": {
+          "events_total": 1283,
+          "events_excluded": 89,
+          "events_kept": 1194,
+          "horizons": {
+            "3": {
+              "with_rollover": {
+                "n_events": 1257,
+                "n_sessions": 724,
+                "mean_net_points": -14.347653142402546,
+                "win_rate_pct": 46.380270485282416,
+                "ci95_low": -24.47629743303571,
+                "ci95_high": -3.915652110775919,
+                "significant_vs_zero": true
+              },
+              "without_rollover": {
+                "n_events": 1170,
+                "n_sessions": 672,
+                "mean_net_points": -12.683760683760683,
+                "win_rate_pct": 46.495726495726494,
+                "ci95_low": -23.23730453907177,
+                "ci95_high": -1.9034797241977537,
+                "significant_vs_zero": true
+              },
+              "delta_mean_points": 1.6638924586418629
+            },
+            "6": {
+              "with_rollover": {
+                "n_events": 1230,
+                "n_sessions": 715,
+                "mean_net_points": -13.646341463414634,
+                "win_rate_pct": 47.15447154471545,
+                "ci95_low": -27.791280296764334,
+                "ci95_high": 0.6672560568436955,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1146,
+                "n_sessions": 664,
+                "mean_net_points": -11.243455497382199,
+                "win_rate_pct": 47.12041884816754,
+                "ci95_low": -25.73182203002791,
+                "ci95_high": 2.923885596321158,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 2.4028859660324358
+            },
+            "10": {
+              "with_rollover": {
+                "n_events": 1174,
+                "n_sessions": 705,
+                "mean_net_points": -16.98892674616695,
+                "win_rate_pct": 47.78534923339012,
+                "ci95_low": -36.165075785113956,
+                "ci95_high": 2.144274144953389,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 1094,
+                "n_sessions": 654,
+                "mean_net_points": -14.785191956124315,
+                "win_rate_pct": 47.806215722120655,
+                "ci95_low": -34.63027216094771,
+                "ci95_high": 5.292872076111985,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 2.2037347900426347
+            },
+            "20": {
+              "with_rollover": {
+                "n_events": 1038,
+                "n_sessions": 667,
+                "mean_net_points": -18.415221579961464,
+                "win_rate_pct": 49.22928709055876,
+                "ci95_low": -47.005954670380966,
+                "ci95_high": 9.507024265644942,
+                "significant_vs_zero": false
+              },
+              "without_rollover": {
+                "n_events": 968,
+                "n_sessions": 619,
+                "mean_net_points": -16.265495867768596,
+                "win_rate_pct": 49.6900826446281,
+                "ci95_low": -46.3321338489995,
+                "ci95_high": 12.95036028953643,
+                "significant_vs_zero": false
+              },
+              "delta_mean_points": 2.1497257121928683
+            }
+          }
+        }
+      }
+    }
+  },
+  "interpretation_rule": "Comparar tamanho da exposição, sinal/magnitude da média, IC95% e win-rate. Não promover edge por mudança isolada após a exclusão."
+}
