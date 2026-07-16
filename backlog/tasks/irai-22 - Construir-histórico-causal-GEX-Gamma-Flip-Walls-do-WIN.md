@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 15:28'
+updated_date: '2026-07-16 15:43'
 labels:
   - gex
   - validation
@@ -53,3 +53,13 @@ Prova real read-only em 2025-07-10: bundle oficial B3 recuperou SPRE (1.044.395 
 
 Limitação registrada no artefato: a B3 pode republicar arquivos antigos. O pipeline grava hash e retrieved_at da vintage hoje baixada, mas não afirma que ela seja byte a byte a publicação original de D+1.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: codex
+created: 2026-07-16 15:43
+---
+Piloto Ryzen concluído. A chamada inicial com --db data/irai_live.db reproduziu um risco real: get_connection criou SQLite vazio; regressão permanente adicionada e corrigida por open_backfill_database (commit c0ee381). Suíte relacionada após correção/auditoria: 50 passed, 8 skipped local e 58 passed no Ryzen. Backfill real de 20 sessões: 4 válidas/16 inválidas, sem erros; 16 inserts inválidos, 1 válido, 1 promoção invalid->valid e 2 válidos legados preservados. Auditoria explícita adicionada (commit 95a5fc5): 13 gamma_flip_not_between_extrema, 9 gamma_flip_too_far_from_spot, 3 missing_gamma_flip. Proveniência causal completa (D -> próxima sessão WIN, quatro hashes B3) em 18/20; os dois snapshots legados válidos foram deliberadamente preservados. Janela de 100 sessões em execução no Ryzen; downloads são pré-carregados em paralelo, persistência segue serial/idempotente.
+---
+<!-- COMMENTS:END -->
