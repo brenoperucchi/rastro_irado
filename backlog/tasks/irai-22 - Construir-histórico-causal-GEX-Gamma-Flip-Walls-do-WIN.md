@@ -1,11 +1,11 @@
 ---
 id: IRAI-22
 title: Construir histórico causal GEX/Gamma Flip/Walls do WIN
-status: In Progress
+status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 15:12'
-updated_date: '2026-07-16 15:53'
+updated_date: '2026-07-16 16:44'
 labels:
   - gex
   - validation
@@ -31,11 +31,11 @@ Disponibilizar histórico diário point-in-time suficiente dos níveis GEX do WI
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 O pipeline gera níveis históricos de WIN com source_session_date, effective_session_date, Gamma Max/Min, Gamma Flip, Walls/MID e flags explícitas de validade/proveniência
-- [ ] #2 Cada sessão efetiva usa somente arquivos oficiais B3 fechados no pregão anterior, sem reutilizar informação futura
-- [ ] #3 Backfill é idempotente, não sobrescreve silenciosamente dados válidos e reporta sessões aceitas, rejeitadas e motivos
-- [ ] #4 Cobertura e qualidade do histórico são auditadas por sessão antes de autorizar backtest da regra manual
-- [ ] #5 Testes permanentes e comando reproduzível no Windows/Ryzen são registrados
+- [x] #1 O pipeline gera níveis históricos de WIN com source_session_date, effective_session_date, Gamma Max/Min, Gamma Flip, Walls/MID e flags explícitas de validade/proveniência
+- [x] #2 Cada sessão efetiva usa somente arquivos oficiais B3 fechados no pregão anterior, sem reutilizar informação futura
+- [x] #3 Backfill é idempotente, não sobrescreve silenciosamente dados válidos e reporta sessões aceitas, rejeitadas e motivos
+- [x] #4 Cobertura e qualidade do histórico são auditadas por sessão antes de autorizar backtest da regra manual
+- [x] #5 Testes permanentes e comando reproduzível no Windows/Ryzen são registrados
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -68,4 +68,16 @@ created: 2026-07-16 15:53
 ---
 INCIDENTE/RECUPERAÇÃO: a primeira ampliação foi iniciada com python3 Linux sobre o SQLite hospedado em /mnt/c enquanto os serviços escreviam via Python Windows. O locking/WAL cruzado corrompeu a imagem. O job foi interrompido e API/collector parados. Preservada cópia forense data/backups/irai_corrupt_20260716_1245.db (SHA256 e259c649...), backup 10/07 validado, e recuperação  criada em arquivo novo. A recuperada passou quick_check no Linux e no Windows, preservando 3.570.922 market_bars até 2026-07-16T18:40:00Z e 23 gex_levels; foi promovida atomicamente, mantendo original forense e recuperada validada em backups. API retornou 200 e collector voltou a inserir barras. Correção permanente: ensure_safe_sqlite_runtime recusa Linux/WSL sobre DrvFS e instrui Python Windows (commits 46496b2/26bb645). Teste falhou antes, agora 60 testes relacionados passam no Windows. Backfill-100 reiniciado como unit systemd usando py.exe 3.12 Windows.
 ---
+
+author: codex
+created: 2026-07-16 16:44
+---
+Ampliação final Ryzen/Windows: 200 sessões-fonte de 2025-09-24 a 2026-07-15, 73 válidas e 127 inválidas. Proveniência completa em 200/200 (effective_session_date, quatro hashes B3 e validity_reasons); quick_check=ok. Rejeições: 75 flip fora dos extremos, 31 também distante demais do spot, 50 sem flip. Cobertura mensal é regime-dependente: 2025-09 5/5, 10 6/23, 11 11/19, 12 5/20; 2026-01 14/21, 02 18/18, 03 0/22, 04 10/20, 05 0/20, 06 0/21, 07 4/11. Relatório: data/gex_history_200_audit.json; comando reproduzível usa py.exe 3.12 Windows com --limit 200 --audit-only. Validação Windows: 61 testes relacionados; suíte local mantida 292 passed, 18 skipped. API, collector M5 e tick collector ativos.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Pipeline histórico causal GEX do WIN implementado e validado. Usa arquivos oficiais B3 EOD de D somente na próxima sessão WIN, Selic causal, hashes/proveniência, persistência idempotente e auditoria sem recomputação. A base produtiva agora possui 200 sessões homogêneas e 73 GEX válidos, suficiente para iniciar a contagem exploratória de eventos da regra manual, ainda sem promoção econômica.
+<!-- SECTION:FINAL_SUMMARY:END -->
