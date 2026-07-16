@@ -1,0 +1,11 @@
+[Unit]
+Description=IRAI P Dinâmico WIN — captura diária antes da virada Tickmill
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:56:00 America/Sao_Paulo
+AccuracySec=30s
+Persistent=true
+Unit=rastro-irado-p-dynamic-ledger.service
+
+[Install]
+WantedBy=timers.target

@@ -34,7 +34,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 from urllib.parse import urlencode
@@ -85,16 +85,20 @@ def _extract_rows(payload, *, target_key: str = "WIN_N") -> list[dict]:
     return rows
 
 
-def load_json_source(source: str, *, timeout: float = 10.0) -> list[dict]:
-    """Lê lista direta, envelope da API ou payload Firebase completo."""
+def load_json_document(source: str, *, timeout: float = 10.0):
+    """Lê um documento JSON sem descartar o envelope ou metadados da fonte."""
     if source.startswith(("http://", "https://")):
         request = Request(source, headers={"User-Agent": "IRAI-parity-audit/1.0"})
         with urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            return json.loads(response.read().decode("utf-8"))
     else:
         with Path(source).open("r", encoding="utf-8") as source_file:
-            payload = json.load(source_file)
-    return _extract_rows(payload)
+            return json.load(source_file)
+
+
+def load_json_source(source: str, *, timeout: float = 10.0) -> list[dict]:
+    """Lê lista direta, envelope da API ou payload Firebase completo."""
+    return _extract_rows(load_json_document(source, timeout=timeout))
 
 
 def _parse_timestamp(raw_timestamp: object) -> tuple[str, datetime, bool]:
@@ -158,6 +162,37 @@ def normalize_series(
         )
         seen.add(timestamp)
     return sorted(points, key=lambda point: point.moment)
+
+
+def capture_session_status(
+    points: Sequence[SeriesPoint],
+    *,
+    brt_offset_h: int,
+    close_not_before: str = "17:50",
+) -> dict:
+    """Classifica a captura sem tratar pré-mercado ou sessão parcial como fechada."""
+    operational = [point for point in points if point.operational]
+    if not operational:
+        return {
+            "closed": False,
+            "operational_rows": 0,
+            "first_operational_brt": None,
+            "last_operational_brt": None,
+            "close_not_before_brt": close_not_before,
+        }
+
+    def brt_time(point: SeriesPoint) -> str:
+        return (point.moment - timedelta(hours=brt_offset_h)).strftime("%H:%M")
+
+    first_brt = brt_time(operational[0])
+    last_brt = brt_time(operational[-1])
+    return {
+        "closed": last_brt >= close_not_before,
+        "operational_rows": len(operational),
+        "first_operational_brt": first_brt,
+        "last_operational_brt": last_brt,
+        "close_not_before_brt": close_not_before,
+    }
 
 
 def _regime(value: float, *, buy_threshold: float, sell_threshold: float) -> str:
@@ -359,9 +394,18 @@ def _local_series_url(base_url: str, *, session_date: str, target: str, version:
     return f"{base_url.rstrip('/')}/api/irai/series?{query}"
 
 
+def _local_gex_url(base_url: str, *, target: str) -> str:
+    return f"{base_url.rstrip('/')}/api/irai/gex?{urlencode({'target': target})}"
+
+
 def _write_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -369,6 +413,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--public-source", default=DEFAULT_PUBLIC_SOURCE)
     parser.add_argument("--local-api", default=DEFAULT_LOCAL_API)
     parser.add_argument("--skip-local-api", action="store_true")
+    parser.add_argument(
+        "--gex-source",
+        default=None,
+        help="Arquivo/URL de GEX; por padrão usa /api/irai/gex da API local.",
+    )
     parser.add_argument(
         "--candidate",
         action="append",
@@ -392,7 +441,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
-        public_rows = load_json_source(args.public_source, timeout=args.timeout)
+        public_document = load_json_document(args.public_source, timeout=args.timeout)
+        public_rows = _extract_rows(public_document)
         reference = normalize_series(public_rows, value_fields=PUBLIC_VALUE_FIELDS)
     except Exception as exc:
         print(f"Erro ao carregar referência pública: {exc}", file=sys.stderr)
@@ -403,7 +453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     session_date = args.session_date or reference[0].timestamp[:10]
     candidate_points: dict[str, list[SeriesPoint]] = {}
-    candidate_rows_by_name: dict[str, list[dict]] = {}
+    candidate_documents: dict[str, object] = {}
     candidate_sources: dict[str, str] = {}
     source_errors: dict[str, str] = {}
 
@@ -416,9 +466,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 version=version,
             )
             try:
-                rows = load_json_source(source, timeout=args.timeout)
+                document = load_json_document(source, timeout=args.timeout)
+                rows = _extract_rows(document)
                 candidate_points[version] = normalize_series(rows, value_fields=LOCAL_VALUE_FIELDS)
-                candidate_rows_by_name[version] = rows
+                candidate_documents[version] = document
                 candidate_sources[version] = source
             except Exception as exc:
                 source_errors[version] = f"{type(exc).__name__}: {exc}"
@@ -428,12 +479,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Erro: candidato duplicado: {name}", file=sys.stderr)
             return 1
         try:
-            rows = load_json_source(source, timeout=args.timeout)
+            document = load_json_document(source, timeout=args.timeout)
+            rows = _extract_rows(document)
             candidate_points[name] = normalize_series(rows, value_fields=LOCAL_VALUE_FIELDS)
-            candidate_rows_by_name[name] = rows
+            candidate_documents[name] = document
             candidate_sources[name] = source
         except Exception as exc:
             source_errors[name] = f"{type(exc).__name__}: {exc}"
+
+    gex_source = args.gex_source
+    if gex_source is None and not args.skip_local_api:
+        gex_source = _local_gex_url(args.local_api, target=args.target)
+    gex_document = None
+    gex_error = None
+    if gex_source:
+        try:
+            gex_document = load_json_document(gex_source, timeout=args.timeout)
+        except Exception as exc:
+            gex_error = f"{type(exc).__name__}: {exc}"
 
     try:
         comparison = build_parity_report(
@@ -499,13 +562,58 @@ def main(argv: Sequence[str] | None = None) -> int:
         stamp = generated_at.replace(":", "").replace("+0000", "Z").replace("+00:00", "Z")
         capture_base = Path(args.capture_dir) / session_date / stamp
         capture_paths = {"miqueias": str(capture_base / "miqueias.json")}
-        _write_json(Path(capture_paths["miqueias"]), public_rows)
-        for name, rows in sorted(candidate_rows_by_name.items()):
+        _write_json(Path(capture_paths["miqueias"]), public_document)
+        for name, document in sorted(candidate_documents.items()):
             capture_paths[name] = str(capture_base / f"{name}.json")
-            _write_json(Path(capture_paths[name]), rows)
+            _write_json(Path(capture_paths[name]), document)
+        capture_paths["gex"] = str(capture_base / "gex.json")
+        stored_gex = gex_document if gex_document is not None else {
+            "available": False,
+            "reason": gex_error or "fonte GEX não configurada",
+        }
+        _write_json(Path(capture_paths["gex"]), stored_gex)
+        brt_offset_h = 6
+        for preferred in ("v2", "v1"):
+            document = candidate_documents.get(preferred)
+            if isinstance(document, dict) and document.get("brt_offset_h") is not None:
+                brt_offset_h = int(document["brt_offset_h"])
+                break
+        session_status = capture_session_status(reference, brt_offset_h=brt_offset_h)
+        walls = gex_document.get("walls", []) if isinstance(gex_document, dict) else []
+        gex_status = {
+            "status": "captured" if gex_document is not None else "unavailable",
+            "source": gex_source,
+            "error": gex_error,
+            "active": gex_document.get("active") if isinstance(gex_document, dict) else None,
+            "as_of": gex_document.get("as_of") if isinstance(gex_document, dict) else None,
+            "wall_count": sum(wall.get("type") == "wall" for wall in walls),
+            "mid_wall_count": sum(wall.get("type") == "mid_wall" for wall in walls),
+        }
+        capture_paths["report"] = str(capture_base / "report.json")
+        capture_paths["manifest"] = str(capture_base / "manifest.json")
         report["capture_paths"] = capture_paths
         report["capture_bundle"] = str(capture_base)
-        _write_json(capture_base / "report.json", report)
+        manifest = {
+            "schema_version": 1,
+            "captured_at": generated_at,
+            "session_date": session_date,
+            "target": args.target,
+            "objective": {
+                "primary": "probabilidade de fechamento da sessão acima da abertura",
+                "tactical_gate": "avaliado separadamente após regra econômica determinística",
+            },
+            "session": {**session_status, "brt_offset_h": brt_offset_h},
+            "models": ["miqueias", *sorted(candidate_documents)],
+            "sources": {
+                "miqueias": args.public_source,
+                **candidate_sources,
+            },
+            "source_errors": source_errors,
+            "gex": gex_status,
+            "files": {name: Path(path).name for name, path in capture_paths.items()},
+        }
+        _write_json(Path(capture_paths["report"]), report)
+        _write_json(Path(capture_paths["manifest"]), manifest)
     if args.output_json:
         _write_json(Path(args.output_json), report)
 

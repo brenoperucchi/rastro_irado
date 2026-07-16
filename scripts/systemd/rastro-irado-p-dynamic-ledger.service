@@ -1,0 +1,10 @@
+[Unit]
+Description=IRAI P Dinâmico WIN — captura ledger e avaliação champion-challenger
+After=network-online.target rastro-irado-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/c/Users/brenoperucchi/devs/rastro_irado
+ExecStart=/usr/bin/python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --timeout 15 --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json
+ExecStartPost=/usr/bin/python3 -X utf8 scripts/evaluate_p_dynamic_champions.py --ledger-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/champion_report.json

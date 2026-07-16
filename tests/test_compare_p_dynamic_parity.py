@@ -188,7 +188,9 @@ def test_cli_nao_confunde_candidato_mais_proximo_com_vencedor_de_qualidade(tmp_p
     assert conclusion["quality_winner"] is None
     assert "OOS" in conclusion["promotion_warning"]
     report = json.loads(output.read_text(encoding="utf-8"))
-    assert set(report["capture_paths"]) == {"miqueias", "v2"}
+    assert set(report["capture_paths"]) == {
+        "miqueias", "v2", "gex", "report", "manifest",
+    }
     assert (tmp_path / "captures" / "2026-07-16").is_dir()
 
 
