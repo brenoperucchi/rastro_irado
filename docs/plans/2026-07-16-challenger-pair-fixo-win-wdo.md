@@ -52,11 +52,14 @@ igual ao Pair dinâmico. β[i], resíduo[i] e z[i] usam dados até o FECHAMENTO 
 marker nasce quando a barra i fecha (mesma garantia causal do achado X3).
 
 ### 2.4 Eixo temporal
-Timestamps CRUS do `market_bars` (B3/BRT, UTC-3 — `CLAUDE.md`), sem o deslocamento +offset
-que o engine aplica ao eixo Tickmill. `_hour_brt` é chamado com `is_b3=False` porque o
-timestamp já É BRT — a hora do pregão sai correta sem deslocar. WIN$N e WDO$N vêm do MESMO
-terminal/coleta, então seus `timestamp_utc` são idênticos por barra; o alinhamento é por
-igualdade exata de timestamp (barras presentes em só um dos dois símbolos são descartadas).
+As barras vêm do `market_bars` no eixo B3/BRT cru (UTC-3 — `CLAUDE.md`). Ao construir os
+snapshots, o timestamp é DESLOCADO +offset sazonal (`brt_to_tickmill_offset_hours`) para o
+eixo Tickmill — a MESMA convenção do engine — por dois motivos: (a) `run()` força
+`is_b3=True` no `_hour_brt`, que espera o eixo Tickmill e desloca de volta para obter a hora
+BRT correta; (b) deixa os 4 timestamps causais no MESMO eixo do Pair dinâmico, comparáveis
+1:1. WIN$N e WDO$N vêm do MESMO terminal/coleta, então seus `timestamp_utc` crus são
+idênticos por barra; o alinhamento é por igualdade exata (barras presentes em só um dos dois
+símbolos são descartadas).
 
 ### 2.5 Entrada, saída, custo, MFE/MAE — MESMA metodologia do Pair dinâmico
 Reusa `extract_trade_outcomes` inteiro (já revisado por dupla deep/fable):
@@ -75,10 +78,19 @@ ou o `nf01_pit` do IRAI-2) e contra os baselines momentum/reversão, para WIN$N 
 1. **Bruta** — retorno médio por evento (líquido de custo) por horizonte, IC95%, win-rate,
    com a frequência NATURAL de cada sinal.
 2. **Frequência equivalente** — como os sinais disparam com frequências diferentes, reportar
-   também a **expectativa por SESSÃO** = (retorno médio por evento) × (eventos por sessão).
-   Isso normaliza a comparação pelo quanto cada sinal "ocupa" o tempo: um sinal que acerta
-   pouco mas dispara muito pode render igual a um raro e certeiro. Reportar eventos totais e
-   eventos/sessão de cada sinal lado a lado.
+   também a **expectativa por SESSÃO** = (retorno médio por evento) × (eventos por sessão),
+   com `eventos por sessão = n_events / sessões medidas`. Isso normaliza a comparação pelo
+   quanto cada sinal "ocupa" o tempo: um sinal que acerta pouco mas dispara muito pode render
+   igual a um raro e certeiro. Reportar eventos totais e eventos/sessão de cada sinal.
+
+RESSALVA DE JANELA (registrada antes dos resultados): o challenger é independente de
+calibração, então mede TODAS as sessões elegíveis (~1250, 2021-2026). O Pair dinâmico do
+artefato de comparação (`docs/artifacts/irai-4/`) roda em modo point-in-time, que só mede a
+partir do 1º cutoff (~2022-12, ~880 sessões). A expectativa por sessão normaliza a
+FREQUÊNCIA, mas as JANELAS temporais não são idênticas — o challenger inclui 2021-2022 que o
+PIT não. Isso é documentado no artefato; a comparação é indicativa, não uma igualdade
+perfeita de amostra. (Comparar contra um dinâmico retrospectivo na mesma janela seria a
+igualdade perfeita, mas o artefato retrospectivo não é o braço executável de referência.)
 
 Nenhuma comparação otimiza threshold/janela após ver os dados. Um `***` isolado NÃO é
 confirmatório (até 24 combinações horizonte×direção por sinal).
