@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:03'
+updated_date: '2026-07-16 05:20'
 labels:
   - tactical
   - win
@@ -72,5 +72,35 @@ author: @codex
 created: 2026-07-16 05:03
 ---
 Revisão encontrou erro factual nas §6.7/§7: `backend/workers/gex_worker.py` já integra GEX ponta a ponta desde os commits 4dd1273..39e6822. Para WIN, usa OI BDI/B3 + metadados/prêmio/spot/settle do MT5 XP, BSM/IV, netGEX call-put, flip cumulativo e conversão IBOV→WIN. O repo público indicado pelo Miqueias (`miqueiasa1/wdowin_pairtrading`, main 7fce5bc, tag e 17 commits) foi varrido sem encontrar GEX/Gamma/opções/strike/OI. Corrigir o documento, separar código confirmado do IRAI da alegação ainda não verificável sobre o repo externo e formular pedido de caminho/commit ao Miqueias.
+---
+
+created: 2026-07-16 05:20
+---
+Correção pós-implementação (@claude): §4.1/§6.7/§7 estavam desatualizadas.
+
+GEX já está integrado desde backend/workers/gex_worker.py (commits
+4dd1273..39e6822) — não é mais Input externo manual. Documentei a fonte
+real: OI via BDI/B3 (API pública, paginada, sort=TckrSymb obrigatório),
+strike/CP/vencimento/prêmio EOD via MT5 XP (symbols_get em lote, session_close
+como prêmio), BSM/IV invertida por bisseção (fallback pra vol realizada
+horizon-matched onde não há prêmio, ex. WDO$N via DOL sem cobertura de opção
+no MT5), netGEX(K) = Σ[Γcall·OIcall − Γput·OIput], Gamma Flip por cruzamento
+de zero do netGEX cumulativo, Gamma Max/Min por argmax/argmin com refino
+parabólico, conversão IBOV→WIN via f=win_settle/spot (análogo DOL$N→WDO$N,
+com sanity clamp só na perna WDO). Worker roda 1x/dia (EOD), não intraday —
+níveis ficam fixos durante a sessão.
+
+Verifiquei (não apenas assumi) que o repositório público
+miqueiasa1/wdowin_pairtrading (main, HEAD 7fce5bc, 17 commits) não contém
+código GEX localizável: gh search code retornou zero resultados para
+GEX/gamma/netGEX/GammaFlip, e um clone completo + git log --all -p sobre
+todo o histórico (não só o HEAD) também não encontrou nenhuma menção a
+gamma/gex/netgex/gammaflip/open interest/black scholes/bsm em nenhum dos
+17 commits. Registrado como fonte verificada no documento (§2).
+
+Não toquei o worker GEX. Ambiguidades residuais da §6 continuam pendentes
+do Miqueias (região de proximidade da wall, alvo/stop/cooldown/invalidação,
+papel do NWE, desempate Pair×Z) — a única removida da lista foi "fonte do
+GEX" (§6.7, agora resolvida com fatos, não mais pendência).
 ---
 <!-- COMMENTS:END -->
