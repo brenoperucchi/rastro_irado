@@ -9,6 +9,7 @@ import io
 import os
 import sqlite3
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +24,7 @@ from scripts.backfill_gex_history import (
     parse_ibov_spot,
     parse_win_front_settle,
     rate_at_or_before,
+    open_backfill_database,
 )
 
 
@@ -113,6 +115,23 @@ def test_eod_fica_disponivel_somente_no_proximo_pregao_win():
     )
     assert next_effective_win_session(conn, "2026-07-15") == "2026-07-17"
     assert next_effective_win_session(conn, "2026-07-17") is None
+
+
+def test_backfill_recusa_caminho_inexistente_sem_criar_sqlite_vazio(tmp_path):
+    missing = tmp_path / "caminho-errado.db"
+
+    with pytest.raises(ValueError, match="base IRAI não existe"):
+        open_backfill_database(missing)
+
+    assert not missing.exists()
+
+
+def test_backfill_recusa_sqlite_sem_tabelas_de_producao(tmp_path):
+    empty = tmp_path / "vazia.db"
+    sqlite3.connect(empty).close()
+
+    with pytest.raises(ValueError, match="market_bars.*gex_levels"):
+        open_backfill_database(empty)
 
 
 def test_selic_nunca_busca_taxa_futura_para_preencher_falha():

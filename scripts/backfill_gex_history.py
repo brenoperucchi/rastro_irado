@@ -310,6 +310,35 @@ def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, re
     return "replace_with_valid" if candidate_valid else "skip_existing_invalid"
 
 
+def open_backfill_database(db_path: str | Path):
+    """Abre somente uma base IRAI existente e com as tabelas exigidas.
+
+    ``backend.db.get_connection`` cria o arquivo quando o caminho está errado,
+    comportamento útil na inicialização da aplicação, mas perigoso em backfill.
+    Aqui falhamos antes de criar ou escrever qualquer SQLite acidental.
+    """
+    path = Path(db_path).expanduser()
+    if not path.is_file():
+        raise ValueError(f"base IRAI não existe: {path}")
+    conn = get_connection(os.fspath(path))
+    required = {"market_bars", "gex_levels"}
+    present = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN (?, ?)",
+            tuple(sorted(required)),
+        )
+    }
+    missing = sorted(required - present)
+    if missing:
+        conn.close()
+        raise ValueError(
+            "base IRAI sem tabelas obrigatórias market_bars/gex_levels: "
+            + ", ".join(missing)
+        )
+    return conn
+
+
 def existing_validity(conn, source_session_date: str) -> bool | None:
     row = conn.execute(
         "SELECT valid FROM gex_levels WHERE session_date=? AND target='WIN$N'",
@@ -422,7 +451,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    conn = get_connection(args.db)
+    try:
+        conn = open_backfill_database(args.db)
+    except ValueError as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 2
     try:
         pairs = win_session_pairs(conn, args.from_date, args.to_date)
         if args.limit > 0:
