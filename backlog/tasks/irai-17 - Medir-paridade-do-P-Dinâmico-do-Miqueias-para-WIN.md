@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:15'
-updated_date: '2026-07-16 04:31'
+updated_date: '2026-07-16 12:29'
 labels:
   - validation
   - win
@@ -71,5 +71,11 @@ author: @codex
 created: 2026-07-16 04:29
 ---
 Implementação pronta para revisão. `quality_winner` permanece intencionalmente nulo: a captura disponível tinha 0 barras operacionais e não autoriza escolher Miqueias, v1 ou v2.
+---
+
+author: @codex
+created: 2026-07-16 12:29
+---
+Informações fornecidas pelo Miqueias em 2026-07-16: a cesta WIN é idêntica à produção local (WDO$N, DI1$N, BRENT, BTCUSD, US30, USDMXN, CADCHF, iSharesTreasury1-3+), mas a calibração difere materialmente. Miqueias 2026-06-23 vs local 2026-07-10: alpha 1,918606 vs 0,736566; intercept -0,25 vs ~0; Treasury +0,257738 vs -0,800422 e USDMXN -0,303354 vs +0,037873 (ambos invertem sinal); WDO -0,604859 vs -0,428164; DI -0,315301 vs -0,431176. Logo a divergência visual não é explicada pela cesta, mas por calibração + estado/dados do Kalman. Com score zero, a curva Miqueias parte de ~43,8%, enquanto a local parte de ~50,0%; alpha é ~2,6x maior. A resposta permite implementar um challenger estático reproduzível, mas não paridade v2 exata: faltam Q/R do Kalman, estado_mean/covariance no cutoff, fontes/relógios das barras e confirmação de qual campo/versão o deploy público realmente renderiza. Nuance: no v2 o WIN não entra diretamente no score, porém seu retorno é a observação do Kalman que atualiza os pesos, portanto influencia indiretamente a trajetória do P_up.
 ---
 <!-- COMMENTS:END -->
