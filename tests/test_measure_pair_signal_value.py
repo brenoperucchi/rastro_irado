@@ -1,0 +1,372 @@
+"""Spec do backtester NF-01 (escopo mínimo — Pair Signal isolado).
+
+Ref: scripts/measure_pair_signal_value.py — ver docstring do módulo para o
+contexto completo (achado C1-b, achado de risco #1 do plano consolidado).
+
+Duas frentes de teste:
+  1. Lógica pura de extração/medição (extract_trade_outcomes, bootstrap) —
+     sobre snapshots sintéticos, sem banco nem Kalman.
+  2. Encadeamento cronológico do Kalman (chronological_replay) — com um
+     Kalman FAKE injetável (evita depender do pykalman real, ausente neste
+     ambiente Linux de dev), sobre um DB seedado real via engine.
+
+Roda sem pytest:  python3 tests/test_measure_pair_signal_value.py
+Ou com pytest:    pytest tests/test_measure_pair_signal_value.py
+"""
+import os
+import sys
+import json
+import sqlite3
+import tempfile
+import types
+from contextlib import contextmanager
+from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    import pykalman  # noqa: F401
+except ModuleNotFoundError:
+    stub = types.ModuleType("pykalman")
+    stub.KalmanFilter = object
+    sys.modules["pykalman"] = stub
+try:
+    import statsmodels  # noqa: F401
+except ModuleNotFoundError:
+    for _sub in ("statsmodels", "statsmodels.tsa", "statsmodels.tsa.vector_ar",
+                 "statsmodels.tsa.vector_ar.vecm"):
+        sys.modules[_sub] = types.ModuleType(_sub)
+    sys.modules["statsmodels.tsa.vector_ar.vecm"].coint_johansen = lambda *a, **k: None
+
+from backend.irai.engine import IRAISnapshot
+from backend.db import SCHEMA, migrate_divergence_config
+import test_premarket as tp  # reaproveita _seed/_engine/SESSION/TARGET/SLUG/FACTOR
+
+import scripts.measure_pair_signal_value as psv
+from scripts.measure_pair_signal_value import (
+    COOLDOWN_BARS,
+    TARGET_COST_POINTS,
+    Estimate,
+    TradeOutcome,
+    _bootstrap_sessions,
+    chronological_replay,
+    estimate_mean,
+    extract_trade_outcomes,
+    win_rate,
+)
+
+
+def _snap(i, close, *, pair_compra=None, pair_venda=None, pair_factor="us500",
+          ts_hour=10):
+    s = IRAISnapshot(
+        timestamp=f"2026-07-10T{ts_hour:02d}:{(i * 5) % 60:02d}:00+00:00",
+        session_date="2026-07-10", bar_idx=i, t_frac=1.0, p_up=50.0,
+        score=0.0, verdict="", verdict_color="",
+    )
+    s.win_current = close
+    s.pair_compra = pair_compra
+    s.pair_venda = pair_venda
+    s.pair_factor = pair_factor
+    return s
+
+
+# ── 1. extract_trade_outcomes ───────────────────────────────────────────────
+
+def test_extrai_evento_de_compra_com_retorno_liquido_de_custo():
+    """Sinal de compra na barra 0 (close=100); entrada usa o fechamento da
+    barra SEGUINTE (barra 1, close=105) — não o próprio fechamento do
+    sinal (achado do /codex-r: primeiro preço realisticamente executável).
+    Preço sobe 5pts/barra; h=3 a partir da entrada -> barra 4 (120): retorno
+    bruto +15, líquido = 15 - custo (WIN$N=10) = +5."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)] + [
+        _snap(i, 100.0 + i * 5.0) for i in range(1, 25)
+    ]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert len(outcomes) == 1
+    o = outcomes[0]
+    assert o.direction == "buy"
+    assert o.entry_price == 105.0
+    assert o.fwd[3] == (120.0 - 105.0) - TARGET_COST_POINTS["WIN$N"]
+
+
+def test_evento_de_venda_tem_sinal_invertido():
+    """Venda no sinal da barra 0; entrada na barra 1 (close=95). Preço CAI
+    5pts/barra -> favorável pro vendedor. h=3 a partir da entrada -> barra 4
+    (80): retorno bruto +15 (não -15), líquido = 15 - custo (WDO$N=1)."""
+    snaps = [_snap(0, 100.0, pair_venda=100.0)] + [
+        _snap(i, 100.0 - i * 5.0) for i in range(1, 25)
+    ]
+    outcomes = extract_trade_outcomes("2026-07-10", "WDO$N", snaps, is_b3=True)
+    assert len(outcomes) == 1
+    o = outcomes[0]
+    assert o.direction == "sell"
+    assert o.entry_price == 95.0
+    assert o.fwd[3] == (95.0 - 80.0) - TARGET_COST_POINTS["WDO$N"]
+
+
+def test_sinal_na_ultima_barra_da_sessao_nao_gera_evento():
+    """Sinal na ÚLTIMA barra real da sessão -> não há barra seguinte pra
+    servir de preço de entrada -> evento não é registrado (não inventa
+    fill hipotético)."""
+    snaps = [_snap(i, 100.0) for i in range(5)]
+    snaps[4] = _snap(4, 100.0, pair_compra=100.0)
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert outcomes == []
+
+
+def test_cooldown_suprime_segunda_entrada_proxima():
+    """2 transições de compra a 5 barras de distância (< COOLDOWN_BARS=20) ->
+    só a 1ª conta."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)]
+    snaps += [_snap(i, 100.0) for i in range(1, 5)]
+    snaps.append(_snap(5, 105.0, pair_compra=105.0))  # dentro do cooldown
+    snaps += [_snap(i, 105.0) for i in range(6, 30)]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert len(outcomes) == 1
+    assert outcomes[0].entry_price == 100.0
+
+
+def test_segunda_entrada_apos_cooldown_conta():
+    """A mesma situação do teste anterior, mas com a 2ª transição EXATAMENTE
+    em COOLDOWN_BARS de distância -> conta as duas."""
+    snaps = [_snap(0, 100.0, pair_compra=100.0)]
+    snaps += [_snap(i, 100.0) for i in range(1, COOLDOWN_BARS)]
+    snaps.append(_snap(COOLDOWN_BARS, 110.0, pair_compra=110.0))
+    snaps += [_snap(i, 110.0) for i in range(COOLDOWN_BARS + 1, COOLDOWN_BARS + 25)]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert len(outcomes) == 2
+
+
+def test_horizonte_truncado_na_fronteira_da_sessao():
+    """Evento a 2 barras do fim da sessão -> h=3/6/10/20 ficam None (nunca
+    olham pra fora da sessão, achado A5 do plano)."""
+    snaps = [_snap(i, 100.0) for i in range(5)]
+    snaps[3] = _snap(3, 100.0, pair_compra=100.0)
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert len(outcomes) == 1
+    o = outcomes[0]
+    assert o.fwd[3] is None and o.fwd[6] is None and o.fwd[10] is None and o.fwd[20] is None
+
+
+def test_mfe_mae_direcionados_corretamente():
+    """Sinal na barra 0; entrada na barra 1 (close=100, igual à barra 0
+    aqui). Preço sobe até 120 (barra 3) depois cai até 90 (barra 5) ->
+    MFE=+20 (favorável), MAE=-10 (adverso)."""
+    closes = [100.0, 100.0, 110.0, 120.0, 105.0, 90.0, 95.0] + [95.0] * 20
+    snaps = [_snap(i, c, pair_compra=100.0 if i == 0 else None) for i, c in enumerate(closes)]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    o = outcomes[0]
+    assert o.mfe == 20.0
+    assert o.mae == -10.0
+
+
+def test_mfe_mae_clampados_em_zero_quando_trajetoria_e_monotonica():
+    """Compra que só perde (preço cai sempre) -> excursão favorável nunca
+    existiu de verdade: MFE deve ficar em 0.0 (piso), não negativo. Achado
+    do /codex-r: sem o clamp, uma trajetória monotonicamente perdedora
+    produziria MFE negativo, contrariando a convenção usual da métrica."""
+    closes = [100.0, 100.0, 95.0, 90.0, 85.0, 80.0] + [80.0] * 20
+    snaps = [_snap(i, c, pair_compra=100.0 if i == 0 else None) for i, c in enumerate(closes)]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    o = outcomes[0]
+    assert o.mfe == 0.0
+    assert o.mae == -20.0
+
+
+def test_nunca_extrai_evento_sem_marker():
+    snaps = [_snap(i, 100.0 + i) for i in range(30)]
+    outcomes = extract_trade_outcomes("2026-07-10", "WIN$N", snaps, is_b3=True)
+    assert outcomes == []
+
+
+# ── 2. Bootstrap clusterizado por sessão ────────────────────────────────────
+
+def test_bootstrap_detecta_media_claramente_positiva_como_significante():
+    outcomes = [
+        TradeOutcome(f"2026-07-{10+i:02d}", "WIN$N", "buy", 10, "us500", 100.0,
+                     {3: 8.0, 6: 8.0, 10: 8.0, 20: 8.0}, None, None)
+        for i in range(30)
+    ]
+    est = estimate_mean(outcomes, 3, iterations=500)
+    assert est is not None
+    assert est.value == 8.0
+    assert est.significant is True
+    assert est.ci_low > 0
+
+
+def test_bootstrap_nao_significante_quando_ic_inclui_zero():
+    """Metade das sessões com retorno bem positivo, metade bem negativo ->
+    média perto de zero, IC deve conter zero (não significante)."""
+    outcomes = []
+    for i in range(20):
+        val = 20.0 if i % 2 == 0 else -20.0
+        outcomes.append(TradeOutcome(
+            f"2026-07-{10+i:02d}", "WIN$N", "buy", 10, "us500", 100.0,
+            {3: val, 6: val, 10: val, 20: val}, None, None))
+    est = estimate_mean(outcomes, 3, iterations=500)
+    assert est is not None
+    assert est.ci_low < 0 < est.ci_high
+    assert est.significant is False
+
+
+def test_win_rate_conta_so_horizontes_medidos():
+    outcomes = [
+        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: 5.0}, None, None),
+        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: -5.0}, None, None),
+        TradeOutcome("d1", "WIN$N", "buy", 10, None, 100.0, {3: None}, None, None),  # truncado
+    ]
+    wins, total, pct = win_rate(outcomes, 3)
+    assert wins == 1 and total == 2 and pct == 50.0
+
+
+# ── 3. Encadeamento cronológico do Kalman (achado C1-b) ─────────────────────
+
+class _FakeKalman:
+    """Mesma interface mínima de SpyKalman (tests/test_premarket.py), mas
+    registra toda chamada de set_state — pra provar que chronological_replay
+    realmente REINJETA o estado da sessão anterior, em vez de ficar frio."""
+    set_state_calls: list = []
+
+    def __init__(self, n_dim_state, **kw):
+        self.n = n_dim_state
+        self.mean = [0.0] * n_dim_state
+        self.cov = [[0.0] * n_dim_state for _ in range(n_dim_state)]
+
+    def update(self, observation, observation_matrix):
+        # Estado avança de forma determinística e observável (soma 1.0 na
+        # média e na diagonal da covariância a cada chamada) só pra ter algo
+        # não-trivial pra encadear e comparar — inclusive a covariância, não
+        # só a média (achado do /codex-r: o teste original só validava a
+        # média, deixando um mix-up mean/cov na chamada de set_state()
+        # sem cobertura).
+        self.mean = [m + 1.0 for m in self.mean]
+        self.cov = [
+            [c + (1.0 if r == col else 0.0) for col, c in enumerate(row)]
+            for r, row in enumerate(self.cov)
+        ]
+        return self.mean, self.cov
+
+    def predict(self, observation_matrix=None):
+        return self.mean, self.cov
+
+    def get_state(self):
+        return list(self.mean), [row[:] for row in self.cov]
+
+    def set_state(self, mean, cov):
+        _FakeKalman.set_state_calls.append((list(mean), [list(r) for r in cov]))
+        self.mean = list(mean)
+        self.cov = [list(r) for r in cov]
+
+
+def test_chronological_replay_encadeia_estado_entre_sessoes():
+    """2 sessões seguidas do mesmo target: a 2ª deve receber set_state() com
+    EXATAMENTE o que a 1ª devolveu em get_state() — prova de encadeamento
+    real, não só 'não dá erro'."""
+    _FakeKalman.set_state_calls = []
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    tp._seed(db)  # sessão SESSION (2026-07-10)
+
+    # 2ª sessão: mesmas barras, 1 dia depois (mesma cesta/fatores -> mesma
+    # factor_signature, condição pro state_ts<session_start passar). Só as
+    # barras DATADAS 2026-07-10 (exclui a de "fechamento de ontem",
+    # 2026-07-09T21:00 — se ela também fosse deslocada +1 dia, cairia dentro
+    # da janela do dia 1 como 2026-07-10T21:00 e, já alinhada (+6h verão),
+    # viraria a "última barra" bogus de 2026-07-11T03:00, contaminando
+    # exatamente o que este teste quer medir).
+    c = sqlite3.connect(db)
+    rows = c.execute(
+        "SELECT symbol, source, timeframe, timestamp_utc, open, high, low, close, "
+        "volume, real_volume, delta FROM market_bars WHERE timestamp_utc LIKE '2026-07-10%'"
+    ).fetchall()
+    for row in rows:
+        symbol, source, timeframe, ts, o, h, l, close, vol, rvol, delta = row
+        new_ts = ts.replace("2026-07-10", "2026-07-11")
+        c.execute(
+            "INSERT OR IGNORE INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+            "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (symbol, source, timeframe, new_ts, o, h, l, close, vol, rvol, delta),
+        )
+    c.commit()
+    c.close()
+
+    with chronological_replay(db, kalman_cls=_FakeKalman) as compute:
+        snaps_dia1 = compute("2026-07-10", tp.TARGET)
+        reais_dia1 = [s for s in snaps_dia1 if not s.is_ghost]
+        assert reais_dia1, "fixture inválida: sem barras reais no dia 1"
+
+        assert _FakeKalman.set_state_calls == [], (
+            "1ª sessão não deveria ter estado anterior pra herdar")
+
+        snaps_dia2 = compute("2026-07-11", tp.TARGET)
+        reais_dia2 = [s for s in snaps_dia2 if not s.is_ghost]
+        assert reais_dia2, "fixture inválida: sem barras reais no dia 2"
+
+    assert len(_FakeKalman.set_state_calls) == 1, (
+        "2ª sessão deveria herdar o estado da 1ª (achado C1-b) — "
+        f"set_state chamado {len(_FakeKalman.set_state_calls)}x")
+    # O _FakeKalman soma 1.0 por update() na média E na diagonal da
+    # covariância; com N barras reais no dia 1, o estado final tem
+    # mean=[N, N, ...] e cov=diag(N) — é exatamente isso que a 2ª sessão deve
+    # receber via set_state (média E covariância, não só a média).
+    expected_value = float(len(reais_dia1))
+    got_mean, got_cov = _FakeKalman.set_state_calls[0]
+    assert all(abs(v - expected_value) < 1e-9 for v in got_mean), (
+        f"estado herdado não bate com o estado final da 1ª sessão: {got_mean} "
+        f"vs esperado ~{expected_value}")
+    n = len(got_mean)
+    for r in range(n):
+        for col in range(n):
+            expected_cell = expected_value if r == col else 0.0
+            assert abs(got_cov[r][col] - expected_cell) < 1e-9, (
+                f"covariância herdada não bate com a da 1ª sessão: {got_cov} "
+                f"vs esperado diag({expected_value})")
+
+
+# ── 4. run() / burn-in ───────────────────────────────────────────────────
+
+def test_run_exclui_eventos_das_sessoes_de_burn_in():
+    """burn_in_sessions=2: as 2 primeiras sessões da ordem cronológica são
+    replayadas (pra o Kalman encadeado esquentar) mas seus eventos não
+    entram na medição — achado do /codex-r (2ª rodada), risco de maior
+    prioridade apontado: estado inicial frio."""
+    dates = ["2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10"]
+
+    class _FakeCandidates:
+        pass
+    _FakeCandidates.dates = dates
+    _FakeCandidates.discarded = []
+
+    calls = []
+
+    @contextmanager
+    def fake_replay(db_path):
+        def compute(date, target):
+            calls.append(date)
+            return [_snap(0, 100.0, pair_compra=100.0)] + [
+                _snap(j, 100.0 + j * 5.0) for j in range(1, 25)
+            ]
+        yield compute
+
+    with patch.object(psv, "candidate_sessions", lambda db, target, limit: _FakeCandidates), \
+         patch.object(psv, "chronological_replay", fake_replay):
+        report = psv.run("unused.db", ["WIN$N"], limit=5, iterations=50, burn_in_sessions=2)
+
+    assert calls == dates, "todas as sessões devem ser replayadas pra aquecer o estado"
+    t = report["targets"]["WIN$N"]
+    assert t["sessions_burn_in"] == 2
+    assert t["by_direction"]["all"]["n_events"] == 3  # 5 sessões - 2 de burn-in
+
+
+if __name__ == "__main__":
+    fails = 0
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print(f"  ok   {name}")
+            except AssertionError as e:
+                fails += 1
+                print(f"  FAIL {name}: {e}")
+    print("todos passaram" if not fails else f"{fails} falha(s)")
+    sys.exit(1 if fails else 0)
