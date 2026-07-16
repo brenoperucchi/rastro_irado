@@ -1,11 +1,11 @@
 ---
 id: IRAI-18
 title: Construir ledger diário champion-challenger do WIN
-status: Review
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:16'
+updated_date: '2026-07-16 05:26'
 labels:
   - validation
   - win
@@ -160,3 +160,9 @@ Baseline e bootstrap não foram re-tocados por estes commits — meu veredito
 anterior sobre eles (corretos) continua válido.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Ledger diário champion-challenger do WIN implementado, publicado e validado no Ryzen. Preserva Miqueias/v1/v2, OHLC M5, Pair/NWE, GEX/MID e metadados; exige fechamento causal por fonte, usa offset sazonal e rejeita manifesto adulterado. Avaliador exige 60 sessões e IC95% pareado antes de promover vencedor. Re-review independente: GO; 210 passed, 17 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->

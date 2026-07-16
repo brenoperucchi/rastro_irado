@@ -1,11 +1,11 @@
 ---
 id: IRAI-19
 title: Especificar regra manual do Miqueias para WIN
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:20'
+updated_date: '2026-07-16 05:26'
 labels:
   - tactical
   - win
@@ -34,7 +34,7 @@ Transformar a leitura discricionária descrita pelo Miqueias em uma especificaç
 - [x] #3 GEX, MID, Pair e NWE têm papéis separados e sem dupla contagem
 - [x] #4 Alvo, stop, cooldown e invalidação são explicitados ou marcados como decisão pendente do Miqueias
 - [x] #5 A especificação não promove setup nem altera código de produção
-- [ ] #6 Auditoria identifica a implementação GEX já existente no IRAI e registra que o repositório público miqueiasa1/wdowin_pairtrading, main 7fce5bc e histórico público, não contém código GEX localizável
+- [x] #6 Auditoria identifica a implementação GEX já existente no IRAI e registra que o repositório público miqueiasa1/wdowin_pairtrading, main 7fce5bc e histórico público, não contém código GEX localizável
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -63,6 +63,8 @@ região/direção/inclinação como dado descritivo, sem esse evento.
 
 Nenhum código foi alterado. Nenhum item do NF-01 (docs/plans/2026-07-14-divergence-
 strategy-vs-tactical-layer.md §11, itens 4-6) foi continuado nesta tarefa.
+
+Correção factual concluída no commit b7cf047 e verificada: documento agora descreve o pipeline GEX integrado e registra a ausência de código GEX localizável no histórico público do repositório indicado.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -104,3 +106,9 @@ papel do NWE, desempate Pair×Z) — a única removida da lista foi "fonte do
 GEX" (§6.7, agora resolvida com fatos, não mais pendência).
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Regra manual do Miqueias para WIN especificada de forma determinística, com lacunas de negócio explicitadas. Integração GEX corrigida e documentada a partir do worker real; repositório externo auditado. Nenhum código de produção alterado.
+<!-- SECTION:FINAL_SUMMARY:END -->
