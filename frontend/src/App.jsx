@@ -343,6 +343,29 @@ const NWE_BW = 8;    // bandwidth (kernel width) — label apenas
 /* ── Main App ────────────────────────────────────── */
 const REFRESH_INTERVAL = 30_000 // 30 seconds (fallback polling)
 
+const P_DYNAMIC_COMPARISON_SERIES = [
+  {
+    id: 'miqueias_public', label: 'Miqueias público', color: '#F59E0B',
+    lineStyle: 'solid', lineWidth: 2,
+    title: 'Série pública do Miqueias, somente quando pertence à sessão selecionada.',
+  },
+  {
+    id: 'v1', label: 'IRAI v1', color: '#A78BFA',
+    lineStyle: 'dashed', lineWidth: 1,
+    title: 'Modelo local estático atual.',
+  },
+  {
+    id: 'v2', label: 'IRAI v2', color: '#60A5FA',
+    lineStyle: 'dashed', lineWidth: 2,
+    title: 'Modelo local dinâmico com Kalman.',
+  },
+  {
+    id: 'miqueias_static', label: 'Miqueias estático', color: '#F472B6',
+    lineStyle: 'solid', lineWidth: 1,
+    title: 'Hipótese estática com pesos e sigmas divulgados; não é réplica do Kalman do Miqueias.',
+  },
+]
+
 // Helper: compute local time from UTC time string + offset in hours
 function toLocalTime(utcTimeStr, offsetH) {
   // `!offsetH` descartaria um offset 0 legítimo (ativo sem deslocamento) — só a
@@ -418,6 +441,15 @@ export default function App() {
   const [error, setError] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [rastroView, setRastroView] = useState('both') // 'v1', 'v2', 'both'
+  const [pDynamicComparison, setPDynamicComparison] = useState(null)
+  const [pDynamicComparisonError, setPDynamicComparisonError] = useState(null)
+  const [pDynamicVisibility, setPDynamicVisibility] = useState({
+    miqueias_public: true,
+    v1: true,
+    v2: true,
+    miqueias_static: true,
+  })
+  const pDynamicComparisonReqRef = useRef(0)
 
   // The effective date: LIVE = today (from backend), or manually selected
   const effectiveDate = liveMode ? (dates.length > 0 ? dates[0] : selectedDate) : selectedDate
@@ -658,6 +690,45 @@ export default function App() {
     }
   }, [effectiveDate, liveMode, selectedTarget])
 
+  // Curvas paralelas de auditoria do P Dinâmico. O endpoint faz a leitura do
+  // Firebase do Miqueias no servidor e recusa série de outra sessão; o browser
+  // não acessa fonte externa diretamente.
+  useEffect(() => {
+    const reqId = ++pDynamicComparisonReqRef.current
+    if (!API || selectedTarget !== 'WIN$N' || !effectiveDate) {
+      return undefined
+    }
+
+    let mounted = true
+    const refreshComparison = () => {
+      const params = new URLSearchParams({ session_date: effectiveDate, target: selectedTarget })
+      fetch(`${API}/api/irai/p-dynamic-comparison?${params.toString()}`)
+        .then(async response => {
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.detail || 'comparação indisponível')
+          return data
+        })
+        .then(data => {
+          if (!mounted || reqId !== pDynamicComparisonReqRef.current) return
+          setPDynamicComparison(data)
+          setPDynamicComparisonError(null)
+        })
+        .catch(err => {
+          if (!mounted || reqId !== pDynamicComparisonReqRef.current) return
+          setPDynamicComparisonError(err.message)
+        })
+    }
+
+    refreshComparison()
+    if (!liveMode) return () => { mounted = false }
+
+    const timer = setInterval(refreshComparison, 60_000)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+    }
+  }, [effectiveDate, liveMode, selectedTarget])
+
   // Initial load on date/target/liveMode change + polling
   useEffect(() => {
     fetchSeries(effectiveDate, selectedTarget, false)
@@ -724,6 +795,22 @@ export default function App() {
   }, [series]);
   const validSeriesWithNWE = useMemo(() => seriesWithNWE.filter(s => s.win_current !== undefined), [seriesWithNWE]);
   const nweNow = validSeriesWithNWE.length > 0 ? validSeriesWithNWE[validSeriesWithNWE.length - 1] : null;
+  const currentPDynamicComparison = (
+    pDynamicComparison?.session_date === effectiveDate
+    && pDynamicComparison?.target === selectedTarget
+  ) ? pDynamicComparison : null
+  const pDynamicChartSeries = currentPDynamicComparison ? (() => {
+    const availability = currentPDynamicComparison.availability || {}
+    const comparisonSeries = currentPDynamicComparison.series || {}
+    return P_DYNAMIC_COMPARISON_SERIES.map(definition => ({
+      ...definition,
+      visible: Boolean(pDynamicVisibility[definition.id] && availability[definition.id]?.available),
+      history: (comparisonSeries[definition.id] || []).map(point => ({
+        ...point,
+        time: point.timestamp ? point.timestamp.substring(11, 16) : null,
+      })),
+    }))
+  })() : undefined
 
   return (
     <>
@@ -1001,7 +1088,49 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <TVProbabilityChart history={seriesWithNWE} effectiveDate={effectiveDate} hideXAxis={true} />
+              {API && selectedTarget === 'WIN$N' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '5px 12px',
+                  padding: '5px 0', borderTop: '1px solid var(--border-dim)',
+                }}>
+                  {P_DYNAMIC_COMPARISON_SERIES.map(definition => {
+                    const sourceStatus = currentPDynamicComparison?.availability?.[definition.id]
+                    const available = Boolean(sourceStatus?.available)
+                    const unavailableReason = pDynamicComparisonError || sourceStatus?.reason
+                    return (
+                      <label
+                        key={definition.id}
+                        title={available ? definition.title : (unavailableReason || 'Carregando série')}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          fontFamily: 'var(--font-mono)', fontSize: 9,
+                          color: available ? definition.color : '#475569',
+                          cursor: available ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={available && Boolean(pDynamicVisibility[definition.id])}
+                          disabled={!available}
+                          onChange={event => setPDynamicVisibility(current => ({
+                            ...current,
+                            [definition.id]: event.target.checked,
+                          }))}
+                          style={{ margin: 0, accentColor: definition.color }}
+                        />
+                        <span style={{ width: 12, height: 2, background: definition.color, opacity: available ? 1 : 0.35 }} />
+                        {definition.label}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+              <TVProbabilityChart
+                history={seriesWithNWE}
+                comparisonSeries={pDynamicChartSeries}
+                effectiveDate={effectiveDate}
+                hideXAxis={true}
+              />
 
               {/* MOVIMENTO DO ÍNDICE — NWE (Nadaraya-Watson Envelope) */}
               <div style={{ marginTop: 2, borderTop: '1px solid var(--border-dim)' }}>

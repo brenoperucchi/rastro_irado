@@ -14,11 +14,14 @@ import os
 import sys
 import asyncio
 import json
-from datetime import date, datetime, timedelta
+import math
+import time
+from datetime import date, datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from urllib.request import Request, urlopen
 
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -31,6 +34,10 @@ from backend.irai.engine import (
 )
 from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.irai.zscore import PAIR_THRESHOLD
+from backend.irai.miqueias_static import (
+    build_miqueias_static_rows,
+    load_default_miqueias_static_config,
+)
 
 # ── Engine singleton ──────────────────────────────────────
 engine: IRAIEngine = None
@@ -40,6 +47,13 @@ data_updated_event = asyncio.Event()
 # ── Cache de resultados computados ─────────────────────
 series_cache: dict = {}   # (target, date, version) → result dict
 overview_cache_data: dict = {} # (date, version) → result dict
+p_dynamic_comparison_cache: dict = {}  # (target, date) → payload diagnóstico
+miqueias_public_cache: dict = {}       # payload remoto curto, compartilhado por sessão
+
+MIQUEIAS_PUBLIC_SOURCE = (
+    "https://rastromacro-default-rtdb.firebaseio.com/series/WIN_N.json"
+)
+MIQUEIAS_PUBLIC_CACHE_SECONDS = 60
 
 
 def _current_gex_walls(row: dict, stored_walls: list) -> list:
@@ -179,6 +193,8 @@ async def notify_update():
     """Chamado pelo collector.py após inserir novas barras."""
     series_cache.clear()
     overview_cache_data.clear()
+    p_dynamic_comparison_cache.clear()
+    miqueias_public_cache.clear()
     data_updated_event.set()
     return {"status": "ok"}
 
@@ -508,6 +524,191 @@ async def irai_series(
         }
     }
     series_cache[(target, session_date, version)] = result
+    return result
+
+
+def _comparison_points(rows: list[dict]) -> list[dict]:
+    """Reduz snapshots ao contrato necessário pelo chart de comparação."""
+    return [
+        {
+            "timestamp": row.get("timestamp"),
+            "p_up": row.get("p_up"),
+            "is_ghost": bool(row.get("is_ghost", False)),
+            "is_preview": bool(row.get("is_preview", False)),
+        }
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("timestamp"), str)
+    ]
+
+
+def _fetch_miqueias_public_document():
+    request = Request(MIQUEIAS_PUBLIC_SOURCE, headers={"User-Agent": "IRAI-dashboard/1.0"})
+    with urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _miqueias_public_rows(document: object, session_date: str) -> list[dict]:
+    """Extrai uma sessão sem inventar alinhamento ou preencher barras ausentes."""
+    if isinstance(document, list):
+        rows = document
+    elif isinstance(document, dict):
+        series = document.get("series")
+        if isinstance(series, list):
+            rows = series
+        elif isinstance(series, dict) and isinstance(series.get("WIN_N"), list):
+            rows = series["WIN_N"]
+        else:
+            raise ValueError("payload público não contém série WIN_N")
+    else:
+        raise ValueError("payload público não é uma série JSON")
+
+    points = []
+    seen_timestamps = set()
+    for row_number, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"barra pública {row_number} não é objeto JSON")
+        timestamp = row.get("timestamp")
+        if not isinstance(timestamp, str) or not timestamp:
+            raise ValueError(f"barra pública {row_number} sem timestamp")
+        try:
+            moment = datetime.fromisoformat(
+                timestamp[:-1] + "+00:00" if timestamp.endswith("Z") else timestamp
+            )
+        except ValueError as exc:
+            raise ValueError(f"timestamp público inválido: {timestamp!r}") from exc
+        if moment.utcoffset() is None:
+            raise ValueError(f"timestamp público sem fuso explícito: {timestamp!r}")
+        moment = moment.astimezone(timezone.utc)
+        timestamp = moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+        if moment.date().isoformat() != session_date:
+            continue
+        value_field = "p_up_v1" if row.get("p_up_v1") is not None else "p_up"
+        value = row.get(value_field)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{value_field} público não é numérico")
+        probability = float(value)
+        if not math.isfinite(probability) or not 0 <= probability <= 100:
+            raise ValueError(f"{value_field} público fora de 0..100")
+        if timestamp in seen_timestamps:
+            raise ValueError(f"timestamp público duplicado: {timestamp}")
+        seen_timestamps.add(timestamp)
+        points.append({
+            "timestamp": timestamp,
+            "p_up": probability,
+            "is_ghost": bool(row.get("is_ghost", False)),
+            "is_preview": bool(row.get("is_preview", False)),
+            "source_field": value_field,
+        })
+    return sorted(points, key=lambda point: point["timestamp"])
+
+
+async def _miqueias_public_points(session_date: str) -> tuple[list[dict], str | None]:
+    """Carrega o feed externo fora do event loop e o reutiliza por 60 segundos."""
+    now = time.monotonic()
+    cached_at = miqueias_public_cache.get("fetched_at")
+    if cached_at is None or now - cached_at >= MIQUEIAS_PUBLIC_CACHE_SECONDS:
+        try:
+            miqueias_public_cache["document"] = await asyncio.to_thread(
+                _fetch_miqueias_public_document
+            )
+            miqueias_public_cache["error"] = None
+        except Exception as exc:
+            miqueias_public_cache["document"] = None
+            miqueias_public_cache["error"] = type(exc).__name__
+        miqueias_public_cache["fetched_at"] = now
+
+    if miqueias_public_cache.get("error"):
+        return [], f"falha ao carregar série pública ({miqueias_public_cache['error']})"
+    try:
+        return _miqueias_public_rows(miqueias_public_cache.get("document"), session_date), None
+    except ValueError as exc:
+        return [], f"série pública inválida ({exc})"
+
+
+def _series_response_or_error(response, version: str) -> dict:
+    if not isinstance(response, JSONResponse):
+        return response
+    try:
+        content = json.loads(response.body)
+        detail = content.get("error", "sem dados")
+    except (TypeError, ValueError, AttributeError):
+        detail = "sem dados"
+    raise HTTPException(
+        status_code=response.status_code,
+        detail=f"série local {version} indisponível: {detail}",
+    )
+
+
+@app.get("/api/irai/p-dynamic-comparison")
+async def p_dynamic_comparison(
+    session_date: str = Query(None, description="Data YYYY-MM-DD (default: hoje)"),
+    target: str = Query("WIN$N", description="Comparação disponível para WIN$N"),
+):
+    """Séries diagnósticas alinhadas para comparar P Dinâmico no gráfico.
+
+    Não altera o ``P_up`` ativo: v1, v2, Miqueias público e a hipótese estática
+    são apenas curvas paralelas de auditoria. A série pública é omitida quando
+    a fonte estiver em outra sessão, para não comparar pregões diferentes.
+    """
+    if target != "WIN$N":
+        raise HTTPException(status_code=400, detail="comparação disponível apenas para WIN$N")
+    if session_date is None:
+        session_date = date.today().isoformat()
+
+    cache_key = (target, session_date)
+    if cache_key in p_dynamic_comparison_cache:
+        return p_dynamic_comparison_cache[cache_key]
+
+    # A engine conserva estado Kalman no processo; calcular em sequência evita
+    # duas recomputações concorrentes disputando o mesmo estado durante live.
+    v1_response = await irai_series(session_date=session_date, target=target, version="v1")
+    v2_response = await irai_series(session_date=session_date, target=target, version="v2")
+    v1 = _series_response_or_error(v1_response, "v1")
+    v2 = _series_response_or_error(v2_response, "v2")
+    v2_rows = v2.get("series", [])
+
+    try:
+        static_config = load_default_miqueias_static_config()
+        if static_config.target != target:
+            raise ValueError(f"configuração é para {static_config.target}")
+        static_points = build_miqueias_static_rows(v2_rows, static_config)
+        static_availability = {"available": True}
+    except ValueError as exc:
+        static_points = []
+        static_availability = {"available": False, "reason": str(exc)}
+
+    public_points, public_error = await _miqueias_public_points(session_date)
+    if public_error:
+        public_availability = {"available": False, "reason": public_error}
+    elif not public_points:
+        public_availability = {
+            "available": False,
+            "reason": f"série pública indisponível para a sessão {session_date}",
+        }
+    else:
+        public_availability = {"available": True}
+
+    result = {
+        "session_date": session_date,
+        "target": target,
+        "is_b3": bool(v2.get("is_b3", False)),
+        "brt_offset_h": v2.get("brt_offset_h", 0),
+        "series": {
+            "miqueias_public": public_points,
+            "v1": _comparison_points(v1.get("series", [])),
+            "v2": _comparison_points(v2_rows),
+            "miqueias_static": static_points,
+        },
+        "availability": {
+            "miqueias_public": public_availability,
+            "v1": {"available": True},
+            "v2": {"available": True},
+            "miqueias_static": static_availability,
+        },
+    }
+    p_dynamic_comparison_cache[cache_key] = result
     return result
 
 

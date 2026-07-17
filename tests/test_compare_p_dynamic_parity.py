@@ -33,6 +33,8 @@ def _miqueias_static_config(**overrides):
         "name": "miqueias_static",
         "target": "WIN$N",
         "effective_from": "2026-06-23",
+        "return_unit": "percent",
+        "normalization": "ret/(100*sigma*sqrt(t_frac))",
         "alpha": 2.0,
         "intercept": -0.2,
         "factors": {
@@ -52,14 +54,15 @@ def test_challenger_estatico_usa_retorno_sigmas_e_parametros_declarados():
         "is_ghost": False,
         "is_preview": False,
         "factors": {
-            "wdo": {"ret": 0.1, "weight": 999.0, "z_score": 999.0},
-            "di1": {"ret": -0.2, "weight": 999.0, "z_score": 999.0},
+            "wdo": {"ret": 10.0, "weight": 999.0, "z_score": 999.0},
+            "di1": {"ret": -20.0, "weight": 999.0, "z_score": 999.0},
         },
+        "t_frac": 0.25,
     }]
 
     challenger = build_miqueias_static_rows(rows, config)
 
-    expected_score = 0.5 * (0.1 / 0.1) - 0.2 * (-0.2 / 0.2)
+    expected_score = 0.5 * ((10.0 / 100) / (0.1 * 0.5)) - 0.2 * ((-20.0 / 100) / (0.2 * 0.5))
     expected_p_up = 100.0 / (1.0 + math.exp(-(2.0 * expected_score - 0.2)))
     assert challenger == [{
         "timestamp": "2026-07-16T15:00:00Z",
@@ -81,6 +84,7 @@ def test_challenger_estatico_falha_fechado_sem_sigma_ou_fator_da_barra():
         build_miqueias_static_rows([{
             "timestamp": "2026-07-16T15:00:00Z",
             "factors": {"wdo": {"ret": 0.0}},
+            "t_frac": 0.25,
         }], config)
 
     partial = load_miqueias_static_config({
@@ -91,6 +95,7 @@ def test_challenger_estatico_falha_fechado_sem_sigma_ou_fator_da_barra():
         build_miqueias_static_rows([{
             "timestamp": "2026-07-16T15:00:00Z",
             "factors": {"wdo": {"ret": 0.0}, "di1": {"ret": 0.0}},
+            "t_frac": 0.25,
         }], partial)
 
 
@@ -100,6 +105,7 @@ def test_challenger_estatico_respeita_vigencia_e_recusa_fonte_vazia():
         build_miqueias_static_rows([{
             "timestamp": "2026-06-20T15:00:00Z",
             "factors": {"wdo": {"ret": 0.0}, "di1": {"ret": 0.0}},
+            "t_frac": 0.25,
         }], config)
     with pytest.raises(ValueError, match="não contém barras"):
         build_miqueias_static_rows([], config)
@@ -125,6 +131,7 @@ def test_challenger_estatico_recusa_strings_e_booleanos_em_configuracao_e_retorn
         build_miqueias_static_rows([{
             "timestamp": "2026-07-16T15:00:00Z",
             "factors": {"wdo": {"ret": True}, "di1": {"ret": 0.0}},
+            "t_frac": 0.25,
         }], config)
 
 
@@ -352,6 +359,7 @@ def test_cli_adiciona_challenger_estatico_configurado_sem_mudar_v1_v2(tmp_path):
     )
     source.write_text(json.dumps({"series": [{
         "timestamp": "2026-07-16T15:00:00Z",
+        "t_frac": 0.25,
         "factors": {
             "wdo": {"ret": 0.1},
             "di1": {"ret": -0.2},

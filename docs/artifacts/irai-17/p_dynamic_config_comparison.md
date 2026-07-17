@@ -6,9 +6,10 @@ exclusivamente da calibração local descrita abaixo. Este artefato existe para 
 em um único lugar versionado, o que já foi apurado nas tasks IRAI-17 e IRAI-21 antes da
 próxima fase (captura de sessões fechadas até o gate de 60 + avaliação OOS).
 
-Fontes: comentário `@codex` de 2026-07-16 12:29 em
-`backlog/tasks/irai-17 - Medir-paridade-do-P-Dinâmico-do-Miqueias-para-WIN.md` (informação
-repassada pelo Miqueias) + consulta direta a `data/irai.db` (`asset_models`/`model_params`,
+Fontes: disclosure completo de pesos, sigmas, `alpha` e `intercept` repassado
+pelo Miqueias em 2026-07-17; comentário `@codex` de 2026-07-16 12:29 em
+`backlog/tasks/irai-17 - Medir-paridade-do-P-Dinâmico-do-Miqueias-para-WIN.md`;
+e consulta direta a `data/irai.db` (`asset_models`/`model_params`,
 `target='WIN$N'`, verificada em 2026-07-16, todas as linhas `win_%` datadas
 `effective_from=2026-07-10T19:53:35Z`).
 
@@ -44,50 +45,53 @@ e, possivelmente, do estado/dados do Kalman (v2). Ver §4.
 | CADCHF | +0.110682 | 0.002741 |
 | iSharesTreasury1-3+ | −0.800422 | 0.000486 |
 
-## 3. Configuração MIQUEIAS — PARCIAL (apenas o que foi disclosed em 2026-07-16)
+## 3. Configuração MIQUEIAS — completa para o challenger estático
 
-| Campo | Valor | Status |
-|---|---|---|
-| effective_from (calibração citada) | `2026-06-23` | confirmado |
-| alpha | `1.918606` | confirmado |
-| intercept | `-0.25` | confirmado |
-| USDMXN (w) | `-0.303354` | confirmado |
-| Treasury (w) | `+0.257738` | confirmado |
-| WDO (w) | `-0.604859` | confirmado |
-| DI (w) | `-0.315301` | confirmado |
-| BRENT (w) | — | **GAP — não disclosed** |
-| BTCUSD (w) | — | **GAP — não disclosed** |
-| US30 (w) | — | **GAP — não disclosed** |
-| CADCHF (w) | — | **GAP — não disclosed** |
-| sigmas (todos os 8) | — | **GAP — nenhum disclosed** |
-| campo/versão pública renderizada (`p_up` vs `p_up_v1`, v1 vs v2) | — | **GAP — não confirmado** |
+Em 2026-07-17 foram divulgados os oito pesos e sigmas. A versão canônica,
+consumida pelo dashboard e pelo comparador, está em
+`backend/irai/config/miqueias_static_win_2026-06-23.json`.
 
-**Importante:** com 4 de 8 pesos e nenhum sigma disclosed, a configuração Miqueias **não é
-reprodutível integralmente** ainda — apenas parcialmente comparável nos 4 fatores conhecidos
-mais alpha/intercept. Qualquer "challenger estático" construído a partir desta informação
-reproduz a estrutura (mesma cesta) e o comportamento nos 4 pesos conhecidos, mas não é uma
-réplica fiel da fórmula completa do Miqueias.
+| Campo | Valor |
+|---|---|
+| effective_from | `2026-06-23` |
+| alpha | `1.918606` |
+| intercept | `-0.25` |
+| normalização | `ret/(100*sigma*sqrt(t_frac))` (`ret` serializado em %) |
 
-## 4. Diffs observados nos 4 fatores conhecidos + parâmetros globais
+| Fator | peso (w) | sigma diário |
+|---|---:|---:|
+| WDO$N | −0.604859 | 0.006909 |
+| DI1$N | −0.315301 | 0.008131 |
+| BRENT | −0.005800 | 0.020946 |
+| BTCUSD | 0.000000 | 0.014342 |
+| US30 | +0.076299 | 0.006229 |
+| USDMXN | −0.303354 | 0.004309 |
+| CADCHF | +0.084927 | 0.002972 |
+| iSharesTreasury1-3+ | +0.257738 | 0.000360 |
+
+O challenger usa retornos causais do IRAI e aplica a normalização temporal
+`sqrt(t)` já usada pelo motor local. É uma curva diagnóstica, não troca o
+`P_up` ativo e não afirma reproduzir o Kalman do Miqueias.
+
+## 4. Diffs observados na calibração estática
 
 | Item | Local | Miqueias | Observação |
-|---|---|---|---|
+|---|---:|---:|---|
 | alpha | 0.736566 | 1.918606 | Miqueias ~2.6× maior |
-| intercept | ~0.0003 (~0) | −0.25 | com score zero, curva Miqueias parte de ~43.8% vs ~50.0% local |
-| WDO (w) | −0.428164 | −0.604859 | mesmo sinal, magnitude maior no Miqueias |
-| DI (w) | −0.431176 | −0.315301 | mesmo sinal, magnitude menor no Miqueias |
+| intercept | ~0.0003 | −0.25 | score zero: ~50.0% local vs ~43.8% Miqueias |
+| WDO (w) | −0.428164 | −0.604859 | mesmo sinal, magnitude maior |
+| DI (w) | −0.431176 | −0.315301 | mesmo sinal, magnitude menor |
 | Treasury (w) | −0.800422 | +0.257738 | **sinal invertido** |
 | USDMXN (w) | +0.037873 | −0.303354 | **sinal invertido** |
 
-Duas inversões de sinal (Treasury, USDMXN) em 4 fatores comparáveis é uma diferença
-qualitativa, não só de escala — reforça que a divergência visual das curvas é dominada por
-calibração (e possivelmente por estado/dados do Kalman no v2), não pela cesta de fatores.
+As inversões de Treasury e USDMXN, além dos demais pesos/sigmas diferentes,
+explicam uma parcela material da divergência visual sem atribuí-la
+indevidamente ao Kalman.
 
 ## 5. O que ainda impede paridade v2 exata (item 2)
 
-Mesmo que os 4 pesos e todos os sigmas do Miqueias fossem disclosed, os itens abaixo
-continuam bloqueando paridade v2 exata — não são "mais dados de calibração", são estado e
-infraestrutura do motor causal:
+Mesmo com a calibração estática completa, os itens abaixo continuam bloqueando
+paridade v2 exata — são estado e infraestrutura do motor causal:
 
 1. **Q/R do Kalman** (matrizes de ruído de processo/observação) — não disclosed para o
    modelo do Miqueias. Sem elas, a trajetória dinâmica de pesos não é reproduzível mesmo
@@ -104,19 +108,19 @@ infraestrutura do motor causal:
    *parser* do IRAI-17 para ler qualquer série pública genérica — **não** é confirmação do
    que o deploy do Miqueias efetivamente calcula e publica.
 
-Nenhum destes 4 gaps é resolvido por mais disclosure de pesos/sigmas — são perguntas
-distintas (estado do filtro, infraestrutura de dados, contrato do campo publicado).
+Nenhum destes quatro gaps é resolvido por pesos/sigmas: são perguntas distintas
+sobre estado do filtro, infraestrutura de dados e contrato público.
 
 ## 6. Item 3 — revisão independente do challenger IRAI-21: JÁ CONCLUÍDA
 
 **Nota de desambiguação:** o "challenger" desta seção **não é o mesmo objeto** do
-"challenger estático" hipotético mencionado no §3/§5. IRAI-21 (Pair fixo WIN-WDO) é um
+"challenger estático" de P Dinâmico mencionado no §3/§5. IRAI-21 (Pair fixo WIN-WDO) é um
 sinal de pairs-trading (par fixo vs. par dinâmico do Kalman) — não tem relação com a
 fórmula de `P_up` do Miqueias nem com os pesos/sigmas comparados neste documento. O
-"challenger estático" de §3 (réplica da fórmula de `P_up` do Miqueias com os pesos
-disclosed) **não foi construído** — é apenas descrito como hipótese, bloqueada pelos
-gaps de §3/§5. Os dois compartilham a palavra "challenger" e o mesmo par WIN$N/WDO$N como
-contexto, mas são avaliações distintas, com métodos e conclusões independentes.
+"challenger estático" de §3 **foi construído** para visualização, usando a
+configuração completa e retornos locais. Os dois compartilham a palavra
+"challenger" e o mesmo par WIN$N/WDO$N como contexto, mas são avaliações
+distintas, com métodos e conclusões independentes.
 
 Antes de dispatchar uma nova revisão, verifiquei o histórico da task IRAI-21
 (`status: Done`, comentários e Implementation Notes). O challenger Pair fixo WIN-WDO já

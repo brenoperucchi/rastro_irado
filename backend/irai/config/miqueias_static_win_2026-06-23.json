@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "miqueias_static",
+  "target": "WIN$N",
+  "effective_from": "2026-06-23",
+  "return_unit": "percent",
+  "normalization": "ret/(100*sigma*sqrt(t_frac))",
+  "alpha": 1.918606,
+  "intercept": -0.25,
+  "factors": {
+    "wdo": { "weight": -0.604859, "sigma": 0.006909 },
+    "di1": { "weight": -0.315301, "sigma": 0.008131 },
+    "brent": { "weight": -0.005800, "sigma": 0.020946 },
+    "btcusd": { "weight": 0.0, "sigma": 0.014342 },
+    "us30": { "weight": 0.076299, "sigma": 0.006229 },
+    "usdmxn": { "weight": -0.303354, "sigma": 0.004309 },
+    "cadchf": { "weight": 0.084927, "sigma": 0.002972 },
+    "isharestreasury1-3+": { "weight": 0.257738, "sigma": 0.000360 }
+  }
+}

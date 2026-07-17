@@ -12,7 +12,7 @@ function buildPUpSeriesData(history, effectiveDate) {
     if (!bar || !bar.time) continue
     const t = toUnixTime(effectiveDate, bar.time)
     if (t === 0) continue
-    const v = bar.p_up_v1 == null ? bar.p_up : bar.p_up_v1
+    const v = bar.value == null ? (bar.p_up_v1 == null ? bar.p_up : bar.p_up_v1) : bar.value
     if (v != null && Number.isFinite(v)) rows.push({ time: t, value: v })
     else rows.push({ time: t })
   }
@@ -22,12 +22,13 @@ function buildPUpSeriesData(history, effectiveDate) {
 }
 
 const TVProbabilityChart = forwardRef(function TVProbabilityChart(
-  { history = [], effectiveDate, hideXAxis = true },
+  { history = [], comparisonSeries, effectiveDate, hideXAxis = true },
   ref,
 ) {
   const containerRef = useRef()
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
+  const seriesByIdRef = useRef(new Map())
 
   useImperativeHandle(ref, () => ({
     getChart: () => chartRef.current,
@@ -41,24 +42,24 @@ const TVProbabilityChart = forwardRef(function TVProbabilityChart(
       rightPriceScale: { visible: true, borderColor: '#1a2530', scaleMargins: { top: 0.1, bottom: 0.1 }, minimumWidth: 45 },
     })
     chartRef.current = chart
+    const seriesById = seriesByIdRef.current
 
-    const series = chart.addSeries(LineSeries, {
-      color: '#60A5FA',
-      lineWidth: 2,
-      lineStyle: LineStyle.Dashed,
+    const thresholds = chart.addSeries(LineSeries, {
+      color: '#0c1218',
+      lineWidth: 1,
       priceScaleId: 'right',
-      crosshairMarkerVisible: true,
+      crosshairMarkerVisible: false,
       priceLineVisible: false,
     })
-    series.createPriceLine({ price: 60, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'compra' })
-    series.createPriceLine({ price: 40, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'venda' })
-    series.createPriceLine({ price: 50, color: '#1E293B', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
-    seriesRef.current = series
+    thresholds.createPriceLine({ price: 60, color: '#4ADE80', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'compra' })
+    thresholds.createPriceLine({ price: 40, color: '#F87171', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'venda' })
+    thresholds.createPriceLine({ price: 50, color: '#1E293B', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
 
     return () => {
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      seriesById.clear()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -68,9 +69,52 @@ const TVProbabilityChart = forwardRef(function TVProbabilityChart(
   }, [hideXAxis])
 
   useEffect(() => {
-    if (!chartRef.current || !seriesRef.current || !history.length) return
-    seriesRef.current.setData(buildPUpSeriesData(history, effectiveDate))
-  }, [history, effectiveDate])
+    const chart = chartRef.current
+    if (!chart) return
+    const definitions = comparisonSeries?.length
+      ? comparisonSeries
+      : [{
+          id: 'v2', label: 'P(↑) Dinâmico', color: '#60A5FA',
+          lineStyle: 'dashed', lineWidth: 2, visible: true, history,
+        }]
+    const desiredIds = new Set(definitions.filter(definition => definition.visible).map(definition => definition.id))
+
+    for (const [id, series] of seriesByIdRef.current) {
+      if (!desiredIds.has(id)) {
+        chart.removeSeries(series)
+        seriesByIdRef.current.delete(id)
+      }
+    }
+
+    for (const definition of definitions) {
+      if (!definition.visible) continue
+      let series = seriesByIdRef.current.get(definition.id)
+      if (!series) {
+        series = chart.addSeries(LineSeries, {
+          color: definition.color,
+          lineWidth: definition.lineWidth,
+          lineStyle: definition.lineStyle === 'dashed' ? LineStyle.Dashed : LineStyle.Solid,
+          priceScaleId: 'right',
+          crosshairMarkerVisible: true,
+          priceLineVisible: false,
+        })
+        seriesByIdRef.current.set(definition.id, series)
+      } else {
+        series.applyOptions({
+          color: definition.color,
+          lineWidth: definition.lineWidth,
+          lineStyle: definition.lineStyle === 'dashed' ? LineStyle.Dashed : LineStyle.Solid,
+        })
+      }
+      series.setData(buildPUpSeriesData(definition.history || [], effectiveDate))
+    }
+
+    seriesRef.current = seriesByIdRef.current.get('v2') || seriesByIdRef.current.values().next().value || null
+  }, [comparisonSeries, history, effectiveDate])
+
+  const legend = comparisonSeries?.length
+    ? comparisonSeries.filter(definition => definition.visible)
+    : [{ id: 'v2', label: 'P(↑) Dinâmico', color: '#60A5FA', lineStyle: 'dashed' }]
 
   return (
     <div style={{ background: '#0c1218', borderRadius: hideXAxis ? '0' : '0 0 8px 8px', paddingBottom: 4, position: 'relative' }}>
@@ -79,10 +123,15 @@ const TVProbabilityChart = forwardRef(function TVProbabilityChart(
         borderTop: '1px solid #1a2530', flexWrap: 'wrap',
       }}>
         <span style={{ fontSize: 9, fontWeight: 'bold', color: '#6f8a9c', letterSpacing: 2 }}>P(↑) DINÂMICO</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ display: 'inline-block', width: 14, height: 2, background: '#60A5FA', borderTop: '1px dashed #60A5FA', borderRadius: 1 }} />
-          <span style={{ fontSize: 9, color: '#60A5FA' }}>P(↑) Dinâmico</span>
-        </span>
+        {legend.map(definition => (
+          <span key={definition.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{
+              display: 'inline-block', width: 14, height: 2, background: definition.color,
+              borderTop: definition.lineStyle === 'dashed' ? `1px dashed ${definition.color}` : 'none',
+            }} />
+            <span style={{ fontSize: 9, color: definition.color }}>{definition.label}</span>
+          </span>
+        ))}
       </div>
       <div ref={containerRef} style={{ width: '100%', height: '260px' }} />
       {(!history || history.length === 0) && (
