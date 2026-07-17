@@ -109,6 +109,15 @@ distintas (estado do filtro, infraestrutura de dados, contrato do campo publicad
 
 ## 6. Item 3 — revisão independente do challenger IRAI-21: JÁ CONCLUÍDA
 
+**Nota de desambiguação:** o "challenger" desta seção **não é o mesmo objeto** do
+"challenger estático" hipotético mencionado no §3/§5. IRAI-21 (Pair fixo WIN-WDO) é um
+sinal de pairs-trading (par fixo vs. par dinâmico do Kalman) — não tem relação com a
+fórmula de `P_up` do Miqueias nem com os pesos/sigmas comparados neste documento. O
+"challenger estático" de §3 (réplica da fórmula de `P_up` do Miqueias com os pesos
+disclosed) **não foi construído** — é apenas descrito como hipótese, bloqueada pelos
+gaps de §3/§5. Os dois compartilham a palavra "challenger" e o mesmo par WIN$N/WDO$N como
+contexto, mas são avaliações distintas, com métodos e conclusões independentes.
+
 Antes de dispatchar uma nova revisão, verifiquei o histórico da task IRAI-21
 (`status: Done`, comentários e Implementation Notes). O challenger Pair fixo WIN-WDO já
 passou por **duas rodadas independentes de revisão**, não uma:

@@ -211,7 +211,7 @@ obtida desta vez. Achados abaixo refletem uma única fonte, não o tri-review us
 | 7 | q=0 (sem dividendo) para IBOV | **Correto, não é simplificação** — IBOV é índice de retorno total (reinveste dividendos), q=0 é o carry certo |
 | 8 | Parsing C/V do PE oficial (`gex_official.parse_equity_premiums`) | Confirmado contra arquivo `PE250924.ex_` real (719 C / 719 V, magnitudes batem) |
 | 9 | Filtro de ticker IBOV (`parse_ibov_open_interest`) | Confirmado limpo contra `SPRE250924.zip` real, sem contaminação de não-opção |
-| 10 | Cancelamento algébrico de `f` na fórmula do `centro` do grid (linha ~466, agora ~476) | Confirmado inofensivo/dead-code — fazer `f` importar aí seria ERRADO (walls fora dos strikes reais) |
+| 10 | Cancelamento algébrico de `f` na fórmula do `centro` do grid (linha ~466, agora ~476) | Confirmado inofensivo/dead-code — fazer `f` importar aí seria ERRADO (walls fora dos strikes reais). **Superseded**: este item auditou a fórmula centrada no Flip vigente naquele momento; após §4.8, `centro` é `round(spot / grid_step) * grid_step` e não envolve `f` na conta do centro — ver `build_walls()` em `gex_worker.py` |
 
 **Item 4 — hipótese direcional rejeitada:** uma leitura isolada sugeriu preferir
 cruzamentos neg→pos quando houvesse mais de um zero do netGEX cumulativo. A revisão

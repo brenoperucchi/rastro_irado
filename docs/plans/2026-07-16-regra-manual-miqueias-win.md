@@ -32,13 +32,17 @@ Fora de escopo deste documento:
   canônico, comparação imagem/código/plano, conflitos de threshold já identificados.
 - `docs/explenation.jpeg` — imagem anotada "Marcações de Compra e Venda" (Pair Spread +
   macro), 4 eventos de exemplo.
-- `docs/indicadores/walls.txt` — fonte ORIGINAL do indicador visual de GEX (formato
+- `docs/indicadores/walls.txt` — fonte ORIGINAL citada do indicador visual de GEX (formato
   ProfitChart/NTSL) — hoje só a parte de PLOTAGEM das 17 walls/16 mid-walls a partir de
   `GammaMax`/`GammaMin`/`GammaFlip` já calculados; a integração real (§4.1) substituiu o
-  cálculo desses três valores.
-- `docs/indicadores/gaussiana.txt` — fonte do NWE original do Miqueias (envoltória
-  gaussiana + regra de toque de banda).
-- `docs/indicadores/hist_zscore.txt` — histograma de fluxo institucional, protótipo.
+  cálculo desses três valores. **Não verificável**: o arquivo não existe neste repositório
+  nem em seu histórico de git (`ls docs/indicadores/` falha, `git log --all` não tem
+  ocorrência) — a fórmula de centralização em §4.1.3 (spot, não Flip) é uma decisão do
+  projeto documentada ali mesmo, não uma transcrição confirmada deste arquivo.
+- `docs/indicadores/gaussiana.txt` — fonte citada do NWE original do Miqueias (envoltória
+  gaussiana + regra de toque de banda). **Não verificável** pela mesma razão acima.
+- `docs/indicadores/hist_zscore.txt` — histograma de fluxo institucional, protótipo,
+  citado como referência. **Não verificável** pela mesma razão acima.
 - `backend/irai/nwe.py`, `backend/irai/zscore.py`, `backend/irai/engine.py` — implementação
   atual no IRAI (para confirmar o que já existe versus o que a leitura manual assume).
 - `backend/workers/gex_worker.py` (commits `4dd1273..39e6822`) — worker EOD que calcula

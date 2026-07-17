@@ -43,7 +43,11 @@ overview_cache_data: dict = {} # (date, version) → result dict
 
 
 def _current_gex_walls(row: dict, stored_walls: list) -> list:
-    """Atualiza somente a geometria visual de snapshots GEX legados."""
+    """Re-deriva a geometria visual (walls/mid-walls) a partir dos níveis já
+    calculados na linha. Roda incondicionalmente para linhas live e
+    históricas — para live é idempotente (build_walls já centra no spot),
+    mas o principal motivo de existir é normalizar snapshots antigos cuja
+    grade foi gravada com uma convenção de centro diferente da atual."""
     try:
         meta = json.loads(row.get("meta") or "{}")
         grid_step = float(meta["grid_step"])
