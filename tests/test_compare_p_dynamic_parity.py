@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -13,7 +14,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.compare_p_dynamic_parity import (
+    build_miqueias_static_rows,
     build_parity_report,
+    load_miqueias_static_config,
     load_json_source,
     main,
     normalize_series,
@@ -22,6 +25,107 @@ from scripts.compare_p_dynamic_parity import (
 
 def _bar(timestamp, p_up, **extra):
     return {"timestamp": timestamp, "p_up": p_up, **extra}
+
+
+def _miqueias_static_config(**overrides):
+    config = {
+        "schema_version": 1,
+        "name": "miqueias_static",
+        "target": "WIN$N",
+        "effective_from": "2026-06-23",
+        "alpha": 2.0,
+        "intercept": -0.2,
+        "factors": {
+            "wdo": {"weight": 0.5, "sigma": 0.1},
+            "di1": {"weight": -0.2, "sigma": 0.2},
+        },
+    }
+    config.update(overrides)
+    return config
+
+
+def test_challenger_estatico_usa_retorno_sigmas_e_parametros_declarados():
+    """O challenger não pode reutilizar peso/z-score dinâmico do payload local."""
+    config = load_miqueias_static_config(_miqueias_static_config())
+    rows = [{
+        "timestamp": "2026-07-16T15:00:00Z",
+        "is_ghost": False,
+        "is_preview": False,
+        "factors": {
+            "wdo": {"ret": 0.1, "weight": 999.0, "z_score": 999.0},
+            "di1": {"ret": -0.2, "weight": 999.0, "z_score": 999.0},
+        },
+    }]
+
+    challenger = build_miqueias_static_rows(rows, config)
+
+    expected_score = 0.5 * (0.1 / 0.1) - 0.2 * (-0.2 / 0.2)
+    expected_p_up = 100.0 / (1.0 + math.exp(-(2.0 * expected_score - 0.2)))
+    assert challenger == [{
+        "timestamp": "2026-07-16T15:00:00Z",
+        "p_up": pytest.approx(expected_p_up),
+        "is_ghost": False,
+        "is_preview": False,
+    }]
+
+
+def test_challenger_estatico_falha_fechado_sem_sigma_ou_fator_da_barra():
+    incomplete = _miqueias_static_config(
+        factors={"wdo": {"weight": 0.5}},
+    )
+    with pytest.raises(ValueError, match="sigma"):
+        load_miqueias_static_config(incomplete)
+
+    config = load_miqueias_static_config(_miqueias_static_config())
+    with pytest.raises(ValueError, match="di1"):
+        build_miqueias_static_rows([{
+            "timestamp": "2026-07-16T15:00:00Z",
+            "factors": {"wdo": {"ret": 0.0}},
+        }], config)
+
+    partial = load_miqueias_static_config({
+        **_miqueias_static_config(),
+        "factors": {"wdo": {"weight": 0.5, "sigma": 0.1}},
+    })
+    with pytest.raises(ValueError, match="sem configuração para di1"):
+        build_miqueias_static_rows([{
+            "timestamp": "2026-07-16T15:00:00Z",
+            "factors": {"wdo": {"ret": 0.0}, "di1": {"ret": 0.0}},
+        }], partial)
+
+
+def test_challenger_estatico_respeita_vigencia_e_recusa_fonte_vazia():
+    config = load_miqueias_static_config(_miqueias_static_config())
+    with pytest.raises(ValueError, match="anterior à vigência"):
+        build_miqueias_static_rows([{
+            "timestamp": "2026-06-20T15:00:00Z",
+            "factors": {"wdo": {"ret": 0.0}, "di1": {"ret": 0.0}},
+        }], config)
+    with pytest.raises(ValueError, match="não contém barras"):
+        build_miqueias_static_rows([], config)
+
+
+def test_challenger_estatico_recusa_strings_e_booleanos_em_configuracao_e_retorno():
+    with pytest.raises(ValueError, match="schema_version"):
+        load_miqueias_static_config(_miqueias_static_config(schema_version=True))
+    with pytest.raises(ValueError, match="schema_version"):
+        load_miqueias_static_config(_miqueias_static_config(schema_version=1.0))
+    with pytest.raises(ValueError, match="número JSON"):
+        load_miqueias_static_config(_miqueias_static_config(alpha=True))
+    with pytest.raises(ValueError, match="número JSON"):
+        load_miqueias_static_config(_miqueias_static_config(
+            factors={
+                "wdo": {"weight": "0.5", "sigma": 0.1},
+                "di1": {"weight": -0.2, "sigma": 0.2},
+            },
+        ))
+
+    config = load_miqueias_static_config(_miqueias_static_config())
+    with pytest.raises(ValueError, match="número JSON"):
+        build_miqueias_static_rows([{
+            "timestamp": "2026-07-16T15:00:00Z",
+            "factors": {"wdo": {"ret": True}, "di1": {"ret": 0.0}},
+        }], config)
 
 
 def test_cli_importa_backend_quando_executado_fora_da_raiz(tmp_path):
@@ -236,3 +340,84 @@ def test_cli_preserva_empate_de_paridade_sem_escolher_v1_arbitrariamente(tmp_pat
     assert conclusion["parity_tie"] is True
     assert conclusion["closest_candidate"] is None
     assert conclusion["closest_candidates"] == ["v1", "v2"]
+
+
+def test_cli_adiciona_challenger_estatico_configurado_sem_mudar_v1_v2(tmp_path):
+    public = tmp_path / "public.json"
+    source = tmp_path / "factors.json"
+    config = tmp_path / "miqueias_static.json"
+    output = tmp_path / "report.json"
+    public.write_text(
+        json.dumps([_bar("2026-07-16T15:00:00Z", 60.0)]), encoding="utf-8"
+    )
+    source.write_text(json.dumps({"series": [{
+        "timestamp": "2026-07-16T15:00:00Z",
+        "factors": {
+            "wdo": {"ret": 0.1},
+            "di1": {"ret": -0.2},
+        },
+    }]}), encoding="utf-8")
+    config.write_text(
+        json.dumps(_miqueias_static_config()), encoding="utf-8"
+    )
+
+    status = main([
+        "--public-source", str(public),
+        "--skip-local-api",
+        "--miqueias-static-config", str(config),
+        "--miqueias-static-source", str(source),
+        "--output-json", str(output),
+    ])
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert status == 0
+    assert set(report["candidates"]) == {"miqueias_static"}
+    assert report["static_challengers"]["miqueias_static"]["config"]["alpha"] == 2.0
+    assert report["static_challengers"]["miqueias_static"]["config"]["limitations"] == [
+        "static_calibration_only",
+        "no_kalman_state_or_qr",
+        "not_a_claim_of_v2_parity",
+    ]
+
+
+def test_cli_recusa_configuracao_estatica_incompleta(tmp_path):
+    public = tmp_path / "public.json"
+    source = tmp_path / "factors.json"
+    config = tmp_path / "miqueias_static.json"
+    public.write_text(
+        json.dumps([_bar("2026-07-16T15:00:00Z", 60.0)]), encoding="utf-8"
+    )
+    source.write_text(json.dumps({"series": []}), encoding="utf-8")
+    config.write_text(
+        json.dumps(_miqueias_static_config(factors={"wdo": {"weight": 0.5}})),
+        encoding="utf-8",
+    )
+
+    status = main([
+        "--public-source", str(public),
+        "--skip-local-api",
+        "--miqueias-static-config", str(config),
+        "--miqueias-static-source", str(source),
+    ])
+
+    assert status == 1
+
+
+def test_cli_recusa_fonte_vazia_para_challenger_estatico(tmp_path):
+    public = tmp_path / "public.json"
+    source = tmp_path / "factors.json"
+    config = tmp_path / "miqueias_static.json"
+    public.write_text(
+        json.dumps([_bar("2026-07-16T15:00:00Z", 60.0)]), encoding="utf-8"
+    )
+    source.write_text(json.dumps({"series": []}), encoding="utf-8")
+    config.write_text(json.dumps(_miqueias_static_config()), encoding="utf-8")
+
+    status = main([
+        "--public-source", str(public),
+        "--skip-local-api",
+        "--miqueias-static-config", str(config),
+        "--miqueias-static-source", str(source),
+    ])
+
+    assert status == 1

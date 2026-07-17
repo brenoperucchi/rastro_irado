@@ -23,6 +23,13 @@ Também é possível comparar arquivos capturados::
     python -X utf8 scripts/compare_p_dynamic_parity.py \
       --skip-local-api \
       --candidate v1=win_v1.json --candidate v2=win_v2.json
+
+Um challenger estático do Miqueias é opcional e só é construído a partir de
+uma configuração completa e versionada. Ele usa os retornos dos fatores da
+série de entrada, nunca os pesos ou z-scores dinâmicos do IRAI::
+
+    python -X utf8 scripts/compare_p_dynamic_parity.py \
+      --miqueias-static-config /caminho/para/miqueias_static.json
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 from urllib.parse import urlencode
@@ -52,6 +59,7 @@ DEFAULT_LOCAL_API = "http://localhost:8888"
 DEFAULT_TARGET = "WIN$N"
 PUBLIC_VALUE_FIELDS = ("p_up_v1", "p_up")
 LOCAL_VALUE_FIELDS = ("p_up",)
+MIQUEIAS_STATIC_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,160 @@ class SeriesPoint:
     @property
     def operational(self) -> bool:
         return not self.is_ghost and not self.is_preview
+
+
+@dataclass(frozen=True)
+class MiqueiasStaticFactor:
+    weight: float
+    sigma: float
+
+
+@dataclass(frozen=True)
+class MiqueiasStaticConfig:
+    target: str
+    effective_from: str
+    alpha: float
+    intercept: float
+    factors: dict[str, MiqueiasStaticFactor]
+
+
+def _finite_float(value: object, *, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} precisa ser número JSON")
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError(f"{field} precisa ser finito")
+    return numeric
+
+
+def load_miqueias_static_config(document: object) -> MiqueiasStaticConfig:
+    """Valida a calibração estática sem inferir valores ausentes."""
+    if not isinstance(document, Mapping):
+        raise ValueError("configuração miqueias_static precisa ser um objeto JSON")
+    schema_version = document.get("schema_version")
+    if type(schema_version) is not int or schema_version != MIQUEIAS_STATIC_SCHEMA_VERSION:
+        raise ValueError(
+            f"schema_version precisa ser {MIQUEIAS_STATIC_SCHEMA_VERSION} para miqueias_static"
+        )
+    if document.get("name") != "miqueias_static":
+        raise ValueError("name precisa ser 'miqueias_static'")
+    target = document.get("target")
+    if not isinstance(target, str) or not target:
+        raise ValueError("target da configuração miqueias_static é obrigatório")
+    effective_from = document.get("effective_from")
+    if not isinstance(effective_from, str):
+        raise ValueError("effective_from da configuração miqueias_static é obrigatório")
+    try:
+        date.fromisoformat(effective_from)
+    except ValueError as exc:
+        raise ValueError("effective_from precisa ser ISO YYYY-MM-DD") from exc
+
+    raw_factors = document.get("factors")
+    if not isinstance(raw_factors, Mapping) or not raw_factors:
+        raise ValueError("factors da configuração miqueias_static é obrigatório")
+    factors: dict[str, MiqueiasStaticFactor] = {}
+    for name, raw_factor in raw_factors.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("todo fator miqueias_static precisa de nome")
+        if not isinstance(raw_factor, Mapping):
+            raise ValueError(f"fator {name} precisa ser um objeto com weight e sigma")
+        weight = _finite_float(raw_factor.get("weight"), field=f"weight de {name}")
+        sigma = _finite_float(raw_factor.get("sigma"), field=f"sigma de {name}")
+        if sigma <= 0:
+            raise ValueError(f"sigma de {name} precisa ser maior que zero")
+        factors[name] = MiqueiasStaticFactor(weight=weight, sigma=sigma)
+
+    return MiqueiasStaticConfig(
+        target=target,
+        effective_from=effective_from,
+        alpha=_finite_float(document.get("alpha"), field="alpha"),
+        intercept=_finite_float(document.get("intercept"), field="intercept"),
+        factors=factors,
+    )
+
+
+def _expit(value: float) -> float:
+    """Sigmoide estável para não transformar calibração válida em overflow."""
+    if value >= 0:
+        return 1.0 / (1.0 + math.exp(-value))
+    exponent = math.exp(value)
+    return exponent / (1.0 + exponent)
+
+
+def build_miqueias_static_rows(
+    rows: Iterable[Mapping[str, object]], config: MiqueiasStaticConfig,
+) -> list[dict]:
+    """Gera a série estática com retornos e sigmas declarados na configuração.
+
+    Isto é deliberadamente um challenger de auditoria: não atualiza estado do
+    Kalman e não deve ser interpretado como réplica do deploy do Miqueias.
+    """
+    challenger_rows: list[dict] = []
+    effective_date = date.fromisoformat(config.effective_from)
+    for row_number, row in enumerate(rows, start=1):
+        timestamp = row.get("timestamp")
+        _, moment, _ = _parse_timestamp(timestamp)
+        if moment.date() < effective_date:
+            raise ValueError(
+                f"barra {row_number} ({moment.date().isoformat()}) anterior à vigência "
+                f"da configuração ({config.effective_from})"
+            )
+        row_factors = row.get("factors")
+        if not isinstance(row_factors, Mapping):
+            raise ValueError(f"barra {row_number} sem objeto factors")
+        configured_factors = set(config.factors)
+        source_factors = set(row_factors)
+        if source_factors != configured_factors:
+            missing = sorted(source_factors - configured_factors)
+            unexpected = sorted(configured_factors - source_factors)
+            details = []
+            if missing:
+                details.append(f"sem configuração para {', '.join(missing)}")
+            if unexpected:
+                details.append(f"ausentes da barra: {', '.join(unexpected)}")
+            raise ValueError(
+                f"barra {row_number} tem conjunto de fatores diferente da configuração "
+                f"({'; '.join(details)})"
+            )
+        score = 0.0
+        for name, factor in config.factors.items():
+            factor_row = row_factors.get(name)
+            if not isinstance(factor_row, Mapping):
+                raise ValueError(f"barra {row_number} sem fator {name}")
+            factor_return = _finite_float(
+                factor_row.get("ret"), field=f"ret de {name} na barra {row_number}"
+            )
+            score += factor.weight * factor_return / factor.sigma
+        probability = 100.0 * _expit(config.alpha * score + config.intercept)
+        challenger_rows.append({
+            "timestamp": timestamp,
+            "p_up": probability,
+            "is_ghost": bool(row.get("is_ghost", False)),
+            "is_preview": bool(row.get("is_preview", False)),
+        })
+    if not challenger_rows:
+        raise ValueError("fonte do challenger miqueias_static não contém barras")
+    return challenger_rows
+
+
+def describe_miqueias_static_config(config: MiqueiasStaticConfig) -> dict:
+    return {
+        "name": "miqueias_static",
+        "schema_version": MIQUEIAS_STATIC_SCHEMA_VERSION,
+        "target": config.target,
+        "effective_from": config.effective_from,
+        "alpha": config.alpha,
+        "intercept": config.intercept,
+        "factors": {
+            name: {"weight": factor.weight, "sigma": factor.sigma}
+            for name, factor in sorted(config.factors.items())
+        },
+        "limitations": [
+            "static_calibration_only",
+            "no_kalman_state_or_qr",
+            "not_a_claim_of_v2_parity",
+        ],
+    }
 
 
 def _extract_rows(payload, *, target_key: str = "WIN_N") -> list[dict]:
@@ -439,6 +601,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="NOME=FONTE",
         help="Adiciona candidato de arquivo/URL; pode ser repetido.",
     )
+    parser.add_argument(
+        "--miqueias-static-config",
+        default=None,
+        help=(
+            "Configuração JSON completa do challenger estático do Miqueias. "
+            "Exige alpha, intercept, peso e sigma de cada fator."
+        ),
+    )
+    parser.add_argument(
+        "--miqueias-static-source",
+        default=None,
+        help=(
+            "Série com o objeto factors para o challenger estático; por padrão usa "
+            "a resposta local v2 carregada nesta execução."
+        ),
+    )
     parser.add_argument("--target", default=DEFAULT_TARGET)
     parser.add_argument("--session-date", default=None)
     parser.add_argument("--sell-threshold", type=float, default=40.0)
@@ -469,6 +647,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidate_documents: dict[str, object] = {}
     candidate_sources: dict[str, str] = {}
     source_errors: dict[str, str] = {}
+    static_challengers: dict[str, dict] = {}
 
     if not args.skip_local_api:
         for version in ("v1", "v2"):
@@ -499,6 +678,51 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidate_sources[name] = source
         except Exception as exc:
             source_errors[name] = f"{type(exc).__name__}: {exc}"
+
+    if args.miqueias_static_config:
+        if "miqueias_static" in candidate_points or "miqueias_static" in source_errors:
+            print("Erro: nome reservado de candidato: miqueias_static", file=sys.stderr)
+            return 1
+        try:
+            config_document = load_json_document(
+                args.miqueias_static_config, timeout=args.timeout
+            )
+            static_config = load_miqueias_static_config(config_document)
+            if static_config.target != args.target:
+                raise ValueError(
+                    f"configuração para {static_config.target} não pode ser usada no target {args.target}"
+                )
+            if args.miqueias_static_source:
+                static_source = args.miqueias_static_source
+                static_document = load_json_document(static_source, timeout=args.timeout)
+            else:
+                static_source = candidate_sources.get("v2")
+                static_document = candidate_documents.get("v2")
+                if static_document is None or static_source is None:
+                    raise ValueError(
+                        "miqueias_static requer --miqueias-static-source quando a série local v2 não está disponível"
+                    )
+            static_rows = build_miqueias_static_rows(
+                _extract_rows(static_document), static_config
+            )
+            candidate_points["miqueias_static"] = normalize_series(
+                static_rows, value_fields=LOCAL_VALUE_FIELDS
+            )
+            candidate_documents["miqueias_static"] = {
+                "series": static_rows,
+                "static_config": describe_miqueias_static_config(static_config),
+            }
+            candidate_sources["miqueias_static"] = (
+                f"derived:{static_source} config:{args.miqueias_static_config}"
+            )
+            static_challengers["miqueias_static"] = {
+                "input_source": static_source,
+                "config_source": args.miqueias_static_config,
+                "config": describe_miqueias_static_config(static_config),
+            }
+        except Exception as exc:
+            print(f"Erro ao construir challenger miqueias_static: {exc}", file=sys.stderr)
+            return 1
 
     gex_source = args.gex_source
     if gex_source is None and not args.skip_local_api:
@@ -531,6 +755,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "reference_source": args.public_source,
         "candidate_sources": candidate_sources,
         "source_errors": source_errors,
+        "static_challengers": static_challengers,
         **comparison,
     }
     ranked = comparison["ranking_by_operational_mae"]
