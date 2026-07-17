@@ -330,6 +330,32 @@ def realized_iv_by_expiry(conn, symbol: str, session_date: str, expiries: list[s
     return out
 
 
+def build_walls(gmax, gmin, flip, spot, conv_factor, grid_step):
+    """Gera os níveis visuais a partir dos níveis Gamma já calculados."""
+    if flip is None:
+        return []
+    walls = [
+        {"type": "gex_max", "price": round(gmax * conv_factor), "color": "#22C55E", "style": "solid", "width": 3},
+        {"type": "gex_flip", "price": round(flip * conv_factor), "color": "#EAB308", "style": "solid", "width": 2},
+        {"type": "gex_min", "price": round(gmin * conv_factor), "color": "#EF4444", "style": "solid", "width": 3},
+    ]
+    center = round(spot / grid_step) * grid_step
+    for offset in range(-8, 9):
+        price = (center + offset * grid_step) * conv_factor
+        width = 3 if abs(offset) <= 1 else (2 if abs(offset) <= 3 else 1)
+        walls.append({
+            "type": "wall", "price": round(price), "style": "solid", "width": width,
+            "color": "#84CC16" if price > flip * conv_factor else "#EF4444",
+        })
+    for offset in range(-8, 8):
+        price = (center + (offset + 0.5) * grid_step) * conv_factor
+        walls.append({
+            "type": "mid_wall", "price": round(price), "style": "dashed", "width": 1,
+            "color": "#9CA3AF" if price > flip * conv_factor else "#6B7280",
+        })
+    return walls
+
+
 def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
                  risk_free=R_FREE, iv_fallback_by_expiry=None, iv_source="premium",
                  f_sanity_clamp=None):
@@ -387,7 +413,8 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
     if len(Ks) < 3:
         return None
 
-    # flip: zero do cumulativo, interp linear, mais próximo do spot
+    # Flip: zero do cumulativo por strike, interpolado linearmente. Se houver
+    # mais de um crossing, usa o mais próximo do spot.
     cum, acc = [], 0.0
     for v in vals:
         acc += v
@@ -442,39 +469,7 @@ def compute_gex(spot, win_settle, options, session_date, grid_step=GRID_STEP,
         log(f"  AVISO: conv_factor f={f:.6f} foge de 1.0 além do clamp de sanidade "
             f"({f_sanity_clamp:.1%}) — provável artefato de last-trade esparso; usando f=1.0")
         f = 1.0
-    walls = []
-    if flip is not None:
-        walls = [
-            {"type": "gex_max", "price": round(gmax * f), "color": "#22C55E", "style": "solid", "width": 3},
-            {"type": "gex_flip", "price": round(flip * f), "color": "#EAB308", "style": "solid", "width": 2},
-            {"type": "gex_min", "price": round(gmin * f), "color": "#EF4444", "style": "solid", "width": 3},
-        ]
-        # Grid de walls centrado no Gamma Flip -- fiel ao indicador NTSL/
-        # ProfitChart original do Miqueias (docs/indicadores/walls.txt:22,
-        # `Centro := Round(GammaFlip / (Espacamento*FatorConversao)) *
-        # Espacamento`) e à especificação registrada em
-        # docs/plans/2026-07-16-regra-manual-miqueias-win.md §4.1.3. Num
-        # mercado put-heavy (IBOV) o Flip pode ficar vários % acima do spot
-        # (ex.: ~+5% em 2026-07-15) e o grid inteiro aparece de um lado do
-        # preço -- isso é o comportamento correto do indicador original, não
-        # um bug de desenho: reportar com fidelidade que o zero-gamma mais
-        # próximo está longe é a informação, não um defeito a esconder
-        # recentrando no preço (revertido do commit 2cca41d após achado do
-        # tri-review: a versão anterior deste comentário centrava no spot,
-        # contradizendo a fonte original sem base documentada para a
-        # divergência).
-        centro = round(flip * f / (grid_step * f)) * grid_step
-        for k in range(-8, 9):
-            p = (centro + k * grid_step) * f
-            # espessura por distância do centro (padrão do indicador NTSL de
-            # referência): forte no ATM, média nas intermediárias, fraca longe
-            w = 3 if abs(k) <= 1 else (2 if abs(k) <= 3 else 1)
-            walls.append({"type": "wall", "price": round(p), "style": "solid", "width": w,
-                          "color": "#84CC16" if p > flip * f else "#EF4444"})
-        for k in range(-8, 8):
-            p = (centro + (k + 0.5) * grid_step) * f
-            walls.append({"type": "mid_wall", "price": round(p), "style": "dashed", "width": 1,
-                          "color": "#9CA3AF" if p > flip * f else "#6B7280"})
+    walls = build_walls(gmax, gmin, flip, spot, f, grid_step)
 
     return {
         "gamma_max_ibov": gmax, "gamma_min_ibov": gmin, "gamma_flip_ibov": flip,

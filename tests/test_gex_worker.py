@@ -633,22 +633,76 @@ def test_flip_fora_dos_extremos_pontuais_e_alerta_mas_nao_invalida_gex():
     )
 
 
-def test_grid_de_walls_ancorado_no_gamma_flip_fiel_ao_indicador_original():
-    """Trava o centro do grid de walls em GammaFlip, fiel ao indicador NTSL/
-    ProfitChart original (docs/indicadores/walls.txt:22, `Centro :=
-    Round(GammaFlip / (Espacamento*FatorConversao)) * Espacamento`) e à
-    especificação registrada em
-    docs/plans/2026-07-16-regra-manual-miqueias-win.md §4.1.3.
+def test_flip_escolhe_cruzamento_cumulativo_mais_proximo_do_spot():
+    """Com múltiplos zero-crossings, preserva a regra formal por proximidade.
 
-    Histórico: o commit 2cca41d recentrou o grid no SPOT (não no Flip),
-    revertido depois que o tri-review (deep-reasoner+codex) e a revisão
-    externa apontaram a contradição com a fonte original -- o grid ficar
-    inteiro de um lado do preço num mercado put-heavy é o comportamento
-    correto do indicador (informa que o zero-gamma mais próximo está longe),
-    não um bug de desenho a esconder recentrando no preço. Este teste usa o
-    mesmo cenário put-heavy do achado anterior (flip bem longe do spot) pra
-    travar a fórmula certa: sob a fórmula errada (centro no spot) esta
-    asserção falharia -- o grid sairia em [97, 113], não [121, 137]."""
+    Cenário: uma call gigante isolada no strike 103 cria um cruzamento
+    neg->pos longe do spot (~102.6, |102.6-110|=7.4); um put grande no strike
+    110 cria um segundo cruzamento pos->neg bem perto do spot (~109.83,
+    |109.83-110|=0.17). A definição versionada de Gamma Flip escolhe o zero
+    cumulativo mais próximo do spot, sem introduzir filtro direcional.
+    """
+    options = [
+        {"ticker": "P100", "oi": 100.0, "strike": 100.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P101", "oi": 10.0, "strike": 101.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P102", "oi": 10.0, "strike": 102.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "C103", "oi": 200.0, "strike": 103.0, "is_call": True,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P104", "oi": 5.0, "strike": 104.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P105", "oi": 5.0, "strike": 105.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P106", "oi": 5.0, "strike": 106.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P107", "oi": 5.0, "strike": 107.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P108", "oi": 5.0, "strike": 108.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P109", "oi": 5.0, "strike": 109.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P110", "oi": 60.0, "strike": 110.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P111", "oi": 5.0, "strike": 111.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P112", "oi": 5.0, "strike": 112.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+        {"ticker": "P113", "oi": 5.0, "strike": 113.0, "is_call": False,
+         "expiry": "2026-08-21", "premium": None},
+    ]
+    original_gamma = gw._bsm_gamma
+    gw._bsm_gamma = lambda *_args: 1.0
+    try:
+        result = gw.compute_gex(110.0, 110.0, options, "2026-07-13", grid_step=1.0)
+    finally:
+        gw._bsm_gamma = original_gamma
+
+    flip = result["gamma_flip_ibov"]
+    crossing_neg_to_pos = 102.0 + 1.0 * 120.0 / 200.0       # ~102.6
+    crossing_pos_to_neg = 109.0 + 1.0 * 50.0 / 60.0         # ~109.83
+
+    # O pos->neg é genuinamente o crossing mais próximo e precisa vencer a
+    # seleção global por distância.
+    assert abs(spot_distance := abs(110.0 - crossing_pos_to_neg)) < abs(
+        110.0 - crossing_neg_to_pos
+    ), spot_distance
+
+    assert flip is not None
+    assert math.isclose(flip, crossing_pos_to_neg, abs_tol=1e-9), flip
+    assert not math.isclose(flip, crossing_neg_to_pos, abs_tol=1e-6), flip
+
+
+def test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe():
+    """O grid de referência precisa cobrir o preço negociado.
+
+    Num mercado put-heavy, o Flip pode ficar muito distante do spot. Gamma
+    Max/Min/Flip continuam como níveis calculados próprios, mas o grid de
+    walls precisa manter suportes e resistências visíveis dos dois lados do
+    preço. Sob a fórmula revertida, centrada no Flip, o intervalo sai
+    [121, 137] e deixa o spot 105 fora do gráfico útil.
+    """
     options = []
     for strike in range(100, 130):  # 30 strikes de put, todos com OI -- cumulativo
         options.append({                                      # bem negativo até 130
@@ -673,9 +727,9 @@ def test_grid_de_walls_ancorado_no_gamma_flip_fiel_ao_indicador_original():
     walls = [w for w in result["walls"] if w["type"] == "wall"]
     assert len(walls) == 17
     prices = sorted(w["price"] for w in walls)
-    centro_esperado = round(flip / 1.0) * 1.0  # f=1.0 (win_settle==spot==105.0)
-    assert prices[0] == round(centro_esperado - 8) and prices[-1] == round(centro_esperado + 8)
-    assert not (prices[0] <= 105.0 <= prices[-1])  # grid NÃO cobre o spot -- esperado, não bug
+    assert (prices[0], prices[-1]) == (97, 113)  # centro=round(105/1)*1=105, ±8
+    assert prices[0] <= 105 <= prices[-1]
+    assert not (prices[0] <= flip <= prices[-1])
 
 
 # ── Slice 3: orquestração de main() (painel Task #15) ───────────────────────
@@ -1237,6 +1291,9 @@ TESTS = [
     test_compute_gex_f_sanity_clamp_forca_f_1_quando_foge_da_faixa,
     test_compute_gex_f_sanity_clamp_none_nao_interfere_no_basis_real_do_ibov,
     test_compute_gex_grid_step_alimenta_o_gate_liquid_strikes,
+    test_flip_fora_dos_extremos_pontuais_e_alerta_mas_nao_invalida_gex,
+    test_flip_escolhe_cruzamento_cumulativo_mais_proximo_do_spot,
+    test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe,
     test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo,
     test_main_com_date_explicito_win_usa_oficial_sem_bdi_nem_mt5,
     test_main_win_bundle_oficial_inconsistente_falha_fechado_sem_publicar,

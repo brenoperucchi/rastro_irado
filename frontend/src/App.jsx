@@ -633,7 +633,9 @@ export default function App() {
     if (!API) return  // modo Firebase: gex permanece null (estado inicial)
     let mounted = true
     const refreshGex = () => {
-      fetch(`${API}/api/irai/gex?target=${encodeURIComponent(selectedTarget)}`)
+      const gexParams = new URLSearchParams({ target: selectedTarget })
+      if (!liveMode && effectiveDate) gexParams.set('date', effectiveDate)
+      fetch(`${API}/api/irai/gex?${gexParams.toString()}`)
         .then(r => r.json())
         .then(d => {
           if (!mounted) return
@@ -646,12 +648,15 @@ export default function App() {
         .catch(() => { if (mounted) setGex(null) })
     }
     refreshGex()
+    if (!liveMode) {
+      return () => { mounted = false }
+    }
     const timer = setInterval(refreshGex, 60_000)
     return () => {
       mounted = false
       clearInterval(timer)
     }
-  }, [selectedTarget])
+  }, [effectiveDate, liveMode, selectedTarget])
 
   // Initial load on date/target/liveMode change + polling
   useEffect(() => {

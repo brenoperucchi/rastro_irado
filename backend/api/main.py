@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.db import get_connection, migrate_to_head, DB_PATH
+from backend.workers.gex_worker import build_walls
 from backend.irai.engine import (
     IRAIEngine, FACTOR_LABELS, TARGET,
     DEFAULT_DIV_THRESHOLD, DEFAULT_P_UP_GATE_HI, DEFAULT_P_UP_GATE_LO,
@@ -39,6 +40,22 @@ data_updated_event = asyncio.Event()
 # ── Cache de resultados computados ─────────────────────
 series_cache: dict = {}   # (target, date, version) → result dict
 overview_cache_data: dict = {} # (date, version) → result dict
+
+
+def _current_gex_walls(row: dict, stored_walls: list) -> list:
+    """Atualiza somente a geometria visual de snapshots GEX legados."""
+    try:
+        meta = json.loads(row.get("meta") or "{}")
+        grid_step = float(meta["grid_step"])
+        if grid_step <= 0:
+            return stored_walls
+        return build_walls(
+            float(row["gamma_max_ibov"]), float(row["gamma_min_ibov"]),
+            float(row["gamma_flip_ibov"]), float(row["spot"]),
+            float(row["conv_factor"]), grid_step,
+        )
+    except (KeyError, TypeError, ValueError):
+        return stored_walls
 
 
 async def ws_broadcast_loop():
@@ -135,42 +152,59 @@ async def notify_update():
 
 
 @app.get("/api/irai/gex")
-async def get_gex(target: str = Query("WIN$N")):
-    """Últimos níveis de GEX (gamma walls) do target, gerados pelo gex_worker.
+async def get_gex(
+    target: str = Query("WIN$N"),
+    session_date: str | None = Query(None, alias="date"),
+):
+    """Níveis de GEX live ou do snapshot histórico da sessão pedida.
 
-    `active` = dado válido E fresco (≤4 dias corridos cobre fim de semana +
-    feriado). O frontend só desenha as walls quando active=True — nunca plota
-    GEX envelhecido como se fosse do dia.
+    Sem ``date``, entrega o último cálculo live, que precisa ser fresco. Com
+    ``date``, consulta o snapshot PIT disponível naquela sessão em
+    ``gex_history_levels``; não pode recuar para o live, que pertence a outro
+    contexto temporal.
     """
     import sqlite3 as _sq
     conn = get_connection()
+    # Em chamadas diretas de teste, FastAPI não resolve Query(None): chega o
+    # objeto Query em vez de None. No request real, só uma string ISO ativa o
+    # caminho histórico.
+    historical = isinstance(session_date, str) and bool(session_date)
     try:
-        row = conn.execute(
-            "SELECT * FROM gex_levels WHERE target=? ORDER BY session_date DESC LIMIT 1",
-            (target,),
-        ).fetchone()
+        if historical:
+            row = conn.execute(
+                """SELECT * FROM gex_history_levels
+                   WHERE target=? AND effective_session_date=?
+                   ORDER BY source_session_date DESC LIMIT 1""",
+                (target, session_date),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM gex_levels WHERE target=? ORDER BY session_date DESC LIMIT 1",
+                (target,),
+            ).fetchone()
     except _sq.OperationalError as e:
         if "no such table" not in str(e):
             raise  # erro real de banco não pode virar "sem dados" silencioso
-        row = None  # tabela ainda não existe (worker nunca rodou)
+        row = None  # worker/backfill ainda não criou a tabela necessária
     conn.close()
     if not row:
+        if historical:
+            return {
+                "active": False,
+                "historical": True,
+                "reason": "sem dados de GEX para a data selecionada",
+            }
         return {"active": False, "reason": "sem dados de GEX"}
     d = dict(row)
-    try:
-        age = (date.today() - date.fromisoformat(d["session_date"])).days
-    except Exception:
-        age = 999
-    fresh = 0 <= age <= 4  # idade negativa = data futura corrompida -> não fresco
     try:
         walls = json.loads(d.get("walls") or "[]")
     except Exception:
         walls = []
-    return {
-        "active": bool(d.get("valid")) and fresh and bool(walls),
+    walls = _current_gex_walls(d, walls)
+    response = {
+        "active": bool(d.get("valid")) and bool(walls),
+        "historical": historical,
         "target": target,
-        "as_of": d["session_date"],
-        "age_days": age,
         "valid": bool(d.get("valid")),
         "gamma_max": d.get("gamma_max"),
         "gamma_flip": d.get("gamma_flip"),
@@ -179,6 +213,25 @@ async def get_gex(target: str = Query("WIN$N")):
         "conv_factor": d.get("conv_factor"),
         "walls": walls,
     }
+    if historical:
+        response.update({
+            "as_of": d["effective_session_date"],
+            "source_as_of": d["source_session_date"],
+            "age_days": None,
+        })
+        return response
+
+    try:
+        age = (date.today() - date.fromisoformat(d["session_date"])).days
+    except Exception:
+        age = 999
+    fresh = 0 <= age <= 4  # idade negativa = data futura corrompida -> não fresco
+    response.update({
+        "active": response["active"] and fresh,
+        "as_of": d["session_date"],
+        "age_days": age,
+    })
+    return response
 
 
 @app.get("/api/health")

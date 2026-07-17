@@ -67,6 +67,7 @@ if _HAS_FASTAPI:
     import backend.db as db_mod
     import backend.api.main as api_main
     import backend.workers.gex_worker as gex_worker
+    from scripts.backfill_gex_history import save_history_result
 
 
 def _skip_without_fastapi():
@@ -267,6 +268,174 @@ def test_get_gex_pega_o_pregao_mais_recente_do_target():
     assert result["gamma_flip"] == 5500.0, result
 
 
+def test_get_gex_regera_grid_legado_no_spot_sem_alterar_niveis_gamma():
+    """Walls armazenadas sob a antiga âncora no Flip não podem sobreviver.
+
+    O snapshot mantém GammaMax/Flip/Min, spot e basis originais. Só o grid
+    derivado é refeito ao redor do spot, para que um JSON salvo antes da
+    correção não volte a desenhar todas as linhas de um lado do preço.
+    """
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    conn = db_mod.get_connection(path)
+    legacy = {
+        "gamma_max_ibov": 110.0, "gamma_min_ibov": 100.0,
+        "gamma_flip_ibov": 129.0,
+        "gamma_max": 110.0, "gamma_min": 100.0, "gamma_flip": 129.0,
+        "spot": 105.0, "future_settle": 105.0, "conv_factor": 1.0,
+        "n_strikes": 30, "valid": True,
+        "walls": [
+            {"type": "wall", "price": price, "color": "#EF4444",
+             "style": "solid", "width": 1}
+            for price in range(121, 138)
+        ],
+        "meta": {"grid_step": 1.0},
+    }
+    gex_worker.save(conn, date.today().isoformat(), legacy, target="WIN$N")
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(api_main.get_gex(target="WIN$N"))
+    finally:
+        _restore_get_connection(orig)
+
+    grid = [wall["price"] for wall in result["walls"] if wall["type"] == "wall"]
+    assert (min(grid), max(grid)) == (97, 113), result
+    assert result["gamma_flip"] == 129.0, result
+
+
+def test_get_gex_historico_regera_grid_legado_no_spot():
+    """O mesmo reparo visual vale para JSON histórico já serializado."""
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    conn = db_mod.get_connection(path)
+    legacy = {
+        "gamma_max_ibov": 110.0, "gamma_min_ibov": 100.0,
+        "gamma_flip_ibov": 129.0,
+        "gamma_max": 110.0, "gamma_min": 100.0, "gamma_flip": 129.0,
+        "spot": 105.0, "future_settle": 105.0, "conv_factor": 1.0,
+        "n_strikes": 30, "valid": True,
+        "walls": [
+            {"type": "wall", "price": price, "color": "#EF4444",
+             "style": "solid", "width": 1}
+            for price in range(121, 138)
+        ],
+        "meta": {"grid_step": 1.0},
+    }
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", legacy, target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(
+            api_main.get_gex(target="WIN$N", session_date="2026-07-16")
+        )
+    finally:
+        _restore_get_connection(orig)
+
+    grid = [wall["price"] for wall in result["walls"] if wall["type"] == "wall"]
+    assert (min(grid), max(grid)) == (97, 113), result
+
+
+def test_get_gex_historico_usa_data_efetiva_e_nunca_recua_para_o_live():
+    """Uma sessão histórica usa o snapshot PIT disponível naquele pregão.
+
+    O EOD de 2026-07-15 só ficou disponível para operar em 2026-07-16. Mesmo
+    com um GEX live diferente no banco, pedir 2026-07-16 precisa devolver o
+    registro de ``gex_history_levels``; misturar o último live torna as walls
+    de um gráfico histórico metodologicamente falsas.
+    """
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    conn = db_mod.get_connection(path)
+    gex_worker.save(
+        conn, date.today().isoformat(),
+        _mk_gex_result(spot=190000.0, gamma_flip=191000.0), target="WIN$N",
+    )
+    historical = _mk_gex_result(spot=175000.0, gamma_flip=176000.0)
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", historical, target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(
+            api_main.get_gex(target="WIN$N", session_date="2026-07-16")
+        )
+    finally:
+        _restore_get_connection(orig)
+
+    assert result["active"] is True, result
+    assert result["historical"] is True, result
+    assert result["as_of"] == "2026-07-16", result
+    assert result["source_as_of"] == "2026-07-15", result
+    assert result["gamma_flip"] == 176000.0, result
+    assert result["gamma_flip"] != 191000.0, result
+
+
+def test_get_gex_historico_ausente_nao_vaza_ultimo_snapshot_live():
+    """Ausência de snapshot PIT é ausência de GEX, nunca fallback live."""
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    conn = db_mod.get_connection(path)
+    gex_worker.save(
+        conn, date.today().isoformat(),
+        _mk_gex_result(spot=190000.0, gamma_flip=191000.0), target="WIN$N",
+    )
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", _mk_gex_result(gamma_flip=176000.0),
+        target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(
+            api_main.get_gex(target="WIN$N", session_date="2026-07-17")
+        )
+    finally:
+        _restore_get_connection(orig)
+
+    assert result == {
+        "active": False,
+        "historical": True,
+        "reason": "sem dados de GEX para a data selecionada",
+    }, result
+
+
+def test_get_gex_historico_valido_antigo_permanece_ativo():
+    """O limite de quatro dias pertence somente ao endpoint live."""
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    conn = db_mod.get_connection(path)
+    save_history_result(
+        conn, "2026-06-15", "2026-06-16", _mk_gex_result(gamma_flip=176000.0),
+        target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(
+            api_main.get_gex(target="WIN$N", session_date="2026-06-16")
+        )
+    finally:
+        _restore_get_connection(orig)
+
+    assert result["historical"] is True, result
+    assert result["age_days"] is None, result
+    assert result["active"] is True, result
+
+
 def test_get_gex_limite_exato_de_4_dias_fresco_5_dias_nao():
     """Review codex: trava o limite exato do gate de freshness (0<=age<=4).
     age=4 ainda é `active` (cobre fim de semana + feriado, doc no endpoint);
@@ -309,6 +478,11 @@ TESTS = [
     test_get_gex_fresco_e_valido_fica_active_true,
     test_get_gex_invalido_no_banco_fica_active_false_mesmo_fresco,
     test_get_gex_pega_o_pregao_mais_recente_do_target,
+    test_get_gex_regera_grid_legado_no_spot_sem_alterar_niveis_gamma,
+    test_get_gex_historico_regera_grid_legado_no_spot,
+    test_get_gex_historico_usa_data_efetiva_e_nunca_recua_para_o_live,
+    test_get_gex_historico_ausente_nao_vaza_ultimo_snapshot_live,
+    test_get_gex_historico_valido_antigo_permanece_ativo,
     test_get_gex_limite_exato_de_4_dias_fresco_5_dias_nao,
 ] if _HAS_FASTAPI else []
 

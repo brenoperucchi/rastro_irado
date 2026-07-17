@@ -133,18 +133,18 @@ níveis ou fontes, promoveu 46 sessões e mudou a cobertura de 73/200 para 119/2
 
 ```text
 f (basis)  = win_settle / spot                      (IBOV→WIN; análogo DOL$N→WDO$N)
-Centro     = round(GammaFlip × f / Espacamento) × Espacamento     (Espacamento inferido
+Centro     = round(spot / Espacamento) × Espacamento               (Espacamento inferido
              pela mediana do gap entre strikes líquidos perto do spot p/ WDO$N; fixo em
              1000 pontos p/ WIN$N, validado em produção)
 Wall_i     = (Centro + i × Espacamento) × f,        i ∈ {-8..+8}
 Mid_i      = (Centro + (i + 0.5) × Espacamento) × f, i ∈ {-8..+7}
 ```
 
-17 walls e 16 mid-walls resultam, exatamente como `walls.txt` já descrevia — a diferença é
-que `GammaFlip`/`Centro` agora vêm do cálculo real (§4.1.2), não de um `Input` manual. Cor/
-espessura codificam só a posição relativa ao `GammaFlip` (acima = alta/CALL, abaixo =
-baixa/PUT) e a distância ao centro (mais espessa perto do ATM) — isso é visualização, não
-regra de decisão.
+17 walls e 16 mid-walls resultam. GammaMax/Min/Flip vêm do cálculo real (§4.1.2), mas o
+grid é uma referência visual centrada no preço: em mercado put-heavy, o Flip pode estar
+longe e não pode remover todas as linhas do entorno negociável. Cor continua relativa ao
+`GammaFlip` (acima = alta/CALL, abaixo = baixa/PUT), e espessura à distância do centro
+(mais espessa perto do preço) — isso é visualização, não regra de decisão.
 
 Para WDO$N especificamente, há um `f_sanity_clamp`: se o fator de conversão `f` se afastar
 de 1,0 além de 0,5% (dólar futuro cheio negocia esparso e pode gerar um last-trade não

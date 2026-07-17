@@ -172,33 +172,118 @@ atacada:
   pendência sem fonte).
 
 **Não escolher uma fórmula nova só porque produz um gráfico parecido.** A decisão precisa
-ser reproduzível e economicamente defensável, e qualquer mudança futura em `compute_gex`
-deve primeiro reler `docs/indicadores/walls.txt` e
-`docs/plans/2026-07-16-regra-manual-miqueias-win.md` por inteiro.
+ser reproduzível e economicamente defensável.
+
+> **Atualização (sessão seguinte, 2026-07-16 à noite): esta pendência foi investigada.**
+> Ver §4.7 abaixo para o resultado completo. Resumo: o cálculo foi auditado
+> ponto a ponto e a regra de seleção de zero-crossing mais próximo do spot foi
+> mantida; a
+> `docs/indicadores/walls.txt` citada acima **não existe** neste repositório
+> nem no histórico git — não tratar como fonte verificada em nenhuma
+> referência futura até que o arquivo original seja recuperado e commitado.
+
+### 4.7 Auditoria do CÁLCULO de GammaFlip/netGEX (sessão seguinte, 2026-07-16 à noite)
+
+Investigação pedida explicitamente pelo usuário ("não mudar a fórmula de plotagem de novo
+sem entender primeiro se o Flip calculado está certo"), cobrindo os itens listados em §4.6.
+
+**Metodologia da auditoria**: dispatch em paralelo para `deep-reasoner` (leu
+`gex_worker.py`/`gex_official.py` por inteiro, RODOU `compute_gex` contra um bundle B3 real
+cacheado de 2025-09-24, e conferiu `parse_equity_premiums`/`parse_ibov_open_interest` campo
+a campo contra um `PE250924.ex_`/`SPRE250924.zip` reais) + `fable-reasoner` (segunda leitura
+independente, como manda o workflow de decisões de alto risco do CLAUDE.md) + `codex` via
+`agentrelay` (terceira leitura, se disponível). **Só o deep-reasoner produziu resultado**:
+fable-reasoner falhou 2x com `API Error: 529 Overloaded` e a 3ª tentativa foi interrompida
+pelo próprio usuário; `agentrelay`/`/codex-r` foi checado duas vezes nesta sessão via
+`ToolSearch` e confirmado **não conectado** — nenhuma segunda leitura independente foi
+obtida desta vez. Achados abaixo refletem uma única fonte, não o tri-review usual.
+
+**Resultado, 10 pontos auditados:**
+
+| # | Item | Veredito |
+|---|---|---|
+| 1 | Fórmulas BSM gamma/price (q=0); equivalência r=0→Black-76 na perna WDO/DOL | Correto |
+| 2 | Inversão de IV por bisseção (80 iter, lo=1e-4/hi=5.0) | Sólido |
+| 3 | Convenção de sinal netGEX (call `+`, put `−`, sem multiplicador/escala) | Correto — convenção padrão SqueezeMetrics/SpotGamma |
+| 4 | Seleção do zero-crossing "mais próximo do spot" | Regra mantida; não aplicar filtro direcional sem decisão metodológica |
+| 5 | Refino parabólico de GammaMax/Min | Correto |
+| 6 | Agregação entre vencimentos (netGEX bruto somado; IV por vencimento via `iv_exp.get`) | Correto/defensável |
+| 7 | q=0 (sem dividendo) para IBOV | **Correto, não é simplificação** — IBOV é índice de retorno total (reinveste dividendos), q=0 é o carry certo |
+| 8 | Parsing C/V do PE oficial (`gex_official.parse_equity_premiums`) | Confirmado contra arquivo `PE250924.ex_` real (719 C / 719 V, magnitudes batem) |
+| 9 | Filtro de ticker IBOV (`parse_ibov_open_interest`) | Confirmado limpo contra `SPRE250924.zip` real, sem contaminação de não-opção |
+| 10 | Cancelamento algébrico de `f` na fórmula do `centro` do grid (linha ~466, agora ~476) | Confirmado inofensivo/dead-code — fazer `f` importar aí seria ERRADO (walls fora dos strikes reais) |
+
+**Item 4 — hipótese direcional rejeitada:** uma leitura isolada sugeriu preferir
+cruzamentos neg→pos quando houvesse mais de um zero do netGEX cumulativo. A revisão
+independente identificou que isso contradizia a regra formal registrada e classificava
+incorretamente um zero exato como direcional. O cálculo mantém todos os crossings
+interpolados e seleciona o aritmeticamente mais próximo do spot. A regressão
+`tests/test_gex_worker.py::test_flip_escolhe_cruzamento_cumulativo_mais_proximo_do_spot`
+cobre o caso com dois crossings e impede a reintrodução do filtro direcional sem uma
+decisão metodológica explícita.
+
+**O que continua sendo decisão de metodologia do Miqueias, não bug de código** — nenhuma
+das duas opções abaixo "corrige" a outra, são métricas diferentes:
+- **Flip estático por cumulativo de strike** (o que `compute_gex` calcula, com gamma
+  congelado no spot atual do dia) — convenção pública válida e defensável.
+- **Flip dinâmico por spot hipotético** (estilo SpotGamma, recalculando o zero-gamma para
+  cada nível hipotético de spot) — métrica diferente, não uma correção automática da
+  primeira.
+- A escolha entre as duas só pode ser feita com o Miqueias confirmando qual delas o
+  indicador original dele de fato calcula.
+
+**Grid de walls centrado no spot (plotagem) é decisão independente**, documentada em
+§4.8. GammaMax/Min/Flip permanecem os níveis calculados; somente o grid visual é ancorado
+no preço para cobrir a faixa negociável quando o Flip fica distante. A cor de cada wall
+continua relativa ao **Flip estático** (`p > flip * f`), sem alterar o cálculo de Gamma.
+
+**Pendência de rastreabilidade, não resolvida:** `docs/indicadores/walls.txt`,
+`gaussiana.txt` e `hist_zscore.txt` — citados no handoff anterior, em
+`docs/plans/2026-07-16-regra-manual-miqueias-win.md` §2, no backlog IRAI-19 e em
+comentários de código anteriores a esta sessão, inclusive com conteúdo específico
+supostamente citado (ex.: uma linha exata de NTSL) — **não existem** em nenhum dos dois
+working directories nem em nenhum commit do histórico git (`git log --all --full-history`
+vazio para os três nomes). Removi as citações de conteúdo específico desses arquivos nos
+comentários de código e no teste de grid de walls afetados por esta sessão. Até que os
+arquivos originais do Miqueias sejam recuperados e commitados em `docs/indicadores/`,
+**não tratar nenhuma citação a eles como confirmação de comportamento** — só a spec já
+commitada (`docs/plans/2026-07-16-regra-manual-miqueias-win.md`) é fonte verificável hoje.
+
+### 4.8 Decisão visual posterior do usuário (2026-07-16)
+
+Esta seção substitui a decisão de plotagem registrada em §§4.2-4.4/4.7: o usuário pediu
+expressamente restaurar o grid de 17 walls e 16 mid-walls **centrado no spot**, como no
+commit `2cca41d`. O GammaFlip permanece calculado, persistido e desenhado na sua posição
+econômica própria; somente o grid de referência usa `round(spot / grid_step) * grid_step`.
+Isso mantém suportes e resistências dos dois lados do preço quando o mercado está
+put-heavy. A API rederiva a geometria dos snapshots persistidos para que dados históricos
+salvos durante a regra anterior não mantenham o grid distante do preço. Regressões:
+`test_grid_de_walls_ancorado_no_spot_mesmo_com_flip_put_heavy_longe` e
+`test_get_gex_regera_grid_legado_no_spot_sem_alterar_niveis_gamma`.
 
 ## 5. Prompt de retomada recomendado
 
 ```text
 Leia integralmente AGENTS.md, CLAUDE.md,
-docs/handoffs/2026-07-16-irai-contexto-atual.md,
+docs/handoffs/2026-07-16-irai-contexto-atual.md (inclui §4.7, auditoria de cálculo já
+concluída),
 docs/plans/2026-07-13-irai-plano-consolidado.md,
 docs/plans/2026-07-16-regra-manual-miqueias-win.md,
-docs/indicadores/walls.txt,
 e a tarefa relevante no Backlog.md (IRAI-19, IRAI-22).
 
-O grid de walls do GEX (backend/workers/gex_worker.py::compute_gex) foi corrigido para
-centrar no PREÇO (spot) em vez do Gamma Flip (commit 2cca41d), depois REVERTIDO (commit
-27ff077) porque contradizia o indicador NTSL original (docs/indicadores/walls.txt:22) e a
-especificação já registrada (docs/plans/2026-07-16-regra-manual-miqueias-win.md §4.1.3),
-ambos ancorando sempre no Flip. Estado atual (27ff077) é o correto/fiel ao original — NÃO
-reintroduzir o centro-no-spot sem evidência nova.
+NOTA: docs/indicadores/walls.txt/gaussiana.txt/hist_zscore.txt NÃO existem neste
+repositório nem no histórico git (confirmado em duas sessões) — não pedir para lê-los
+como se fossem arquivos reais, e não tratar nenhuma citação anterior ao seu conteúdo
+específico como evidência verificada.
 
-A pendência real e ainda não resolvida é se o CÁLCULO do GammaFlip/netGEX
-(backend/workers/gex_worker.py, BSM/IV/netGEX/cruzamento de zero) é fiel ao que o Miqueias
-calcularia externamente — o walls.txt só define a PLOTAGEM a partir de um Flip já dado como
-Input, não como esse Flip é calculado. Investigar: sinal/convenção call-put, seleção entre
-múltiplos zero-crossings, agregação por vencimento, unidades, conversão IBOV→WIN. Não
-mudar a fórmula de plotagem de novo sem entender primeiro se o Flip calculado está certo.
+O grid de walls do GEX é centrado no PREÇO (spot), conforme decisão explícita posterior do
+usuário documentada em §4.8. GammaMax/Min/Flip continuam sendo os níveis calculados; só o
+grid visual de referência usa a âncora no spot e também é rederivado para snapshots já
+persistidos.
+
+O CÁLCULO do GammaFlip/netGEX permanece no Flip estático por cumulativo de strike, usando o
+crossing mais próximo do spot quando há mais de um. Flip dinâmico por spot hipotético é uma
+métrica diferente e continua dependente de confirmação do Miqueias.
 ```
 
 ## 6. Outras frentes desta sessão (contexto adicional, não bloqueante pro GEX)

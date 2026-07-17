@@ -17,3 +17,9 @@ def test_botao_gex_inativo_usa_disabled_nativo():
 def test_gex_e_reconsultado_periodicamente_para_nao_reter_estado_antigo():
     assert "setInterval(refreshGex, 60_000)" in APP
     assert "if (!d?.active)" in APP
+
+
+def test_gex_historico_envia_data_efetiva_no_request():
+    """Ao sair do live, GEX deve usar a mesma sessão do gráfico."""
+    assert "if (!liveMode && effectiveDate)" in APP
+    assert "gexParams.set('date', effectiveDate)" in APP
