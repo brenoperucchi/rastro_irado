@@ -13,6 +13,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -28,6 +29,8 @@ BCB_SELIC_BASE = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados"
 DEFAULT_CACHE_DIR = Path("data/gex_history_cache")
 WIN_CONTRACT_RE = re.compile(r"^WIN[A-Z]\d{2}$")
 MIN_OFFICIAL_SERIES = 50
+B3_DOWNLOAD_MAX_ATTEMPTS = 3
+B3_DOWNLOAD_RETRY_SECONDS = 5.0
 
 
 def _local(tag: str) -> str:
@@ -161,7 +164,11 @@ def sha256_file(path: Path) -> str:
 
 
 def download_b3_bundle(
-    session_date: str, cache_dir: Path = DEFAULT_CACHE_DIR,
+    session_date: str,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    *,
+    max_attempts: int = B3_DOWNLOAD_MAX_ATTEMPTS,
+    retry_delay: float = B3_DOWNLOAD_RETRY_SECONDS,
 ) -> dict[str, Path]:
     names = expected_bundle_names(session_date)
     target_dir = Path(cache_dir) / session_date
@@ -175,26 +182,40 @@ def download_b3_bundle(
         f"{B3_DOWNLOAD_BASE}?{query}",
         headers={"User-Agent": "IRAI-GEX-Official/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
-        payload = response.read()
-    with zipfile.ZipFile(io.BytesIO(payload)) as outer:
-        outer_names = set(outer.namelist())
-        missing = [name for name in names.values() if name not in outer_names]
-        if missing:
-            raise ValueError(f"bundle B3 {session_date} sem arquivos: {missing}")
-        for kind, name in names.items():
-            destination = paths[kind]
-            fd, tmp_name = tempfile.mkstemp(prefix=destination.name, dir=target_dir)
-            try:
-                with os.fdopen(fd, "wb") as tmp:
-                    tmp.write(outer.read(name))
-                    tmp.flush()
-                    os.fsync(tmp.fileno())
-                os.replace(tmp_name, destination)
-            finally:
-                if os.path.exists(tmp_name):
-                    os.unlink(tmp_name)
-    return paths
+
+    # A B3 ocasionalmente serve um payload não-ZIP (erro/manutenção pontual)
+    # num request isolado -- o timer roda uma vez por dia, então sem retry
+    # aqui uma falha transitória perde a janela do dia (nada reagenda o
+    # mesmo source_session_date). Só transporte/formato é retentado; um
+    # bundle logicamente incompleto (arquivo faltando) continua falhando
+    # fechado de imediato, sem retry -- não é transitório.
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                payload = response.read()
+            with zipfile.ZipFile(io.BytesIO(payload)) as outer:
+                outer_names = set(outer.namelist())
+                missing = [name for name in names.values() if name not in outer_names]
+                if missing:
+                    raise ValueError(f"bundle B3 {session_date} sem arquivos: {missing}")
+                for kind, name in names.items():
+                    destination = paths[kind]
+                    fd, tmp_name = tempfile.mkstemp(prefix=destination.name, dir=target_dir)
+                    try:
+                        with os.fdopen(fd, "wb") as tmp:
+                            tmp.write(outer.read(name))
+                            tmp.flush()
+                            os.fsync(tmp.fileno())
+                        os.replace(tmp_name, destination)
+                    finally:
+                        if os.path.exists(tmp_name):
+                            os.unlink(tmp_name)
+            return paths
+        except (OSError, zipfile.BadZipFile):
+            if attempt >= max_attempts:
+                raise
+            time.sleep(retry_delay)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _xml_payload_date(path: Path) -> str:
