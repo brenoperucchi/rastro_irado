@@ -402,6 +402,127 @@ def test_migracao_nao_degrada_historico_valido_nem_apaga_live_invalido():
         "efetivamente migrada para o histórico: " + repr(live))
 
 
+def test_migracao_nao_apaga_linha_atual_com_historico_ausente():
+    """Revisão tri-r do F4 (fechamento do achado P1-2, pedido explícito do
+    usuário): uma linha em gex_levels que carrega o marcador
+    ``history_dual_write`` (ou seja, foi gravada por código que também grava
+    o par causal em gex_history_levels -- worker atual, não sobra do
+    backfill legado) não pode ser migrada/apagada só porque
+    gex_history_levels está sem par para a mesma chave. Proveniência PIT
+    completa sozinha não prova legado (worker atual também a carrega); só a
+    ausência do marcador prova. Sem o marcador, o guard sozinho liberaria o
+    INSERT incondicional (não há linha existente para o WHERE bloquear) e o
+    DELETE em seguida apagaria uma linha que não é legado."""
+    conn = sqlite3.connect(":memory:")
+    ensure_history_schema(conn)
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, gamma_max REAL, gamma_min REAL,
+               gamma_flip REAL, gamma_max_ibov REAL, gamma_min_ibov REAL,
+               gamma_flip_ibov REAL, spot REAL, future_settle REAL,
+               conv_factor REAL, n_strikes INTEGER, valid INTEGER,
+               walls TEXT, meta TEXT, computed_at TEXT,
+               PRIMARY KEY(session_date, target)
+           )"""
+    )
+    current_live_meta = json.dumps({
+        "effective_session_date": "2026-07-16",
+        "source_files": {"equities": {"sha256": "cur"}},
+        "history_dual_write": True,
+    })
+    conn.execute(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("2026-07-15", "WIN$N", 191863, 171806, 186364,
+         189885, 170034, 184443, 176010, 177844, 1.0104, 97, 1,
+         "[]", current_live_meta, "2026-07-16T12:00:00Z"),
+    )
+
+    assert migrate_historical_rows_from_live(conn) == 0, (
+        "linha do worker atual (marcador history_dual_write) foi migrada "
+        "mesmo sem histórico correspondente -- não é legado inequívoco")
+
+    live = conn.execute(
+        "SELECT session_date, target, valid FROM gex_levels"
+    ).fetchall()
+    assert live == [("2026-07-15", "WIN$N", 1)], (
+        "P1-2 (fechamento) reintroduzido -- linha atual foi apagada de "
+        "gex_levels: " + repr(live))
+    history = conn.execute(
+        """SELECT 1 FROM gex_history_levels
+           WHERE source_session_date='2026-07-15' AND target='WIN$N'"""
+    ).fetchone()
+    assert history is None, (
+        "migração não deveria ter criado uma linha de histórico para uma "
+        "linha que não é legado inequívoco: " + repr(history))
+
+
+def test_migracao_nao_apaga_linha_atual_com_historico_invalido():
+    """Mesmo fechamento do achado P1-2: histórico EXISTENTE mas inválido
+    para a mesma chave, com a linha live marcada como atual (não legado) e
+    VÁLIDA -- exatamente a combinação em que o guard sozinho permitiria o
+    upgrade (existente inválido + candidato válido) e, na sequência, o
+    DELETE da linha live. O marcador history_dual_write barra a migração
+    antes mesmo de chegar no guard, preservando o histórico inválido intacto
+    (promovê-lo não é responsabilidade desta migração)."""
+    conn = sqlite3.connect(":memory:")
+    ensure_history_schema(conn)
+    stale_invalid_historical = {
+        "gamma_max": 100.0, "gamma_min": 90.0, "gamma_flip": 95.0,
+        "gamma_max_ibov": 100.0, "gamma_min_ibov": 90.0,
+        "gamma_flip_ibov": 95.0, "spot": 111.0,
+        "future_settle": 111.0, "conv_factor": 1.0,
+        "n_strikes": 3, "valid": False, "walls": [],
+        "meta": {"source_session_date": "2026-07-15",
+                 "effective_session_date": "2026-07-16"},
+    }
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", stale_invalid_historical, target="WIN$N",
+    )
+
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, gamma_max REAL, gamma_min REAL,
+               gamma_flip REAL, gamma_max_ibov REAL, gamma_min_ibov REAL,
+               gamma_flip_ibov REAL, spot REAL, future_settle REAL,
+               conv_factor REAL, n_strikes INTEGER, valid INTEGER,
+               walls TEXT, meta TEXT, computed_at TEXT,
+               PRIMARY KEY(session_date, target)
+           )"""
+    )
+    current_live_meta = json.dumps({
+        "effective_session_date": "2026-07-16",
+        "source_files": {"equities": {"sha256": "cur"}},
+        "history_dual_write": True,
+    })
+    conn.execute(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("2026-07-15", "WIN$N", 191863, 171806, 186364,
+         189885, 170034, 184443, 176010.9, 177844, 1.0104, 97, 1,
+         "[]", current_live_meta, "2026-07-16T12:00:00Z"),
+    )
+
+    assert migrate_historical_rows_from_live(conn) == 0, (
+        "linha do worker atual (marcador history_dual_write) foi migrada "
+        "mesmo com histórico inválido -- não é legado inequívoco, mesmo "
+        "sendo o candidato válido")
+
+    live = conn.execute(
+        """SELECT valid, spot FROM gex_levels
+           WHERE session_date='2026-07-15' AND target='WIN$N'"""
+    ).fetchone()
+    assert tuple(live) == (1, 176010.9), (
+        "P1-2 (fechamento) reintroduzido -- linha atual válida foi apagada "
+        "de gex_levels: " + repr(live))
+
+    history = conn.execute(
+        """SELECT valid, spot FROM gex_history_levels
+           WHERE source_session_date='2026-07-15' AND target='WIN$N'"""
+    ).fetchone()
+    assert tuple(history) == (0, 111.0), (
+        "migração não deveria ter tocado o histórico inválido de uma linha "
+        "que não é candidata (não é legado inequívoco): " + repr(history))
+
+
 def test_reclassificacao_promove_somente_reprovacao_por_ordem_flip_extremos():
     conn = sqlite3.connect(":memory:")
     ensure_history_schema(conn)

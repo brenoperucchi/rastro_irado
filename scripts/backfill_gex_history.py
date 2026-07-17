@@ -422,19 +422,33 @@ save_history_result_gated = gex.save_history_result_gated
 
 
 def migrate_historical_rows_from_live(conn) -> int:
-    """Move linhas de gex_levels que carregam proveniência PIT completa
-    (``meta.source_files`` + ``meta.effective_session_date``) para o histórico.
+    """Move para o histórico somente linhas de gex_levels identificadas como
+    LEGADO INEQUÍVOCO: proveniência PIT completa (``meta.source_files`` +
+    ``meta.effective_session_date``) E AUSÊNCIA do marcador
+    ``meta.history_dual_write``.
 
-    Atenção: essa assinatura NÃO é exclusiva de sobras do backfill legado —
-    qualquer linha WIN$N gravada por ``compute_official_win_snapshot`` (seja
-    pelo backfill, seja pelo worker EOD agendado, que desde a integração F4
-    também grava o mesmo snapshot em gex_history_levels na hora) carrega os
-    dois campos. Rodar esta função contra um ``gex_levels`` com linhas WIN$N
-    recentes do worker as moveria dali também, não só sobras legadas de antes
-    do F4.
+    Por que a ausência do marcador, e não a proveniência sozinha (revisão
+    tri-r do F4, fechamento do achado P1-2): proveniência completa sozinha
+    NÃO distingue sobra do backfill legado de linha gravada pelo worker
+    atual — qualquer WIN$N computado por ``compute_official_win_snapshot``
+    carrega os dois campos, seja legado ou atual. O que só o legado real
+    pode não ter é a chave ``history_dual_write``: ela é gravada por
+    ``compute_official_win_snapshot`` desde este fix, e portanto está
+    presente em todo snapshot computado por código atual (worker EOD via
+    main(), ou este próprio módulo) — uma linha sem ela só pode ter sido
+    gravada por código anterior a esta mudança, ou seja, é legado por
+    construção, não por inferência sobre o estado de outra tabela. Uma linha
+    que carrega o marcador nunca é candidata a migração, mesmo que
+    gex_history_levels esteja sem par (ausente) ou com par inválido para a
+    mesma chave — esses dois estados são exatamente o cenário que o guard
+    sozinho não cobria (achado original: existente ausente permite INSERT
+    incondicional; existente inválido + candidato válido permite upgrade
+    incondicional — os dois liberam o DELETE em seguida mesmo quando a linha
+    é do worker atual, não legado).
 
-    Por isso a escrita no destino passa pelo MESMO guard atômico do resto do
-    módulo (``_upsert_history_row_gated`` — nunca ``replace=True`` aqui: essa
+    Por isso a escrita no destino, para o subconjunto que passa neste filtro,
+    ainda passa pelo MESMO guard atômico do resto do módulo
+    (``_upsert_history_row_gated`` — nunca ``replace=True`` aqui: essa
     migração não tem como saber se o candidato do LIVE é mais confiável que
     um histórico já persistido, então nunca força sobrescrita) e o DELETE em
     gex_levels só acontece quando esse guard efetivamente gravou a linha no
@@ -460,6 +474,8 @@ def migrate_historical_rows_from_live(conn) -> int:
         meta = json.loads(row[14] or "{}")
         effective = meta.get("effective_session_date")
         if not meta.get("source_files") or not effective:
+            continue
+        if meta.get("history_dual_write"):
             continue
         historical.append((row, effective))
 

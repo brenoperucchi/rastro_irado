@@ -532,6 +532,17 @@ def compute_official_win_snapshot(
     result["meta"].update({
         "source_session_date": source_session_date,
         "effective_session_date": effective_session_date,
+        # Marcador positivo de regime (revisão tri-r do F4, fechamento do
+        # achado P1-2): qualquer snapshot computado por ESTA função, dali em
+        # diante, é gravado por um caller que também grava o par causal em
+        # gex_history_levels na mesma transação (worker EOD via main(), ou
+        # scripts/backfill_gex_history.py). Uma linha de gex_levels SEM esta
+        # chave é, por construção, anterior a este código -- ou seja, legado
+        # inequívoco -- porque a chave não existia para ser gravada antes.
+        # migrate_historical_rows_from_live() usa a ausência desta chave (não
+        # o estado de gex_history_levels, que é inferência indireta e frágil)
+        # como critério de elegibilidade.
+        "history_dual_write": True,
         "available_from": f"{effective_session_date}T00:00:00-03:00",
         "causal_policy": "B3 EOD D usable only in next WIN session",
         "risk_free_source": "BCB SGS 1178",
