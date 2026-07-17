@@ -412,8 +412,13 @@ save_history_result = gex.save_history_result
 # e este backfill manual gravam a MESMA tabela gex_history_levels, então os
 # dois têm que respeitar a mesma regra: um snapshot válido existente nunca é
 # degradado por um candidato inválido a menos que --replace seja explícito.
+# decide_persistence/existing_validity seguem exportadas para uso
+# informativo/testes da tabela de decisão; a gravação de fato passa por
+# save_history_result_gated, que decide e escreve no mesmo statement
+# atômico (revisão tri-r do F4, achado P1: ver _upsert_history_row_gated).
 decide_persistence = gex.decide_persistence
 existing_validity = gex.existing_validity
+save_history_result_gated = gex.save_history_result_gated
 
 
 def migrate_historical_rows_from_live(conn) -> int:
@@ -426,8 +431,21 @@ def migrate_historical_rows_from_live(conn) -> int:
     também grava o mesmo snapshot em gex_history_levels na hora) carrega os
     dois campos. Rodar esta função contra um ``gex_levels`` com linhas WIN$N
     recentes do worker as moveria dali também, não só sobras legadas de antes
-    do F4. Cada linha é inserida no destino antes de ser removida da tabela
-    LIVE, dentro da mesma transação.
+    do F4.
+
+    Por isso a escrita no destino passa pelo MESMO guard atômico do resto do
+    módulo (``_upsert_history_row_gated`` — nunca ``replace=True`` aqui: essa
+    migração não tem como saber se o candidato do LIVE é mais confiável que
+    um histórico já persistido, então nunca força sobrescrita) e o DELETE em
+    gex_levels só acontece quando esse guard efetivamente gravou a linha no
+    histórico. Se já existe um snapshot válido em gex_history_levels para o
+    mesmo (source_session_date, target), o candidato do LIVE é descartado e
+    a linha correspondente permanece intacta em gex_levels — nem sobrescreve
+    o histórico válido, nem apaga o dado ao vivo sem ter para onde movê-lo
+    (revisão tri-r do F4, achado P1: a versão anterior fazia INSERT OR
+    REPLACE incondicional seguido de DELETE incondicional, e podia degradar
+    um histórico válido E apagar o nível live no mesmo golpe). Cada linha é
+    decidida e gravada dentro da mesma transação do laço.
     """
     ensure_history_schema(conn)
     rows = conn.execute(
@@ -445,23 +463,31 @@ def migrate_historical_rows_from_live(conn) -> int:
             continue
         historical.append((row, effective))
 
+    migrated = 0
     with conn:
         for row, effective in historical:
-            conn.execute(
-                """INSERT OR REPLACE INTO gex_history_levels
-                   (source_session_date, effective_session_date, target,
-                    gamma_max, gamma_min, gamma_flip,
-                    gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
-                    spot, future_settle, conv_factor, n_strikes, valid,
-                    walls, meta, computed_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (row[0], effective, *row[1:]),
+            session_date, target = row[0], row[1]
+            candidate = {
+                "gamma_max": row[2], "gamma_min": row[3], "gamma_flip": row[4],
+                "gamma_max_ibov": row[5], "gamma_min_ibov": row[6],
+                "gamma_flip_ibov": row[7],
+                "spot": row[8], "future_settle": row[9], "conv_factor": row[10],
+                "n_strikes": row[11], "valid": bool(row[12]),
+                "walls": json.loads(row[13] or "[]"),
+                "meta": json.loads(row[14] or "{}"),
+            }
+            written = save_history_result_gated(
+                conn, session_date, effective, candidate, target=target,
+                replace=False, commit=False, computed_at=row[15],
             )
+            if not written:
+                continue
             conn.execute(
                 "DELETE FROM gex_levels WHERE session_date=? AND target=?",
-                (row[0], row[1]),
+                (session_date, target),
             )
-    return len(historical)
+            migrated += 1
+    return migrated
 
 
 def reclassify_history_validity(conn, *, target: str = "WIN$N") -> dict[str, int]:
@@ -533,20 +559,36 @@ def process_session(
     validity_reasons = list(result["meta"].get("validity_reasons", []))
     diagnostic_warnings = list(result["meta"].get("diagnostic_warnings", []))
 
-    try:
-        previous = existing_validity(conn, source_session_date)
-    except sqlite3.OperationalError:
-        previous = None
-    action = decide_persistence(previous, bool(result["valid"]), replace=replace)
-    should_write = action.startswith("insert") or action.startswith("replace")
-    if should_write and not dry_run:
-        save_history_result(
-            conn, source_session_date, effective_session_date, result, target="WIN$N",
+    # Decisão e escrita são o MESMO statement atômico (save_history_result_gated
+    # -> _upsert_history_row_gated) — sem leitura prévia de validade que outra
+    # conexão concorrente (o worker EOD, por exemplo) pudesse invalidar entre o
+    # "checar" e o "gravar" (revisão tri-r do F4, achado P1).
+    #
+    # --dry-run não deve gravar nada; a leitura informativa de `existing`
+    # aqui só serve para rotular a ação no relatório, nunca para decidir a
+    # escrita real (que, fora do dry-run, é sempre o guard SQL).
+    if dry_run:
+        try:
+            existing = existing_validity(conn, source_session_date)
+        except sqlite3.OperationalError:
+            existing = None
+        action = f"dry_run_{decide_persistence(existing, bool(result['valid']), replace=replace)}"
+    else:
+        written = save_history_result_gated(
+            conn, source_session_date, effective_session_date, result,
+            target="WIN$N", replace=replace,
         )
+        # "skipped": o guard bloqueou -- ou já havia um snapshot válido (o
+        # candidato nunca sobrescreve sem --replace), ou o candidato também
+        # era inválido e não havia motivo para trocar um pelo outro. Não
+        # tentamos rotular qual dos dois com mais precisão aqui: fazer isso
+        # exigiria uma leitura extra pré-escrita puramente informativa, que
+        # é exatamente o padrão check-then-act que este fix elimina.
+        action = "written" if written else "skipped"
     return {
         "source_session_date": source_session_date,
         "effective_session_date": effective_session_date,
-        "action": f"dry_run_{action}" if dry_run and should_write else action,
+        "action": action,
         "valid": bool(result["valid"]),
         "validity_reasons": validity_reasons,
         "diagnostic_warnings": diagnostic_warnings,

@@ -708,7 +708,14 @@ def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, re
     entre o worker EOD e scripts/backfill_gex_history.py (que importa daqui):
     um snapshot VÁLIDO já persistido nunca é degradado por um candidato
     inválido de uma rerrodada com fonte incompleta, a menos que `replace`
-    seja passado explicitamente."""
+    seja passado explicitamente.
+
+    Função pura, só para exibição/testes da tabela de decisão (ver
+    tests/test_backfill_gex_history.py). Quem decide de fato o que é
+    gravado é o guard SQL embutido em ``_upsert_history_row_gated`` — não
+    uma leitura prévia mais este resultado (revisão tri-r do F4, achado
+    P1: essa leitura prévia, seguida de escrita condicional em statements
+    separados, é uma janela TOCTOU entre duas conexões concorrentes)."""
     if existing_valid is None:
         return "insert_valid" if candidate_valid else "insert_invalid"
     if replace:
@@ -719,6 +726,8 @@ def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, re
 
 
 def existing_validity(conn, source_session_date: str, target: str = "WIN$N") -> bool | None:
+    """Leitura informativa (logging/diagnóstico) — nunca a base da decisão
+    de gravação, que vive inteira dentro de ``_upsert_history_row_gated``."""
     ensure_history_schema(conn)
     row = conn.execute(
         """SELECT valid FROM gex_history_levels
@@ -726,6 +735,124 @@ def existing_validity(conn, source_session_date: str, target: str = "WIN$N") -> 
         (source_session_date, target),
     ).fetchone()
     return bool(row[0]) if row is not None else None
+
+
+_HISTORY_UPSERT_SQL = """
+INSERT INTO gex_history_levels
+   (source_session_date, effective_session_date, target,
+    gamma_max, gamma_min, gamma_flip,
+    gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
+    spot, future_settle, conv_factor, n_strikes, valid,
+    walls, meta, computed_at)
+VALUES
+   (:source_session_date, :effective_session_date, :target,
+    :gamma_max, :gamma_min, :gamma_flip,
+    :gamma_max_ibov, :gamma_min_ibov, :gamma_flip_ibov,
+    :spot, :future_settle, :conv_factor, :n_strikes, :valid,
+    :walls, :meta, :computed_at)
+ON CONFLICT(source_session_date, target) DO UPDATE SET
+   effective_session_date = excluded.effective_session_date,
+   gamma_max = excluded.gamma_max,
+   gamma_min = excluded.gamma_min,
+   gamma_flip = excluded.gamma_flip,
+   gamma_max_ibov = excluded.gamma_max_ibov,
+   gamma_min_ibov = excluded.gamma_min_ibov,
+   gamma_flip_ibov = excluded.gamma_flip_ibov,
+   spot = excluded.spot,
+   future_settle = excluded.future_settle,
+   conv_factor = excluded.conv_factor,
+   n_strikes = excluded.n_strikes,
+   valid = excluded.valid,
+   walls = excluded.walls,
+   meta = excluded.meta,
+   computed_at = excluded.computed_at
+WHERE :replace OR (gex_history_levels.valid = 0 AND excluded.valid = 1)
+"""
+
+
+def _upsert_history_row_gated(
+    conn, *, source_session_date, effective_session_date, target,
+    gamma_max, gamma_min, gamma_flip, gamma_max_ibov, gamma_min_ibov,
+    gamma_flip_ibov, spot, future_settle, conv_factor, n_strikes,
+    valid, walls_json, meta_json, computed_at, replace,
+) -> bool:
+    """Decide e grava em gex_history_levels no MESMO statement SQL — a
+    checagem de validade existente e a escrita condicional são uma única
+    operação atômica (INSERT ... ON CONFLICT ... DO UPDATE ... WHERE), sem
+    nenhuma leitura separada entre "checar" e "gravar" que duas conexões
+    concorrentes pudessem intercalar (revisão tri-r do F4, achado P1:
+    existing_validity() + decide_persistence() em statements separados
+    permitia que um candidato inválido sobrescrevesse um válido gravado
+    entre a leitura e a escrita de outra conexão — reproduzido com duas
+    conexões sqlite3 reais, resultado final valid=0).
+
+    O guard replica exatamente a tabela de decide_persistence: com
+    replace=False, só sobrescreve quando não há linha ainda OU quando a
+    existente é inválida e a candidata é válida; um válido existente nunca
+    é degradado sem --replace explícito.
+
+    Retorna True se a linha foi gravada (inserida ou sobrescrita), False
+    se o guard bloqueou a escrita (snapshot válido existente preservado)."""
+    ensure_history_schema(conn)
+    cur = conn.execute(
+        _HISTORY_UPSERT_SQL,
+        {
+            "source_session_date": source_session_date,
+            "effective_session_date": effective_session_date,
+            "target": target,
+            "gamma_max": gamma_max, "gamma_min": gamma_min, "gamma_flip": gamma_flip,
+            "gamma_max_ibov": gamma_max_ibov, "gamma_min_ibov": gamma_min_ibov,
+            "gamma_flip_ibov": gamma_flip_ibov,
+            "spot": spot, "future_settle": future_settle, "conv_factor": conv_factor,
+            "n_strikes": n_strikes, "valid": 1 if valid else 0,
+            "walls": walls_json, "meta": meta_json, "computed_at": computed_at,
+            "replace": 1 if replace else 0,
+        },
+    )
+    return cur.rowcount > 0
+
+
+def save_history_result_gated(
+    conn, source_session_date, effective_session_date, result,
+    target="WIN$N", *, replace: bool, commit=True, computed_at=None,
+) -> bool:
+    """Grava o mesmo snapshot causal de ``save_history_result`` em
+    gex_history_levels, mas respeitando a política de sobrescrita
+    (decide_persistence) de forma atômica — ver _upsert_history_row_gated.
+    Substitui o padrão existing_validity()+decide_persistence()+escrita
+    condicional nos call sites que gravam gex_history_levels de fato (worker
+    EOD, scripts/backfill_gex_history.py e sua migração legada de
+    gex_levels); save_history_result() em si permanece incondicional pois é
+    usado diretamente por fixtures de teste que precisam popular o
+    histórico sem passar pelo gate.
+
+    `computed_at` (default: agora) existe só para a migração legada de
+    gex_levels, que precisa preservar o timestamp original do cálculo
+    LIVE em vez de carimbar "agora" num dado que já foi calculado antes.
+
+    Retorna True se a linha foi gravada, False se preservada (candidato
+    descartado)."""
+    written = _upsert_history_row_gated(
+        conn,
+        source_session_date=source_session_date,
+        effective_session_date=effective_session_date,
+        target=target,
+        gamma_max=result.get("gamma_max"), gamma_min=result.get("gamma_min"),
+        gamma_flip=result.get("gamma_flip"),
+        gamma_max_ibov=result.get("gamma_max_ibov"),
+        gamma_min_ibov=result.get("gamma_min_ibov"),
+        gamma_flip_ibov=result.get("gamma_flip_ibov"),
+        spot=result.get("spot"), future_settle=result.get("future_settle"),
+        conv_factor=result.get("conv_factor"), n_strikes=result.get("n_strikes"),
+        valid=bool(result.get("valid")),
+        walls_json=json.dumps(result.get("walls", [])),
+        meta_json=json.dumps(result.get("meta", {})),
+        computed_at=computed_at or datetime.now(timezone.utc).isoformat(),
+        replace=replace,
+    )
+    if commit:
+        conn.commit()
+    return written
 
 
 def last_session_with_oi(max_back=5):
@@ -860,30 +987,29 @@ def main():
                     # gex_levels (LIVE) é sempre gravado com o resultado fresco
                     # -- essa política de arquivo (decide_persistence) só
                     # decide gex_history_levels (PIT), nunca a tabela live.
-                    previous_valid = existing_validity(conn, session_date, target=target)
-                    action = decide_persistence(
-                        previous_valid, bool(result["valid"]), replace=args.replace,
+                    #
+                    # save() sem commit: gex_levels e gex_history_levels têm
+                    # que persistir juntos ou nenhum dos dois — commit único
+                    # abaixo, em save_history_result_gated(). A decisão de
+                    # sobrescrever o histórico é tomada e executada no MESMO
+                    # statement (ver _upsert_history_row_gated) — não há
+                    # leitura prévia de validade que outra conexão possa
+                    # invalidar entre o "checar" e o "gravar".
+                    save(conn, session_date, result, target=target, commit=False)
+                    written = save_history_result_gated(
+                        conn, session_date, effective_session_date, result,
+                        target=target, replace=args.replace,
                     )
-                    if action.startswith("insert") or action.startswith("replace"):
-                        # save() sem commit: gex_levels e gex_history_levels têm
-                        # que persistir juntos ou nenhum dos dois — commit único
-                        # abaixo, em save_history_result(). saved_any só vira True
-                        # depois de ambas as escritas terem de fato sido commitadas.
-                        save(conn, session_date, result, target=target, commit=False)
-                        save_history_result(
-                            conn, session_date, effective_session_date, result, target=target,
-                        )
-                        log(f"  gravado em gex_levels ({session_date}, {target})")
+                    log(f"  gravado em gex_levels ({session_date}, {target})")
+                    if written:
                         log(
                             f"  gravado em gex_history_levels (source={session_date}, "
-                            f"effective={effective_session_date}, {target}, ação={action})"
+                            f"effective={effective_session_date}, {target})"
                         )
                     else:
-                        save(conn, session_date, result, target=target)
-                        log(f"  gravado em gex_levels ({session_date}, {target})")
                         log(
                             f"  gex_history_levels NÃO sobrescrito (source={session_date}, "
-                            f"ação={action} — snapshot válido existente preservado; "
+                            f"{target} — snapshot válido existente preservado; "
                             f"use --replace para forçar)"
                         )
                     saved_any = True

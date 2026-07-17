@@ -35,6 +35,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1141,8 +1142,8 @@ def _patch_main_success_env(calls, extra_argv=None):
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
         infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
-        compute_gex=gw.compute_gex, save=gw.save, save_history_result=gw.save_history_result,
-        existing_validity=gw.existing_validity, decide_persistence=gw.decide_persistence,
+        compute_gex=gw.compute_gex, save=gw.save,
+        save_history_result_gated=gw.save_history_result_gated,
         urlopen=gw.urllib.request.urlopen,
         argv=sys.argv,
     )
@@ -1170,13 +1171,13 @@ def _patch_main_success_env(calls, extra_argv=None):
     gw.save = (
         lambda conn, session_date, result, target="WIN$N", commit=True:
             calls["save"].append(target))
-    gw.save_history_result = (
-        lambda conn, source, effective, result, target="WIN$N", commit=True:
-            calls.setdefault("save_history", []).append((source, effective, target)))
-    # sem histórico prévio no ambiente fake -- decide_persistence real (não
-    # mockado) resolve pra insert_valid/insert_invalid, exercendo a mesma
-    # política de produção sem exigir um _FakeConn com execute() de verdade.
-    gw.existing_validity = lambda conn, source_session_date, target="WIN$N": None
+    # save_history_result_gated é o call site atômico real (revisão tri-r do
+    # F4, achado P1) -- mockar ele em vez de existing_validity/save_history_
+    # result evita precisar de um _FakeConn com execute() de verdade, sem
+    # reintroduzir o padrão check-then-act que o fix eliminou.
+    gw.save_history_result_gated = (
+        lambda conn, source, effective, result, target="WIN$N", *, replace, commit=True, computed_at=None:
+            calls.setdefault("save_history", []).append((source, effective, target)) or True)
     gw.urllib.request.urlopen = (
         lambda req, timeout=2: calls.__setitem__("notify", calls["notify"] + 1))
     sys.argv = ["gex_worker.py"] + (extra_argv or [])
@@ -1564,9 +1565,11 @@ def test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_le
                 "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
                          "grid_step": 50.0, "risk_free": 0.0}}
 
-    def _raising_save_history_result(conn, source, effective, result, target="WIN$N", commit=True):
+    def _raising_save_history_result_gated(
+        conn, source, effective, result, target="WIN$N", *, replace, commit=True, computed_at=None,
+    ):
         gw.ensure_history_schema(conn)
-        raise RuntimeError("falha simulada em save_history_result (teste de atomicidade)")
+        raise RuntimeError("falha simulada em save_history_result_gated (teste de atomicidade)")
 
     orig = dict(
         load_mt5_terminal=gw.load_mt5_terminal,
@@ -1578,7 +1581,7 @@ def test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_le
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
         infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
-        compute_gex=gw.compute_gex, save_history_result=gw.save_history_result,
+        compute_gex=gw.compute_gex, save_history_result_gated=gw.save_history_result_gated,
         urlopen=gw.urllib.request.urlopen, argv=sys.argv,
     )
     gw.load_mt5_terminal = lambda: _FakeMT5Handle()
@@ -1600,7 +1603,7 @@ def test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_le
         lambda conn, symbol, session_date, expiries, min_window=10, max_window=60: {})
     gw.compute_gex = (
         lambda spot, future_settle, options, session_date, **kw: fake_win_result(spot, future_settle))
-    gw.save_history_result = _raising_save_history_result
+    gw.save_history_result_gated = _raising_save_history_result_gated
     gw.urllib.request.urlopen = lambda req, timeout=2: None
     sys.argv = ["gex_worker.py", "--db", db_path]
     try:
@@ -1637,6 +1640,160 @@ def test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_le
     assert len(dol_live) == 1, (
         "a falha isolada de WIN$N não pode impedir WDO$N (target independente) de gravar: "
         + repr(dol_live))
+
+
+def _write_history_in_thread(db_path, source, effective, result, *, before=None, after=None):
+    """Abre uma conexão sqlite3 REAL (própria do thread) e chama
+    save_history_result_gated -- usado para simular duas execuções
+    concorrentes do worker/backfill escrevendo no mesmo (source_session_date,
+    target). `before`/`after` são hooks de sincronização (Barrier/Event)
+    para controlar a ordem real de commit entre os dois threads."""
+    conn = gw.get_connection(db_path)
+    if before is not None:
+        before()
+    try:
+        written = gw.save_history_result_gated(
+            conn, source, effective, result, target="WIN$N", replace=False)
+    finally:
+        conn.close()
+    if after is not None:
+        after()
+    return written
+
+
+def test_gate_historico_interleaving_real_valido_sobrevive_a_invalido_concorrente():
+    """Revisão tri-r do F4 (achado P1, reprodução independente do usuário):
+    com o padrão antigo (existing_validity() + decide_persistence() em
+    statements separados de save_history_result()), duas conexões sqlite3
+    reais concorrentes podiam ambas ler "sem snapshot ainda", a válida
+    committar primeiro e a inválida -- usando sua decisão já obsoleta --
+    sobrescrever depois. O usuário reproduziu isso com duas conexões reais:
+    resultado final valid=0, spot=200. Este teste roda EXATAMENTE esse
+    cenário com dois threads e duas conexões sqlite3 de verdade contra o
+    mesmo arquivo, forçando a ordem de commit perigosa (válido primeiro,
+    inválido tentando escrever depois), e trava que o snapshot válido
+    sobrevive -- o guard SQL de _upsert_history_row_gated reavalia o estado
+    ATUAL (pós-commit do válido) no mesmo statement da escrita, não uma
+    leitura feita antes da corrida."""
+    db_path = tempfile.mktemp(suffix=".db")
+    source, effective = "2026-07-15", "2026-07-16"
+    # cria arquivo/schema/WAL ANTES dos threads -- abrir duas conexões pela
+    # primeira vez ao mesmo tempo (PRAGMA journal_mode=WAL num arquivo que
+    # ainda não existe) tem uma corrida própria, ortogonal à que este teste
+    # quer exercitar (o gate de gex_history_levels).
+    conn0 = gw.get_connection(db_path)
+    gw.ensure_history_schema(conn0)
+    conn0.commit()
+    conn0.close()
+    valid_result = {
+        "gamma_max": 100.0, "gamma_min": 90.0, "gamma_flip": 95.0,
+        "gamma_max_ibov": 100.0, "gamma_min_ibov": 90.0, "gamma_flip_ibov": 95.0,
+        "spot": 100.0, "future_settle": 100.0, "conv_factor": 1.0,
+        "n_strikes": 20, "liquid_strikes": 20, "valid": True, "walls": [], "meta": {},
+    }
+    invalid_result = dict(valid_result)
+    invalid_result.update({"spot": 200.0, "valid": False})
+
+    arrive = threading.Barrier(2)
+    valid_committed = threading.Event()
+
+    def valid_before():
+        arrive.wait(timeout=5)
+
+    def valid_after():
+        valid_committed.set()
+
+    def invalid_before():
+        arrive.wait(timeout=5)
+        # força a ordem perigosa: a thread inválida só tenta escrever DEPOIS
+        # que a válida já commitou de verdade -- é o cenário exato do bug
+        # (P1) e da reprodução do usuário, não uma corrida arbitrária.
+        assert valid_committed.wait(timeout=5), "válido não commitou a tempo"
+
+    tA = threading.Thread(
+        target=_write_history_in_thread,
+        args=(db_path, source, effective, valid_result),
+        kwargs={"before": valid_before, "after": valid_after})
+    tB = threading.Thread(
+        target=_write_history_in_thread,
+        args=(db_path, source, effective, invalid_result),
+        kwargs={"before": invalid_before})
+    tA.start()
+    tB.start()
+    tA.join(timeout=10)
+    tB.join(timeout=10)
+    assert not tA.is_alive() and not tB.is_alive(), "thread travou -- possível deadlock no gate"
+
+    conn = gw.get_connection(db_path)
+    row = conn.execute(
+        "SELECT valid, spot FROM gex_history_levels WHERE source_session_date=? AND target='WIN$N'",
+        (source,),
+    ).fetchone()
+    conn.close()
+    assert row["valid"] == 1 and row["spot"] == 100.0, (
+        "P1 reintroduzido -- o candidato inválido sobrescreveu o snapshot válido "
+        "numa corrida real entre duas conexões sqlite3: " + repr(dict(row)))
+
+
+def test_gate_historico_interleaving_real_invalido_primeiro_valido_sobrescreve_depois():
+    """Contraparte da corrida acima, na ordem oposta: se o histórico ainda
+    não tem nenhum snapshot válido (o candidato inválido commitou primeiro),
+    uma segunda escrita concorrente com um candidato VÁLIDO tem que
+    conseguir substituí-lo -- o gate não pode travar escritas legítimas só
+    por serem a segunda de uma corrida, ele bloqueia especificamente
+    degradar um válido já existente (mesmo guard de decide_persistence,
+    ramo replace_with_valid)."""
+    db_path = tempfile.mktemp(suffix=".db")
+    source, effective = "2026-07-15", "2026-07-16"
+    conn0 = gw.get_connection(db_path)
+    gw.ensure_history_schema(conn0)
+    conn0.commit()
+    conn0.close()
+    valid_result = {
+        "gamma_max": 100.0, "gamma_min": 90.0, "gamma_flip": 95.0,
+        "gamma_max_ibov": 100.0, "gamma_min_ibov": 90.0, "gamma_flip_ibov": 95.0,
+        "spot": 100.0, "future_settle": 100.0, "conv_factor": 1.0,
+        "n_strikes": 20, "liquid_strikes": 20, "valid": True, "walls": [], "meta": {},
+    }
+    invalid_result = dict(valid_result)
+    invalid_result.update({"spot": 200.0, "valid": False})
+
+    arrive = threading.Barrier(2)
+    invalid_committed = threading.Event()
+
+    def invalid_before():
+        arrive.wait(timeout=5)
+
+    def invalid_after():
+        invalid_committed.set()
+
+    def valid_before():
+        arrive.wait(timeout=5)
+        assert invalid_committed.wait(timeout=5), "inválido não commitou a tempo"
+
+    tA = threading.Thread(
+        target=_write_history_in_thread,
+        args=(db_path, source, effective, invalid_result),
+        kwargs={"before": invalid_before, "after": invalid_after})
+    tB = threading.Thread(
+        target=_write_history_in_thread,
+        args=(db_path, source, effective, valid_result),
+        kwargs={"before": valid_before})
+    tA.start()
+    tB.start()
+    tA.join(timeout=10)
+    tB.join(timeout=10)
+    assert not tA.is_alive() and not tB.is_alive(), "thread travou -- possível deadlock no gate"
+
+    conn = gw.get_connection(db_path)
+    row = conn.execute(
+        "SELECT valid, spot FROM gex_history_levels WHERE source_session_date=? AND target='WIN$N'",
+        (source,),
+    ).fetchone()
+    conn.close()
+    assert row["valid"] == 1 and row["spot"] == 100.0, (
+        "o candidato válido concorrente não conseguiu substituir o inválido "
+        "preexistente -- gate bloqueando escrita legítima: " + repr(dict(row)))
 
 
 TESTS = [
@@ -1691,6 +1848,8 @@ TESTS = [
     test_main_win_historico_valido_nao_e_degradado_por_rerun_invalido_sem_replace,
     test_main_win_replace_forca_sobrescrita_de_historico_valido,
     test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_levels,
+    test_gate_historico_interleaving_real_valido_sobrevive_a_invalido_concorrente,
+    test_gate_historico_interleaving_real_invalido_primeiro_valido_sobrescreve_depois,
 ]
 
 if __name__ == "__main__":

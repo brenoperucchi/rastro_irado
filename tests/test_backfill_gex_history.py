@@ -331,6 +331,77 @@ def test_migracao_remove_somente_backfill_legado_da_tabela_live():
     ).fetchall() == [("2026-07-15", "2026-07-16", "WIN$N")]
 
 
+def test_migracao_nao_degrada_historico_valido_nem_apaga_live_invalido():
+    """Revisão tri-r do F4 (achado P1-2, reprodução independente do usuário):
+    a versão anterior de migrate_historical_rows_from_live() fazia INSERT OR
+    REPLACE incondicional em gex_history_levels seguido de DELETE
+    incondicional em gex_levels -- se já existisse um snapshot VÁLIDO no
+    histórico para o mesmo (source_session_date, target), essa migração
+    podia degradá-lo com um candidato do LIVE pior e, no mesmo golpe, apagar
+    o dado LIVE correspondente sem ter para onde movê-lo de volta.
+
+    Cenário do achado: gex_history_levels já tem um snapshot VÁLIDO para
+    2026-07-15/WIN$N; gex_levels tem uma linha PARA A MESMA chave, com
+    proveniência PIT completa (elegível pra migração) mas valid=0. A
+    migração tem que descartar esse candidato inválido -- sem sobrescrever
+    o histórico válido, sem apagar a linha LIVE (não há para onde movê-la,
+    já que o guard bloqueou a escrita no destino)."""
+    conn = sqlite3.connect(":memory:")
+    ensure_history_schema(conn)
+    valid_historical = {
+        "gamma_max": 191863.0, "gamma_min": 171806.0, "gamma_flip": 186364.0,
+        "gamma_max_ibov": 189885.0, "gamma_min_ibov": 170034.0,
+        "gamma_flip_ibov": 184443.0, "spot": 176010.9,
+        "future_settle": 177844.0, "conv_factor": 1.0104,
+        "n_strikes": 97, "valid": True, "walls": [],
+        "meta": {"source_session_date": "2026-07-15",
+                 "effective_session_date": "2026-07-16"},
+    }
+    save_history_result(
+        conn, "2026-07-15", "2026-07-16", valid_historical, target="WIN$N",
+    )
+
+    conn.execute(
+        """CREATE TABLE gex_levels(
+               session_date TEXT, target TEXT, gamma_max REAL, gamma_min REAL,
+               gamma_flip REAL, gamma_max_ibov REAL, gamma_min_ibov REAL,
+               gamma_flip_ibov REAL, spot REAL, future_settle REAL,
+               conv_factor REAL, n_strikes INTEGER, valid INTEGER,
+               walls TEXT, meta TEXT, computed_at TEXT,
+               PRIMARY KEY(session_date, target)
+           )"""
+    )
+    invalid_live_meta = json.dumps({
+        "effective_session_date": "2026-07-16",
+        "source_files": {"equities": {"sha256": "def"}},
+    })
+    conn.execute(
+        "INSERT INTO gex_levels VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("2026-07-15", "WIN$N", 999.0, 999.0, 999.0,
+         999.0, 999.0, 999.0, 999.0, 999.0, 1.0, 3, 0,
+         "[]", invalid_live_meta, "2026-07-17T09:00:00Z"),
+    )
+
+    assert migrate_historical_rows_from_live(conn) == 0, (
+        "candidato inválido não podia ter sido migrado -- guard bloqueou a "
+        "escrita no histórico, então não havia para onde mover a linha LIVE")
+
+    history = conn.execute(
+        """SELECT valid, gamma_max, spot FROM gex_history_levels
+           WHERE source_session_date='2026-07-15' AND target='WIN$N'"""
+    ).fetchone()
+    assert tuple(history) == (1, 191863.0, 176010.9), (
+        "P1-2 reintroduzido -- o candidato inválido do LIVE degradou o "
+        "snapshot histórico já válido: " + repr(history))
+
+    live = conn.execute(
+        "SELECT valid, spot FROM gex_levels WHERE session_date='2026-07-15' AND target='WIN$N'"
+    ).fetchone()
+    assert tuple(live) == (0, 999.0), (
+        "P1-2 reintroduzido -- a linha LIVE foi apagada mesmo sem ter sido "
+        "efetivamente migrada para o histórico: " + repr(live))
+
+
 def test_reclassificacao_promove_somente_reprovacao_por_ordem_flip_extremos():
     conn = sqlite3.connect(":memory:")
     ensure_history_schema(conn)
