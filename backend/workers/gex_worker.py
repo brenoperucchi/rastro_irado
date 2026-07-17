@@ -621,7 +621,7 @@ CREATE TABLE IF NOT EXISTS gex_levels (
 """
 
 
-def save(conn, session_date, result, target="WIN$N"):
+def save(conn, session_date, result, target="WIN$N", commit=True):
     conn.executescript(SCHEMA_GEX)
     conn.execute(
         """INSERT OR REPLACE INTO gex_levels
@@ -636,7 +636,96 @@ def save(conn, session_date, result, target="WIN$N"):
          result["n_strikes"], 1 if result["valid"] else 0,
          json.dumps(result["walls"]), json.dumps(result["meta"]),
          datetime.now(timezone.utc).isoformat()))
-    conn.commit()
+    if commit:
+        conn.commit()
+
+
+# ── 4b) Persistência histórica PIT (gex_history_levels) ──────
+# Schema e writer únicos, compartilhados com scripts/backfill_gex_history.py
+# (que importa daqui) — evita duas cópias divergindo sobre o mesmo dado.
+GEX_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS gex_history_levels (
+    source_session_date TEXT NOT NULL,
+    effective_session_date TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT 'WIN$N',
+    gamma_max REAL,
+    gamma_min REAL,
+    gamma_flip REAL,
+    gamma_max_ibov REAL,
+    gamma_min_ibov REAL,
+    gamma_flip_ibov REAL,
+    spot REAL,
+    future_settle REAL,
+    conv_factor REAL,
+    n_strikes INTEGER,
+    valid INTEGER NOT NULL DEFAULT 0,
+    walls TEXT,
+    meta TEXT,
+    computed_at TEXT,
+    PRIMARY KEY (source_session_date, target)
+)
+"""
+
+
+def ensure_history_schema(conn) -> None:
+    # Sem commit próprio: DDL fica pendente na mesma transação de quem chamar
+    # em seguida, para não flushar prematuramente um save(..., commit=False)
+    # anterior na mesma conexão (ver save_history_result).
+    conn.execute(GEX_HISTORY_SCHEMA)
+
+
+def save_history_result(conn, source_session_date, effective_session_date, result, target="WIN$N", commit=True):
+    """Persiste o mesmo snapshot causal gravado em gex_levels também em
+    gex_history_levels, indexado pela sessão-fonte (dado B3 EOD) e pela
+    sessão efetiva (a partir de quando o snapshot é utilizável) — nunca
+    altera gex_levels, que continua sendo a tabela LIVE."""
+    ensure_history_schema(conn)
+    conn.execute(
+        """INSERT OR REPLACE INTO gex_history_levels
+           (source_session_date, effective_session_date, target,
+            gamma_max, gamma_min, gamma_flip,
+            gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
+            spot, future_settle, conv_factor, n_strikes, valid,
+            walls, meta, computed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            source_session_date, effective_session_date, target,
+            result.get("gamma_max"), result.get("gamma_min"), result.get("gamma_flip"),
+            result.get("gamma_max_ibov"), result.get("gamma_min_ibov"),
+            result.get("gamma_flip_ibov"), result.get("spot"),
+            result.get("future_settle"), result.get("conv_factor"),
+            result.get("n_strikes"), 1 if result.get("valid") else 0,
+            json.dumps(result.get("walls", [])), json.dumps(result.get("meta", {})),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    if commit:
+        conn.commit()
+
+
+def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, replace: bool) -> str:
+    """Política de sobrescrita de gex_history_levels — única, compartilhada
+    entre o worker EOD e scripts/backfill_gex_history.py (que importa daqui):
+    um snapshot VÁLIDO já persistido nunca é degradado por um candidato
+    inválido de uma rerrodada com fonte incompleta, a menos que `replace`
+    seja passado explicitamente."""
+    if existing_valid is None:
+        return "insert_valid" if candidate_valid else "insert_invalid"
+    if replace:
+        return "replace_forced"
+    if existing_valid:
+        return "skip_existing_valid"
+    return "replace_with_valid" if candidate_valid else "skip_existing_invalid"
+
+
+def existing_validity(conn, source_session_date: str, target: str = "WIN$N") -> bool | None:
+    ensure_history_schema(conn)
+    row = conn.execute(
+        """SELECT valid FROM gex_history_levels
+           WHERE source_session_date=? AND target=?""",
+        (source_session_date, target),
+    ).fetchone()
+    return bool(row[0]) if row is not None else None
 
 
 def last_session_with_oi(max_back=5):
@@ -663,6 +752,10 @@ def main():
                     help="cache dos bundles oficiais B3/BCB")
     ap.add_argument("--target", choices=sorted(TARGETS), action="append",
                      help="restringe a 1+ targets (default: todos os configurados em TARGETS)")
+    ap.add_argument("--replace", action="store_true",
+                     help="força sobrescrever um snapshot histórico VÁLIDO existente em "
+                          "gex_history_levels (WIN$N) mesmo com o candidato novo; sem esta "
+                          "flag, um válido existente nunca é degradado por um inválido")
     args = ap.parse_args()
     targets = args.target or list(TARGETS)
 
@@ -763,12 +856,45 @@ def main():
                 if args.dry_run:
                     log(f"  [dry-run] {target}: nada gravado")
                     continue
-                save(conn, session_date, result, target=target)
-                saved_any = True
-                log(f"  gravado em gex_levels ({session_date}, {target})")
+                if target == "WIN$N":
+                    # gex_levels (LIVE) é sempre gravado com o resultado fresco
+                    # -- essa política de arquivo (decide_persistence) só
+                    # decide gex_history_levels (PIT), nunca a tabela live.
+                    previous_valid = existing_validity(conn, session_date, target=target)
+                    action = decide_persistence(
+                        previous_valid, bool(result["valid"]), replace=args.replace,
+                    )
+                    if action.startswith("insert") or action.startswith("replace"):
+                        # save() sem commit: gex_levels e gex_history_levels têm
+                        # que persistir juntos ou nenhum dos dois — commit único
+                        # abaixo, em save_history_result(). saved_any só vira True
+                        # depois de ambas as escritas terem de fato sido commitadas.
+                        save(conn, session_date, result, target=target, commit=False)
+                        save_history_result(
+                            conn, session_date, effective_session_date, result, target=target,
+                        )
+                        log(f"  gravado em gex_levels ({session_date}, {target})")
+                        log(
+                            f"  gravado em gex_history_levels (source={session_date}, "
+                            f"effective={effective_session_date}, {target}, ação={action})"
+                        )
+                    else:
+                        save(conn, session_date, result, target=target)
+                        log(f"  gravado em gex_levels ({session_date}, {target})")
+                        log(
+                            f"  gex_history_levels NÃO sobrescrito (source={session_date}, "
+                            f"ação={action} — snapshot válido existente preservado; "
+                            f"use --replace para forçar)"
+                        )
+                    saved_any = True
+                else:
+                    save(conn, session_date, result, target=target)
+                    saved_any = True
+                    log(f"  gravado em gex_levels ({session_date}, {target})")
             except Exception as e:
                 log(f"FALHA [{target}]: {e}")
                 exit_code = 1
+                conn.rollback()
     finally:
         if mt5 is not None:
             mt5.shutdown()

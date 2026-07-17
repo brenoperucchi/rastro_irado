@@ -1045,6 +1045,25 @@ export default function App() {
                         MID
                       </button>
                     )}
+                    {/* F1: Flip fora da grade das 17 walls (centrada no spot,
+                        não no Flip) -- sinal só informativo, direção/distância
+                        AO SPOT; não recolore walls nem recalcula Gamma/Flip. */}
+                    {gex && gex.target === selectedTarget && gex.active && showGex
+                      && gex.flip_grid_signal?.outside_grid && (
+                      <span
+                        title={`Flip fora da grade de walls do fechamento de ${gex.as_of} — distância (${Math.round(gex.flip_grid_signal.distance_to_spot)} pts) medida ao spot desse fechamento, não ao preço atual`}
+                        style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.08em',
+                          padding: '1px 7px', borderRadius: 4,
+                          background: '#EAB30822', border: '1px solid #EAB308', color: '#EAB308',
+                        }}>
+                        {gex.flip_grid_signal.direction === 'above' ? '▲' : '▼'} FLIP FORA DA GRADE
+                        <span style={{ fontSize: 8, color: '#EAB308AA', marginLeft: 4, fontWeight: 400 }}>
+                          ({gex.flip_grid_signal.direction === 'above' ? '+' : '-'}
+                          {Math.round(gex.flip_grid_signal.distance_to_spot)})
+                        </span>
+                      </span>
+                    )}
                   </div>
                   <div style={{
                     fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,

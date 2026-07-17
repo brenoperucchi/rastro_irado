@@ -62,6 +62,34 @@ def _current_gex_walls(row: dict, stored_walls: list) -> list:
         return stored_walls
 
 
+def _flip_grid_signal(walls: list, gamma_flip, spot, conv_factor) -> dict | None:
+    """F1 (decisão do usuário, revisão tri-r): a grade de 17 walls é centrada
+    no SPOT, não no Flip -- em mercado put-heavy ou após um movimento
+    intraday grande, o Flip pode cair fora da faixa desenhada e o trader não
+    vê no chart onde ele está, mesmo com as walls visíveis coloridas
+    "corretamente" (a cor de cada wall segue relativa ao Flip, isso não muda
+    aqui). Deriva só da geometria já calculada (`walls`, que já embutem
+    conv_factor) -- não recalcula Gamma/Flip nem recolore wall nenhuma; é
+    puramente informativo, direção e distância AO SPOT (não à grade)."""
+    if gamma_flip is None or spot is None or not conv_factor:
+        return None
+    grid_prices = [w["price"] for w in walls if w.get("type") == "wall"]
+    if not grid_prices:
+        return None
+    grid_min, grid_max = min(grid_prices), max(grid_prices)
+    if grid_min <= gamma_flip <= grid_max:
+        return {"outside_grid": False, "direction": None, "distance_to_spot": None}
+    # spot*conv_factor == future_settle por definição de conv_factor
+    # (f = win_settle/spot em compute_gex) -- mesmo espaço de preço dos walls.
+    spot_price = spot * conv_factor
+    distance = gamma_flip - spot_price
+    return {
+        "outside_grid": True,
+        "direction": "above" if distance >= 0 else "below",
+        "distance_to_spot": round(abs(distance), 2),
+    }
+
+
 async def ws_broadcast_loop():
     """Push dados para todos os WebSocket clients quando ativado pelo collector."""
     while True:
@@ -216,6 +244,8 @@ async def get_gex(
         "spot": d.get("spot"),
         "conv_factor": d.get("conv_factor"),
         "walls": walls,
+        "flip_grid_signal": _flip_grid_signal(
+            walls, d.get("gamma_flip"), d.get("spot"), d.get("conv_factor")),
     }
     if historical:
         response.update({

@@ -752,6 +752,8 @@ def test_main_isola_falha_por_target_e_so_notifica_se_salvou_algo():
     class _FakeConn:
         def close(self):
             pass
+        def rollback(self):
+            pass
 
     def fake_load_mt5_terminal():
         calls["load_mt5"] += 1
@@ -868,6 +870,8 @@ def test_main_com_date_explicito_win_usa_oficial_sem_bdi_nem_mt5():
             return _Cursor((1,))
         def close(self):
             pass
+        def rollback(self):
+            pass
 
     result = {
         "gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
@@ -918,6 +922,8 @@ def test_main_win_bundle_oficial_inconsistente_falha_fechado_sem_publicar():
                 return _Cursor(("2026-07-15",))
             return _Cursor((1,))
         def close(self):
+            pass
+        def rollback(self):
             pass
 
     orig = dict(
@@ -1024,6 +1030,8 @@ def test_main_date_sem_proxima_sessao_nao_calcula_nem_publica():
             return _Cursor()
         def close(self):
             pass
+        def rollback(self):
+            pass
 
     orig = dict(
         get_connection=gw.get_connection,
@@ -1056,6 +1064,8 @@ def test_main_automatico_em_feriado_sem_win_nao_publica():
                     return None
             return _Cursor()
         def close(self):
+            pass
+        def rollback(self):
             pass
 
     orig = dict(
@@ -1110,6 +1120,8 @@ def _patch_main_success_env(calls, extra_argv=None):
     class _FakeConn:
         def close(self):
             pass
+        def rollback(self):
+            pass
 
     def fake_result(spot, future_settle):
         return {"gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
@@ -1129,7 +1141,9 @@ def _patch_main_success_env(calls, extra_argv=None):
         fetch_bdi_option_data=gw.fetch_bdi_option_data,
         fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
         infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
-        compute_gex=gw.compute_gex, save=gw.save, urlopen=gw.urllib.request.urlopen,
+        compute_gex=gw.compute_gex, save=gw.save, save_history_result=gw.save_history_result,
+        existing_validity=gw.existing_validity, decide_persistence=gw.decide_persistence,
+        urlopen=gw.urllib.request.urlopen,
         argv=sys.argv,
     )
     gw.load_mt5_terminal = lambda: _FakeMT5Handle()
@@ -1153,7 +1167,16 @@ def _patch_main_success_env(calls, extra_argv=None):
         lambda conn, symbol, session_date, expiries, min_window=10, max_window=60: {})
     gw.compute_gex = (
         lambda spot, future_settle, options, session_date, **kw: fake_result(spot, future_settle))
-    gw.save = lambda conn, session_date, result, target="WIN$N": calls["save"].append(target)
+    gw.save = (
+        lambda conn, session_date, result, target="WIN$N", commit=True:
+            calls["save"].append(target))
+    gw.save_history_result = (
+        lambda conn, source, effective, result, target="WIN$N", commit=True:
+            calls.setdefault("save_history", []).append((source, effective, target)))
+    # sem histórico prévio no ambiente fake -- decide_persistence real (não
+    # mockado) resolve pra insert_valid/insert_invalid, exercendo a mesma
+    # política de produção sem exigir um _FakeConn com execute() de verdade.
+    gw.existing_validity = lambda conn, source_session_date, target="WIN$N": None
     gw.urllib.request.urlopen = (
         lambda req, timeout=2: calls.__setitem__("notify", calls["notify"] + 1))
     sys.argv = ["gex_worker.py"] + (extra_argv or [])
@@ -1185,6 +1208,9 @@ def test_main_sucesso_completo_retorna_exit_code_0_e_notifica_uma_vez():
     assert exit_code == 0, f"os dois targets tiveram sucesso -- exit_code tinha que ser 0, veio {exit_code}"
     assert calls["save"] == ["WIN$N", "WDO$N"], calls["save"]
     assert calls["notify"] == 1, calls["notify"]
+    assert calls.get("save_history") == [("2026-07-13", date.today().isoformat(), "WIN$N")], (
+        "F4: WIN$N tem que gravar em gex_history_levels com source/effective corretos, "
+        "e WDO$N NAO tem esse conceito -- não pode aparecer aqui: " + repr(calls.get("save_history")))
 
 
 def test_main_dry_run_nao_grava_nem_notifica_mesmo_com_sucesso():
@@ -1202,6 +1228,8 @@ def test_main_dry_run_nao_grava_nem_notifica_mesmo_com_sucesso():
     assert exit_code == 0, exit_code
     assert calls["save"] == [], "--dry-run não pode gravar nada" + repr(calls["save"])
     assert calls["notify"] == 0, "--dry-run não pode notificar a API (nada foi salvo)"
+    assert not calls.get("save_history"), (
+        "--dry-run não pode gravar em gex_history_levels: " + repr(calls.get("save_history")))
 
 
 def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
@@ -1217,6 +1245,8 @@ def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
 
     class _FakeConn:
         def close(self):
+            pass
+        def rollback(self):
             pass
 
     orig = dict(
@@ -1246,7 +1276,9 @@ def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
     gw.fetch_bdi_option_data = lambda oi_rows, session_date, asset: []
     gw.fetch_ibov_mt5_leg = _raise("MT5 indisponível pro WIN$N nesse teste")
     gw.fetch_dol_mt5_leg = _raise("MT5 indisponível pro WDO$N nesse teste")
-    gw.save = lambda conn, session_date, result, target="WIN$N": calls["save"].append(target)
+    gw.save = (
+        lambda conn, session_date, result, target="WIN$N", commit=True:
+            calls["save"].append(target))
     gw.urllib.request.urlopen = (
         lambda req, timeout=2: calls.__setitem__("notify", calls["notify"] + 1))
     sys.argv = ["gex_worker.py"]
@@ -1258,6 +1290,353 @@ def test_main_ambos_targets_falhando_nao_salva_nem_notifica():
     assert exit_code == 1, exit_code
     assert calls["save"] == [], calls["save"]
     assert calls["notify"] == 0, "nada foi salvo -- notify_update não podia disparar"
+
+
+def test_main_win_grava_mesmo_snapshot_causal_em_gex_levels_e_history_e_e_idempotente():
+    """F4 (tri-r): antes desta mudança só o backfill manual gravava
+    gex_history_levels -- o worker EOD agendado nunca escrevia lá, então
+    sessões recém-fechadas ficavam sem histórico até alguém rodar o backfill
+    à mão. Roda main() de ponta a ponta contra um sqlite REAL (save() e
+    save_history_result() não mockados) duas vezes seguidas e confere: (1) na
+    PRIMEIRA rodada, WIN$N grava o MESMO result em gex_levels e
+    gex_history_levels, com source/effective corretos; (2) WDO$N (sem PIT)
+    não grava em gex_history_levels; (3) na SEGUNDA rodada (revisão
+    tri-r/fable-reasoner: decide_persistence), gex_levels (LIVE) continua
+    refletindo sempre o resultado mais fresco, mas gex_history_levels (PIT)
+    NÃO é reescrito -- o snapshot válido já arquivado na primeira rodada é
+    preservado, não substituído por um rerun automático sem --replace. Isso é
+    ainda mais forte que "sobrescreve sem duplicar": o histórico, uma vez
+    válido, fica imutável a reruns automáticos."""
+    db_path = tempfile.mktemp(suffix=".db")
+
+    class _FakeMT5Handle:
+        def shutdown(self):
+            pass
+
+    def fake_win_result(spot, future_settle):
+        return {"gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+                "gamma_max": spot, "gamma_min": spot, "gamma_flip": spot,
+                "spot": spot, "future_settle": future_settle, "conv_factor": 1.0,
+                "n_strikes": 5, "liquid_strikes": 5, "valid": True, "walls": [],
+                "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
+                         "grid_step": 50.0, "risk_free": 0.0}}
+
+    orig = dict(
+        load_mt5_terminal=gw.load_mt5_terminal,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
+        fetch_bdi_option_data=gw.fetch_bdi_option_data,
+        fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
+        infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
+        compute_gex=gw.compute_gex, urlopen=gw.urllib.request.urlopen, argv=sys.argv,
+    )
+    gw.load_mt5_terminal = lambda: _FakeMT5Handle()
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = lambda *a, **k: fake_win_result(130000.0, 131500.0)
+    gw.last_session_with_oi = lambda max_back=5: (
+        "2026-07-13", [{"ticker": "IBOVFAKE", "oi": 100.0}])
+    gw.fetch_bdi_oi = lambda session_date, asset="IBOV": [{"ticker": "DOLFAKE", "oi": 50.0}]
+    gw.fetch_bdi_option_data = lambda oi_rows, session_date, asset: [
+        {"ticker": "DOLFAKEOPT", "oi": 50.0, "strike": 5400.0,
+         "is_call": True, "expiry": "2026-08-21", "premium": None}]
+    gw.fetch_ibov_mt5_leg = lambda mt5, oi_rows, session_date, trust_session_close=True: {
+        "spot": 130000.0, "win_settle": 131500.0, "options": []}
+    gw.fetch_dol_mt5_leg = lambda mt5, session_date: {"spot": 5400.0, "future_settle": 5401.0}
+    gw.infer_grid_step = lambda options, spot, default=None: 50.0
+    gw.realized_iv_by_expiry = (
+        lambda conn, symbol, session_date, expiries, min_window=10, max_window=60: {})
+    gw.compute_gex = (
+        lambda spot, future_settle, options, session_date, **kw: fake_win_result(spot, future_settle))
+    gw.urllib.request.urlopen = lambda req, timeout=2: None
+    sys.argv = ["gex_worker.py", "--db", db_path]
+    try:
+        exit_code_1 = gw.main()
+        # confere ANTES do segundo run que a primeira rodada gravou o MESMO
+        # snapshot causal nas duas tabelas -- é essa igualdade que decide_
+        # persistence passa a proteger de reruns automáticos a partir daqui.
+        conn_1 = sqlite3.connect(db_path)
+        conn_1.row_factory = sqlite3.Row
+        live_1 = conn_1.execute("SELECT * FROM gex_levels WHERE target='WIN$N'").fetchone()
+        hist_1 = conn_1.execute("SELECT * FROM gex_history_levels WHERE target='WIN$N'").fetchone()
+        conn_1.close()
+        for col in ("gamma_max", "gamma_min", "gamma_flip", "gamma_max_ibov",
+                    "gamma_min_ibov", "gamma_flip_ibov", "spot", "future_settle",
+                    "conv_factor", "n_strikes", "valid"):
+            assert live_1[col] == hist_1[col], (
+                "primeira rodada: mesmo snapshot causal exige valores iguais em "
+                "gex_levels e gex_history_levels: " + repr((col, live_1[col], hist_1[col])))
+
+        # segunda rodada com spot diferente, mas SEM --replace -- prova que
+        # gex_levels (LIVE) continua sempre fresco, enquanto o histórico já
+        # válido da primeira rodada fica intacto (decide_persistence).
+        gw.compute_official_win_snapshot = lambda *a, **k: fake_win_result(131000.0, 132500.0)
+        exit_code_2 = gw.main()
+    finally:
+        for k, v in orig.items():
+            if k == "urlopen":
+                gw.urllib.request.urlopen = v
+            elif k == "argv":
+                sys.argv = v
+            else:
+                setattr(gw, k, v)
+
+    assert exit_code_1 == 0 and exit_code_2 == 0, (exit_code_1, exit_code_2)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    live_rows = conn.execute("SELECT * FROM gex_levels WHERE target='WIN$N'").fetchall()
+    hist_rows = conn.execute("SELECT * FROM gex_history_levels WHERE target='WIN$N'").fetchall()
+    hist_dol = conn.execute("SELECT * FROM gex_history_levels WHERE target='WDO$N'").fetchone()
+    conn.close()
+
+    assert len(live_rows) == 1, "rerun tinha que SOBRESCREVER gex_levels, não duplicar: " + repr(live_rows)
+    assert len(hist_rows) == 1, (
+        "rerun não pode duplicar a linha em gex_history_levels: " + repr(hist_rows))
+    assert hist_dol is None, "WDO$N não tem PIT source/effective -- não pode gravar histórico"
+
+    live, hist = live_rows[0], hist_rows[0]
+    assert hist["source_session_date"] == "2026-07-13", dict(hist)
+    assert hist["effective_session_date"] == date.today().isoformat(), dict(hist)
+    assert live["spot"] == 131000.0, (
+        "gex_levels (LIVE) tem que refletir a SEGUNDA rodada, mesmo sem --replace")
+    assert hist["spot"] == 130000.0, (
+        "gex_history_levels tem que preservar o snapshot VÁLIDO da PRIMEIRA rodada -- "
+        "decide_persistence não deixa um rerun automático (sem --replace) degradar/trocar "
+        "um histórico já válido: " + repr(dict(hist)))
+
+
+def _run_main_win_twice_para_politica_de_sobrescrita(second_result, *, extra_argv_2=None):
+    """Monta o ambiente comum aos dois testes de decide_persistence abaixo:
+    primeira rodada sempre grava um snapshot WIN$N VÁLIDO; a segunda usa o
+    `second_result` (e os argv extras) passados pelo chamador. Devolve
+    (db_path, exit_code_1, exit_code_2)."""
+    db_path = tempfile.mktemp(suffix=".db")
+
+    class _FakeMT5Handle:
+        def shutdown(self):
+            pass
+
+    def fake_win_result(spot, future_settle, valid=True):
+        return {"gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+                "gamma_max": spot, "gamma_min": spot, "gamma_flip": spot,
+                "spot": spot, "future_settle": future_settle, "conv_factor": 1.0,
+                "n_strikes": 5, "liquid_strikes": 5, "valid": valid, "walls": [],
+                "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
+                         "grid_step": 50.0, "risk_free": 0.0}}
+
+    orig = dict(
+        load_mt5_terminal=gw.load_mt5_terminal,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
+        fetch_bdi_option_data=gw.fetch_bdi_option_data,
+        fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
+        infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
+        compute_gex=gw.compute_gex, urlopen=gw.urllib.request.urlopen, argv=sys.argv,
+    )
+    gw.load_mt5_terminal = lambda: _FakeMT5Handle()
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = lambda *a, **k: fake_win_result(130000.0, 131500.0)
+    gw.last_session_with_oi = lambda max_back=5: (
+        "2026-07-13", [{"ticker": "IBOVFAKE", "oi": 100.0}])
+    gw.fetch_bdi_oi = lambda session_date, asset="IBOV": [{"ticker": "DOLFAKE", "oi": 50.0}]
+    gw.fetch_bdi_option_data = lambda oi_rows, session_date, asset: [
+        {"ticker": "DOLFAKEOPT", "oi": 50.0, "strike": 5400.0,
+         "is_call": True, "expiry": "2026-08-21", "premium": None}]
+    gw.fetch_ibov_mt5_leg = lambda mt5, oi_rows, session_date, trust_session_close=True: {
+        "spot": 130000.0, "win_settle": 131500.0, "options": []}
+    gw.fetch_dol_mt5_leg = lambda mt5, session_date: {"spot": 5400.0, "future_settle": 5401.0}
+    gw.infer_grid_step = lambda options, spot, default=None: 50.0
+    gw.realized_iv_by_expiry = (
+        lambda conn, symbol, session_date, expiries, min_window=10, max_window=60: {})
+    gw.compute_gex = (
+        lambda spot, future_settle, options, session_date, **kw: fake_win_result(spot, future_settle))
+    gw.urllib.request.urlopen = lambda req, timeout=2: None
+    sys.argv = ["gex_worker.py", "--db", db_path]
+    try:
+        exit_code_1 = gw.main()
+        gw.compute_official_win_snapshot = lambda *a, **k: second_result
+        sys.argv = ["gex_worker.py", "--db", db_path] + (extra_argv_2 or [])
+        exit_code_2 = gw.main()
+    finally:
+        for k, v in orig.items():
+            if k == "urlopen":
+                gw.urllib.request.urlopen = v
+            elif k == "argv":
+                sys.argv = v
+            else:
+                setattr(gw, k, v)
+    return db_path, exit_code_1, exit_code_2, fake_win_result
+
+
+def test_main_win_historico_valido_nao_e_degradado_por_rerun_invalido_sem_replace():
+    """F4 (decisão do usuário sobre o achado ALTO do fable-reasoner): um
+    snapshot histórico VÁLIDO não pode ser degradado silenciosamente por uma
+    rerrodada automática com fonte incompleta (ex.: menos strikes líquidos
+    no dia seguinte, valid=False). decide_persistence bloqueia mesmo sem
+    nenhuma flag no CLI -- não é preciso pedir --replace pra recusar, o
+    bloqueio é o comportamento padrão."""
+    invalid_second = {
+        "gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+        "gamma_max": 131000.0, "gamma_min": 131000.0, "gamma_flip": 131000.0,
+        "spot": 131000.0, "future_settle": 132500.0, "conv_factor": 1.0,
+        "n_strikes": 2, "liquid_strikes": 2, "valid": False, "walls": [],
+        "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
+                 "grid_step": 50.0, "risk_free": 0.0},
+    }
+    db_path, exit_code_1, exit_code_2, _ = _run_main_win_twice_para_politica_de_sobrescrita(
+        invalid_second)
+
+    assert exit_code_1 == 0 and exit_code_2 == 0, (exit_code_1, exit_code_2)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    live = conn.execute("SELECT * FROM gex_levels WHERE target='WIN$N'").fetchone()
+    hist = conn.execute("SELECT * FROM gex_history_levels WHERE target='WIN$N'").fetchone()
+    conn.close()
+
+    assert live["spot"] == 131000.0 and live["valid"] == 0, (
+        "gex_levels (LIVE) reflete a rodada mais fresca mesmo sendo inválida -- "
+        "essa tabela não é gated por decide_persistence: " + repr(dict(live)))
+    assert hist["spot"] == 130000.0 and hist["valid"] == 1, (
+        "gex_history_levels tem que preservar o snapshot VÁLIDO da primeira rodada -- "
+        "um candidato inválido NUNCA pode substituir um histórico já válido: "
+        + repr(dict(hist)))
+
+
+def test_main_win_replace_forca_sobrescrita_de_historico_valido():
+    """F4 (decisão do usuário): --replace é a válvula de escape explícita
+    pra quando o operador SABE que quer forçar a sobrescrita de um snapshot
+    histórico já válido (ex.: reprocessamento manual após correção de dado
+    na fonte B3) -- sem a flag, decide_persistence bloqueia; com ela, grava."""
+    second_valid = {
+        "gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+        "gamma_max": 131000.0, "gamma_min": 131000.0, "gamma_flip": 131000.0,
+        "spot": 131000.0, "future_settle": 132500.0, "conv_factor": 1.0,
+        "n_strikes": 5, "liquid_strikes": 5, "valid": True, "walls": [],
+        "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
+                 "grid_step": 50.0, "risk_free": 0.0},
+    }
+    db_path, exit_code_1, exit_code_2, _ = _run_main_win_twice_para_politica_de_sobrescrita(
+        second_valid, extra_argv_2=["--replace"])
+
+    assert exit_code_1 == 0 and exit_code_2 == 0, (exit_code_1, exit_code_2)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    hist = conn.execute("SELECT * FROM gex_history_levels WHERE target='WIN$N'").fetchone()
+    conn.close()
+
+    assert hist["spot"] == 131000.0, (
+        "--replace tem que forçar a sobrescrita do histórico já válido "
+        "pelo candidato da segunda rodada: " + repr(dict(hist)))
+
+
+def test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_levels():
+    """F4 (review deep-reasoner/fable-reasoner): save() e save_history_result()
+    tinham dois commits independentes -- se save_history_result() explodisse
+    DEPOIS de save() já ter persistido gex_levels, a sessão ficava com um
+    snapshot em gex_levels sem o par correspondente em gex_history_levels,
+    quebrando a garantia de "mesmo snapshot causal nas duas tabelas" do F4.
+    Roda main() contra um sqlite REAL (get_connection e save() não mockados,
+    só save_history_result força uma exceção) e confere que a linha WIN$N em
+    gex_levels foi revertida junto -- tudo ou nada, não meio-escrito."""
+    db_path = tempfile.mktemp(suffix=".db")
+
+    class _FakeMT5Handle:
+        def shutdown(self):
+            pass
+
+    def fake_win_result(spot, future_settle):
+        return {"gamma_max_ibov": 1.0, "gamma_min_ibov": -1.0, "gamma_flip_ibov": 0.0,
+                "gamma_max": spot, "gamma_min": spot, "gamma_flip": spot,
+                "spot": spot, "future_settle": future_settle, "conv_factor": 1.0,
+                "n_strikes": 5, "liquid_strikes": 5, "valid": True, "walls": [],
+                "meta": {"iv_by_exp": {}, "iv_fallback": 0.2, "iv_source": "realized",
+                         "grid_step": 50.0, "risk_free": 0.0}}
+
+    def _raising_save_history_result(conn, source, effective, result, target="WIN$N", commit=True):
+        gw.ensure_history_schema(conn)
+        raise RuntimeError("falha simulada em save_history_result (teste de atomicidade)")
+
+    orig = dict(
+        load_mt5_terminal=gw.load_mt5_terminal,
+        _observed_win_session_pair=gw._observed_win_session_pair,
+        _validate_official_source=gw._validate_official_source,
+        _official_rate=gw._official_rate,
+        compute_official_win_snapshot=gw.compute_official_win_snapshot,
+        last_session_with_oi=gw.last_session_with_oi, fetch_bdi_oi=gw.fetch_bdi_oi,
+        fetch_bdi_option_data=gw.fetch_bdi_option_data,
+        fetch_ibov_mt5_leg=gw.fetch_ibov_mt5_leg, fetch_dol_mt5_leg=gw.fetch_dol_mt5_leg,
+        infer_grid_step=gw.infer_grid_step, realized_iv_by_expiry=gw.realized_iv_by_expiry,
+        compute_gex=gw.compute_gex, save_history_result=gw.save_history_result,
+        urlopen=gw.urllib.request.urlopen, argv=sys.argv,
+    )
+    gw.load_mt5_terminal = lambda: _FakeMT5Handle()
+    gw._observed_win_session_pair = lambda conn, effective: ("2026-07-13", effective)
+    gw._validate_official_source = lambda source, cache_dir: source
+    gw._official_rate = lambda source, cache_dir: (source, 0.149)
+    gw.compute_official_win_snapshot = lambda *a, **k: fake_win_result(130000.0, 131500.0)
+    gw.last_session_with_oi = lambda max_back=5: (
+        "2026-07-13", [{"ticker": "IBOVFAKE", "oi": 100.0}])
+    gw.fetch_bdi_oi = lambda session_date, asset="IBOV": [{"ticker": "DOLFAKE", "oi": 50.0}]
+    gw.fetch_bdi_option_data = lambda oi_rows, session_date, asset: [
+        {"ticker": "DOLFAKEOPT", "oi": 50.0, "strike": 5400.0,
+         "is_call": True, "expiry": "2026-08-21", "premium": None}]
+    gw.fetch_ibov_mt5_leg = lambda mt5, oi_rows, session_date, trust_session_close=True: {
+        "spot": 130000.0, "win_settle": 131500.0, "options": []}
+    gw.fetch_dol_mt5_leg = lambda mt5, session_date: {"spot": 5400.0, "future_settle": 5401.0}
+    gw.infer_grid_step = lambda options, spot, default=None: 50.0
+    gw.realized_iv_by_expiry = (
+        lambda conn, symbol, session_date, expiries, min_window=10, max_window=60: {})
+    gw.compute_gex = (
+        lambda spot, future_settle, options, session_date, **kw: fake_win_result(spot, future_settle))
+    gw.save_history_result = _raising_save_history_result
+    gw.urllib.request.urlopen = lambda req, timeout=2: None
+    sys.argv = ["gex_worker.py", "--db", db_path]
+    try:
+        exit_code = gw.main()
+    finally:
+        for k, v in orig.items():
+            if k == "urlopen":
+                gw.urllib.request.urlopen = v
+            elif k == "argv":
+                sys.argv = v
+            else:
+                setattr(gw, k, v)
+
+    assert exit_code == 1, "WIN$N falhou no meio da dupla gravação -- exit_code tem que refletir isso"
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    win_live = conn.execute("SELECT * FROM gex_levels WHERE target='WIN$N'").fetchall()
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    # rollback() desfaz a MESMA transação do CREATE TABLE IF NOT EXISTS de
+    # ensure_history_schema (DDL é transacional no sqlite) -- é esperado que
+    # gex_history_levels nem exista ainda nesse cenário, não só que esteja vazia.
+    win_hist = (
+        conn.execute("SELECT * FROM gex_history_levels WHERE target='WIN$N'").fetchall()
+        if "gex_history_levels" in tables else [])
+    dol_live = conn.execute("SELECT * FROM gex_levels WHERE target='WDO$N'").fetchall()
+    conn.close()
+
+    assert win_live == [], (
+        "save_history_result() falhou DEPOIS de save() -- gex_levels não pode reter "
+        "a linha WIN$N sem o par em gex_history_levels (linha órfã): " + repr([dict(r) for r in win_live]))
+    assert win_hist == [], "save_history_result() falhou -- não podia ter gravado nada: " + repr(win_hist)
+    assert len(dol_live) == 1, (
+        "a falha isolada de WIN$N não pode impedir WDO$N (target independente) de gravar: "
+        + repr(dol_live))
 
 
 TESTS = [
@@ -1308,6 +1687,10 @@ TESTS = [
     test_main_sucesso_completo_retorna_exit_code_0_e_notifica_uma_vez,
     test_main_dry_run_nao_grava_nem_notifica_mesmo_com_sucesso,
     test_main_ambos_targets_falhando_nao_salva_nem_notifica,
+    test_main_win_grava_mesmo_snapshot_causal_em_gex_levels_e_history_e_e_idempotente,
+    test_main_win_historico_valido_nao_e_degradado_por_rerun_invalido_sem_replace,
+    test_main_win_replace_forca_sobrescrita_de_historico_valido,
+    test_main_win_falha_entre_save_e_save_history_nao_deixa_linha_orfa_em_gex_levels,
 ]
 
 if __name__ == "__main__":

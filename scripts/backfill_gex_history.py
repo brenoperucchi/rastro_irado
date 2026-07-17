@@ -45,28 +45,11 @@ BCB_SELIC_BASE = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados"
 DEFAULT_CACHE_DIR = Path("data/gex_history_cache")
 WIN_CONTRACT_RE = re.compile(r"^WIN[A-Z]\d{2}$")
 
-GEX_HISTORY_SCHEMA = """
-CREATE TABLE IF NOT EXISTS gex_history_levels (
-    source_session_date TEXT NOT NULL,
-    effective_session_date TEXT NOT NULL,
-    target TEXT NOT NULL DEFAULT 'WIN$N',
-    gamma_max REAL,
-    gamma_min REAL,
-    gamma_flip REAL,
-    gamma_max_ibov REAL,
-    gamma_min_ibov REAL,
-    gamma_flip_ibov REAL,
-    spot REAL,
-    future_settle REAL,
-    conv_factor REAL,
-    n_strikes INTEGER,
-    valid INTEGER NOT NULL DEFAULT 0,
-    walls TEXT,
-    meta TEXT,
-    computed_at TEXT,
-    PRIMARY KEY (source_session_date, target)
-)
-"""
+# Schema e writer de gex_history_levels vivem em backend/workers/gex_worker.py
+# (GEX_HISTORY_SCHEMA / save_history_result) — o worker EOD agora grava a
+# mesma tabela a cada rodada, então schema/persistência não podem divergir
+# entre os dois escritores.
+GEX_HISTORY_SCHEMA = gex.GEX_HISTORY_SCHEMA
 
 
 def _local(tag: str) -> str:
@@ -341,16 +324,6 @@ rate_at_or_before = gex_official.rate_at_or_before
 _sha256 = gex_official.sha256_file
 
 
-def decide_persistence(existing_valid: bool | None, candidate_valid: bool, *, replace: bool) -> str:
-    if existing_valid is None:
-        return "insert_valid" if candidate_valid else "insert_invalid"
-    if replace:
-        return "replace_forced"
-    if existing_valid:
-        return "skip_existing_valid"
-    return "replace_with_valid" if candidate_valid else "skip_existing_invalid"
-
-
 def gex_validity_reasons(result: dict, *, grid_step: float) -> list[str]:
     """Espelha os gates de ``compute_gex`` em motivos auditáveis."""
     flip = result.get("gamma_flip_ibov")
@@ -430,50 +403,31 @@ def open_backfill_database(db_path: str | Path):
     return conn
 
 
-def ensure_history_schema(conn) -> None:
-    conn.execute(GEX_HISTORY_SCHEMA)
-    conn.commit()
+# Writer único (ver comentário acima de GEX_HISTORY_SCHEMA) — evita duas
+# implementações de INSERT OR REPLACE divergindo sobre as mesmas colunas.
+ensure_history_schema = gex.ensure_history_schema
+save_history_result = gex.save_history_result
 
-
-def save_history_result(
-    conn,
-    source_session_date: str,
-    effective_session_date: str,
-    result: dict,
-    *,
-    target: str = "WIN$N",
-) -> None:
-    """Persiste reconstrução PIT sem jamais alterar a tabela LIVE."""
-    ensure_history_schema(conn)
-    conn.execute(
-        """INSERT OR REPLACE INTO gex_history_levels
-           (source_session_date, effective_session_date, target,
-            gamma_max, gamma_min, gamma_flip,
-            gamma_max_ibov, gamma_min_ibov, gamma_flip_ibov,
-            spot, future_settle, conv_factor, n_strikes, valid,
-            walls, meta, computed_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            source_session_date, effective_session_date, target,
-            result.get("gamma_max"), result.get("gamma_min"), result.get("gamma_flip"),
-            result.get("gamma_max_ibov"), result.get("gamma_min_ibov"),
-            result.get("gamma_flip_ibov"), result.get("spot"),
-            result.get("future_settle"), result.get("conv_factor"),
-            result.get("n_strikes"), int(bool(result.get("valid"))),
-            json.dumps(result.get("walls", []), ensure_ascii=False),
-            json.dumps(result.get("meta", {}), ensure_ascii=False),
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    )
-    conn.commit()
+# Política de sobrescrita única (revisão tri-r do F4) — o worker EOD agendado
+# e este backfill manual gravam a MESMA tabela gex_history_levels, então os
+# dois têm que respeitar a mesma regra: um snapshot válido existente nunca é
+# degradado por um candidato inválido a menos que --replace seja explícito.
+decide_persistence = gex.decide_persistence
+existing_validity = gex.existing_validity
 
 
 def migrate_historical_rows_from_live(conn) -> int:
-    """Move somente linhas reconhecíveis do backfill legado para o histórico.
+    """Move linhas de gex_levels que carregam proveniência PIT completa
+    (``meta.source_files`` + ``meta.effective_session_date``) para o histórico.
 
-    A presença de ``meta.source_files`` é a assinatura do pipeline histórico;
-    o worker LIVE não produz esse campo. Cada linha é inserida no destino antes
-    de ser removida da tabela LIVE, dentro da mesma transação.
+    Atenção: essa assinatura NÃO é exclusiva de sobras do backfill legado —
+    qualquer linha WIN$N gravada por ``compute_official_win_snapshot`` (seja
+    pelo backfill, seja pelo worker EOD agendado, que desde a integração F4
+    também grava o mesmo snapshot em gex_history_levels na hora) carrega os
+    dois campos. Rodar esta função contra um ``gex_levels`` com linhas WIN$N
+    recentes do worker as moveria dali também, não só sobras legadas de antes
+    do F4. Cada linha é inserida no destino antes de ser removida da tabela
+    LIVE, dentro da mesma transação.
     """
     ensure_history_schema(conn)
     rows = conn.execute(
@@ -556,16 +510,6 @@ def reclassify_history_validity(conn, *, target: str = "WIN$N") -> dict[str, int
         "promoted": promoted,
         "demoted": demoted,
     }
-
-
-def existing_validity(conn, source_session_date: str) -> bool | None:
-    ensure_history_schema(conn)
-    row = conn.execute(
-        """SELECT valid FROM gex_history_levels
-           WHERE source_session_date=? AND target='WIN$N'""",
-        (source_session_date,),
-    ).fetchone()
-    return bool(row[0]) if row is not None else None
 
 
 def process_session(
