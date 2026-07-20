@@ -4,7 +4,11 @@ Description=IRAI P Dinâmico WIN — captura diária antes da virada Tickmill
 [Timer]
 OnCalendar=Mon..Fri *-*-* 17:56:00 America/Sao_Paulo
 AccuracySec=30s
-Persistent=true
+# Sem Persistent: a data da sessão é calculada na hora da execução, então um
+# catch-up após downtime capturaria o dia ERRADO (tipicamente pré-abertura, que
+# sai 0 em silêncio) sem nunca recuperar a sessão perdida -- a fonte pública é
+# rolling e já girou. Melhor pular o dia do que gravar captura enganosa.
+Persistent=false
 Unit=rastro-irado-p-dynamic-ledger.service
 
 [Install]

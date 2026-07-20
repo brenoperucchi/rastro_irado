@@ -1,0 +1,266 @@
+{
+  "active": true,
+  "target": "WIN$N",
+  "as_of": "2026-07-13",
+  "age_days": 3,
+  "valid": true,
+  "gamma_max": 190076.71752050295,
+  "gamma_flip": 182110.871603826,
+  "gamma_min": 170254.082791848,
+  "spot": 177264.0,
+  "conv_factor": 1.0007672172578752,
+  "walls": [
+    {
+      "type": "gex_max",
+      "price": 190077,
+      "color": "#22C55E",
+      "style": "solid",
+      "width": 3
+    },
+    {
+      "type": "gex_flip",
+      "price": 182111,
+      "color": "#EAB308",
+      "style": "solid",
+      "width": 2
+    },
+    {
+      "type": "gex_min",
+      "price": 170254,
+      "color": "#EF4444",
+      "style": "solid",
+      "width": 3
+    },
+    {
+      "type": "wall",
+      "price": 174133,
+      "style": "solid",
+      "width": 1,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 175134,
+      "style": "solid",
+      "width": 1,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 176135,
+      "style": "solid",
+      "width": 1,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 177136,
+      "style": "solid",
+      "width": 1,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 178137,
+      "style": "solid",
+      "width": 1,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 179137,
+      "style": "solid",
+      "width": 2,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 180138,
+      "style": "solid",
+      "width": 2,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 181139,
+      "style": "solid",
+      "width": 3,
+      "color": "#EF4444"
+    },
+    {
+      "type": "wall",
+      "price": 182140,
+      "style": "solid",
+      "width": 3,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 183140,
+      "style": "solid",
+      "width": 3,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 184141,
+      "style": "solid",
+      "width": 2,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 185142,
+      "style": "solid",
+      "width": 2,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 186143,
+      "style": "solid",
+      "width": 1,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 187143,
+      "style": "solid",
+      "width": 1,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 188144,
+      "style": "solid",
+      "width": 1,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 189145,
+      "style": "solid",
+      "width": 1,
+      "color": "#84CC16"
+    },
+    {
+      "type": "wall",
+      "price": 190146,
+      "style": "solid",
+      "width": 1,
+      "color": "#84CC16"
+    },
+    {
+      "type": "mid_wall",
+      "price": 174634,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 175635,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 176635,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 177636,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 178637,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 179638,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 180638,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 181639,
+      "style": "dashed",
+      "width": 1,
+      "color": "#6B7280"
+    },
+    {
+      "type": "mid_wall",
+      "price": 182640,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 183641,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 184642,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 185642,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 186643,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 187644,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 188645,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    },
+    {
+      "type": "mid_wall",
+      "price": 189645,
+      "style": "dashed",
+      "width": 1,
+      "color": "#9CA3AF"
+    }
+  ]
+}

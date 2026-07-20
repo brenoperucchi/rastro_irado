@@ -15,6 +15,8 @@ manual é outra pergunta e permanece explicitamente ``NOT_EVALUATED`` aqui.
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import math
 import random
@@ -29,16 +31,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.compare_p_dynamic_parity import (
     LOCAL_VALUE_FIELDS,
     PUBLIC_VALUE_FIELDS,
+    _document_with_session_rows,
     _extract_rows,
+    _parse_timestamp,
+    _session_rows,
+    METHODOLOGY_VERSION,
+    PUBLIC_MODEL,
+    TOURNAMENT_MODELS,
+    build_source_statuses,
+    canonical_session_slots,
     capture_brt_offset_h,
-    capture_session_status,
+    in_session_brt,
     normalize_series,
+    session_intersection_stats,
+    session_operational_points,
 )
 
 
 DEFAULT_MIN_SESSIONS = 60
 DEFAULT_BOOTSTRAP_ITERATIONS = 10_000
 EPSILON = 1e-6
+LOCAL_TOURNAMENT_MODELS = ("v1", "v2")
 
 
 @dataclass(frozen=True)
@@ -63,7 +76,23 @@ def _write_json(path: Path, payload) -> None:
     temporary.replace(path)
 
 
-def _actual_outcome(document) -> bool:
+def _outcome_rows(document, *, brt_offset_h: int) -> list[dict]:
+    """Desfecho do WIN sobre as barras EM SESSÃO das fontes locais.
+
+    Base deliberadamente distinta da interseção usada na pontuação: o rótulo é
+    propriedade do MERCADO, não dos modelos. Ancorá-lo na última barra pontuada
+    tornaria o alvo endógeno à disponibilidade do feed de terceiro e vazaria o
+    preço quase-determinante para dentro do próprio rótulo. O que as duas bases
+    partilham é a janela de pregão -- e é isso que importa.
+
+    Sem essa janela, a barra de after-market (mesma data BRT, logo dentro do
+    bundle, mas fora da pontuação) fixava o rótulo com um preço que nenhuma
+    barra pontuada viu. Medido em data/irai.db: 40 de 1253 sessões (3,2%; 4,7%
+    entre as 844 que têm barra após 18:00). O filtro é indispensável no regime
+    de inverno, quando brt_offset_h=5 faz o payload cobrir até 18:55 BRT; com
+    offset 6 quem carrega é o piso de 09:00, porque as barras de pré-mercado
+    trazem o win_open da sessão ANTERIOR.
+    """
     rows = [
         row
         for row in _extract_rows(document)
@@ -71,26 +100,150 @@ def _actual_outcome(document) -> bool:
         and not row.get("is_preview", False)
         and row.get("win_open") is not None
         and row.get("win_current") is not None
+        and in_session_brt(row.get("timestamp"), brt_offset_h=brt_offset_h)
     ]
-    if not rows:
-        raise ValueError("série local sem WIN operacional para formar o outcome")
-    return float(rows[-1]["win_current"]) > float(rows[0]["win_open"])
+    return rows
 
 
-def _forecast_probabilities(document, *, public: bool) -> list[float]:
-    fields = PUBLIC_VALUE_FIELDS if public else LOCAL_VALUE_FIELDS
-    points = normalize_series(_extract_rows(document), value_fields=fields)
-    probabilities = []
-    for point in points:
-        if not point.operational:
-            continue
-        probability = point.value / 100.0
-        if not 0.0 <= probability <= 1.0:
-            raise ValueError(f"P_up fora de [0,100] em {point.timestamp}: {point.value}")
-        probabilities.append(probability)
-    if not probabilities:
-        raise ValueError("modelo sem forecasts operacionais")
-    return probabilities
+def _actual_outcome(local_documents, *, brt_offset_h: int) -> tuple[bool, str]:
+    """Rótulo sobre a última barra comum às fontes locais.
+
+    Preferir v2 incondicionalmente fazia o rótulo depender de qual documento
+    estava mais completo: com v2 fechando 17:50 e v1 17:55, ambos elegíveis,
+    a mesma sessão rendia desfechos diferentes -- 8 de 1253 sessões no banco.
+    """
+    by_source = {
+        name: {
+            _parse_timestamp(row["timestamp"])[0]: row
+            for row in _outcome_rows(document, brt_offset_h=brt_offset_h)
+        }
+        for name, document in local_documents.items()
+    }
+    by_source = {name: rows for name, rows in by_source.items() if rows}
+    missing_sources = sorted(set(LOCAL_TOURNAMENT_MODELS) - set(by_source))
+    if missing_sources:
+        raise ValueError(
+            "fontes locais sem preço operacional para formar o outcome: "
+            + ", ".join(missing_sources)
+        )
+    common = sorted(set.intersection(*(set(rows) for rows in by_source.values())))
+    if not common:
+        raise ValueError("fontes locais não compartilham barra em sessão para o outcome")
+    def price(timestamp: str, field: str) -> float:
+        values = {
+            float(rows[timestamp][field])
+            for rows in by_source.values()
+            if timestamp in rows
+        }
+        if len(values) > 1:
+            raise ValueError(
+                f"fontes locais divergem em {field} na barra {timestamp}: "
+                + ", ".join(str(value) for value in sorted(values))
+            )
+        return values.pop()
+
+    return (
+        price(common[-1], "win_current") > price(common[0], "win_open"),
+        common[-1],
+    )
+
+
+def _validate_raw_archive(manifest: dict, bundle: Path) -> None:
+    """Garante que o bundle elegível ainda possui os bytes auditáveis do trio.
+
+    O capturador já marca falhas de arquivo como inelegíveis. Esta validação no
+    leitor evita que manifesto corrompido ou forjado revogue essa decisão.
+    """
+    session = manifest.get("session")
+    if not isinstance(session, dict) or session.get("raw_archive_complete") is not True:
+        raise ValueError("cru não arquivado, sessão não é reprodutível")
+    raw_entries = manifest.get("raw")
+    if not isinstance(raw_entries, dict):
+        raise ValueError("manifesto sem entradas de cru auditáveis")
+
+    bundle_root = bundle.resolve()
+    for name in TOURNAMENT_MODELS:
+        entry = raw_entries.get(name)
+        if not isinstance(entry, dict) or "error" in entry:
+            raise ValueError(f"cru ausente ou falho para {name}")
+        relative_path = entry.get("file")
+        expected_sha256 = entry.get("sha256")
+        expected_size = entry.get("bytes")
+        if (
+            not isinstance(relative_path, str)
+            or not isinstance(expected_sha256, str)
+            or len(expected_sha256) != 64
+            or not isinstance(expected_size, int)
+            or isinstance(expected_size, bool)
+            or expected_size < 0
+        ):
+            raise ValueError(f"metadado de cru inválido para {name}")
+        raw_path = (bundle / relative_path).resolve()
+        try:
+            raw_path.relative_to(bundle_root)
+        except ValueError as exc:
+            raise ValueError(f"caminho de cru fora do bundle para {name}") from exc
+
+        digest = hashlib.sha256()
+        actual_size = 0
+        try:
+            with gzip.open(raw_path, "rb") as source:
+                while chunk := source.read(64 * 1024):
+                    digest.update(chunk)
+                    actual_size += len(chunk)
+        except OSError as exc:
+            raise ValueError(f"cru ilegível para {name}: {exc}") from exc
+        if digest.hexdigest() != expected_sha256 or actual_size != expected_size:
+            raise ValueError(f"integridade do cru inválida para {name}")
+
+
+def _aligned_forecasts(
+    documents, *, brt_offset_h: int, minimum_rows: int
+) -> dict[str, list[float]]:
+    """Pontua todos os modelos exatamente nas MESMAS barras.
+
+    Média sobre as barras que cada modelo por acaso tem não é comparação: as
+    barras da manhã valem Brier ~0,25 (P≈0,5) e as do fim valem quase zero,
+    então quem perde manhã ganha score de graça. Sob degradação simulada (perder
+    as 10 piores barras) o ganho chega a +0,066 de Brier, várias vezes a margem
+    que decide o torneio; nos dois bundles preservados, onde a divergência real
+    era de uma barra, o efeito antigo->novo é de apenas +0,00015 e o ranking não
+    muda. Alinhar por timestamp elimina a exposição na origem, em vez de tentar
+    contê-la com limiar de elegibilidade.
+    """
+    by_model: dict[str, dict[str, float]] = {}
+    for model, document in documents.items():
+        fields = PUBLIC_VALUE_FIELDS if model == "miqueias" else LOCAL_VALUE_FIELDS
+        points = session_operational_points(
+            normalize_series(_extract_rows(document), value_fields=fields),
+            brt_offset_h=brt_offset_h,
+        )
+        series = {}
+        for point in points:
+            probability = point.value / 100.0
+            if not 0.0 <= probability <= 1.0:
+                raise ValueError(
+                    f"P_up fora de [0,100] em {point.timestamp}: {point.value}"
+                )
+            series[point.timestamp] = probability
+        if not series:
+            raise ValueError(f"modelo {model} sem forecasts operacionais na sessão")
+        by_model[model] = series
+
+    if not by_model:
+        raise ValueError("bundle sem modelos para alinhar")
+    common = set.intersection(*(set(series) for series in by_model.values()))
+    ordered = sorted(common)
+    covered = canonical_session_slots(ordered, brt_offset_h=brt_offset_h)
+    if len(covered) < minimum_rows:
+        raise ValueError(
+            "interseção pontuável insuficiente: "
+            f"{len(covered)} slots M5 < {minimum_rows} exigidos"
+        )
+    return {
+        model: [series[timestamp] for timestamp in ordered]
+        for model, series in by_model.items()
+    }
 
 
 def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
@@ -103,12 +256,33 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
         "closed_bundles": 0,
         "invalid_bundles": 0,
         "selected_sessions": 0,
+        "superseded_bundles": 0,
+        "foreign_version_bundles": 0,
+        "outcome_timestamps": {},
         "invalid_reasons": [],
+        "dropped_models": [],
     }
     latest_by_session: dict[str, tuple[str, Path, dict]] = {}
     for manifest_path in manifests:
         try:
             manifest = _read_json(manifest_path)
+            captured_methodology = manifest.get("methodology_version", 1)
+            if not isinstance(captured_methodology, int) or isinstance(
+                captured_methodology, bool
+            ):
+                raise ValueError(
+                    f"methodology_version precisa ser inteiro: {captured_methodology!r}"
+                )
+            if captured_methodology != METHODOLOGY_VERSION:
+                # Futuro também é incompatível: um rollback só do avaliador
+                # agregaria bundles de régua mais nova como se fossem desta.
+                key = (
+                    "superseded_bundles"
+                    if captured_methodology < METHODOLOGY_VERSION
+                    else "foreign_version_bundles"
+                )
+                audit[key] += 1
+                continue
             if not manifest.get("session", {}).get("closed", False):
                 audit["incomplete_bundles"] += 1
                 continue
@@ -132,26 +306,62 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                 for model in manifest.get("models", [])
                 if model in files
             }
-            outcome_source = documents.get("v2") or documents.get("v1")
-            if outcome_source is None:
-                raise ValueError("bundle sem v1/v2 para formar o outcome do WIN")
-            forecasts = {
-                model: _forecast_probabilities(document, public=model == "miqueias")
-                for model, document in documents.items()
-            }
+            missing_core = sorted(set(TOURNAMENT_MODELS) - set(documents))
+            if missing_core:
+                raise ValueError(
+                    "bundle sem os participantes obrigatórios do torneio: "
+                    + ", ".join(missing_core)
+                )
+            _validate_raw_archive(manifest, bundle)
             brt_offset_h = capture_brt_offset_h(session_date, documents)
-            source_statuses = {
-                model: capture_session_status(
-                    normalize_series(
+            # Defesa em profundidade: bundles gravados antes do filtro por
+            # sessão BRT carregam a cauda da sessão anterior. Hoje ela é toda
+            # ghost/preview e não pontua, mas depender desse flag para a
+            # integridade do ledger é frágil -- barra de outra sessão não pode
+            # entrar em Brier/log-loss nem definir o outcome do WIN.
+            # Isola por modelo: um challenger esporádico sem barras da sessão
+            # (ex.: rodada manual com --miqueias-static-config no mesmo
+            # capture-dir) não pode derrubar miqueias/v1/v2 válidos e custar
+            # uma sessão do gate de 60.
+            session_documents = {}
+            for model, document in documents.items():
+                try:
+                    session_documents[model] = _document_with_session_rows(
+                        document,
+                        _session_rows(
+                            _extract_rows(document),
+                            session_date=session_date,
+                            brt_offset_h=brt_offset_h,
+                            label=f"{model} no bundle de {session_date}",
+                        ),
+                    )
+                except Exception as exc:
+                    audit["dropped_models"].append(
+                        f"{manifest_path}: {model}: {type(exc).__name__}: {exc}"
+                    )
+            missing_essential = sorted(
+                set(TOURNAMENT_MODELS) - set(session_documents)
+            )
+            if missing_essential:
+                raise ValueError(
+                    "fontes essenciais sem barras da sessão: "
+                    + ", ".join(missing_essential)
+                )
+            official_documents = {
+                name: session_documents[name] for name in TOURNAMENT_MODELS
+            }
+            source_statuses = build_source_statuses(
+                {
+                    model: normalize_series(
                         _extract_rows(document),
                         value_fields=(
-                            PUBLIC_VALUE_FIELDS if model == "miqueias" else LOCAL_VALUE_FIELDS
+                            PUBLIC_VALUE_FIELDS if model == PUBLIC_MODEL else LOCAL_VALUE_FIELDS
                         ),
-                    ),
-                    brt_offset_h=brt_offset_h,
-                )
-                for model, document in documents.items()
-            }
+                    )
+                    for model, document in official_documents.items()
+                },
+                brt_offset_h=brt_offset_h,
+            )
             incomplete_sources = sorted(
                 model for model, status in source_statuses.items() if not status["closed"]
             )
@@ -159,12 +369,44 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                 raise ValueError(
                     "fontes sem fechamento operacional: " + ", ".join(incomplete_sources)
                 )
+            intersection = session_intersection_stats(
+                {
+                    model: normalize_series(
+                        _extract_rows(document),
+                        value_fields=(
+                            PUBLIC_VALUE_FIELDS if model == PUBLIC_MODEL else LOCAL_VALUE_FIELDS
+                        ),
+                    )
+                    for model, document in official_documents.items()
+                },
+                brt_offset_h=brt_offset_h,
+            )
+            if not intersection["sufficient"]:
+                raise ValueError(
+                    "interseção pontuável insuficiente: "
+                    f"{intersection['canonical_slots_covered']} slots M5 cobertos "
+                    f"< {intersection['min_rows']} exigidos "
+                    f"(gap máximo {intersection['max_gap_minutes']}min)"
+                )
+            forecasts = _aligned_forecasts(
+                official_documents,
+                brt_offset_h=brt_offset_h,
+                minimum_rows=intersection["min_rows"],
+            )
             if len(forecasts) < 2:
                 raise ValueError("bundle precisa de pelo menos dois modelos comparáveis")
+            actual_up, outcome_timestamp = _actual_outcome(
+                {
+                    name: official_documents[name]
+                    for name in LOCAL_TOURNAMENT_MODELS
+                },
+                brt_offset_h=brt_offset_h,
+            )
+            audit["outcome_timestamps"][session_date] = outcome_timestamp
             sessions.append(
                 LedgerSession(
                     session_date=session_date,
-                    actual_up=_actual_outcome(outcome_source),
+                    actual_up=actual_up,
                     forecasts=forecasts,
                 )
             )
@@ -395,6 +637,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sessions, audit = load_ledger_sessions(args.ledger_dir)
     report = {
         "schema_version": 1,
+        "methodology_version": METHODOLOGY_VERSION,
         "ledger_dir": str(args.ledger_dir),
         "audit": audit,
         **evaluate_champions(

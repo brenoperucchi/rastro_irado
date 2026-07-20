@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "ledger_dir": "data/p_dynamic_parity",
+  "audit": {
+    "manifest_bundles": 5,
+    "incomplete_bundles": 3,
+    "closed_bundles": 2,
+    "invalid_bundles": 0,
+    "selected_sessions": 2,
+    "invalid_reasons": []
+  },
+  "status": "INCONCLUSIVE",
+  "quality_winner": null,
+  "common_sessions": 2,
+  "minimum_sessions_gate": 60,
+  "common_models": [
+    "baseline_climatology",
+    "miqueias",
+    "v1",
+    "v2"
+  ],
+  "ranking_by_brier": [
+    "miqueias",
+    "v2",
+    "v1",
+    "baseline_climatology"
+  ],
+  "metrics": {
+    "baseline_climatology": {
+      "sessions": 2,
+      "observations": 2,
+      "brier": 0.34722222,
+      "log_loss": 0.89587973,
+      "directional_accuracy_pct": 0.0,
+      "session_mean_auc": 0.0,
+      "session_mean_calibration_error": 0.58333333
+    },
+    "miqueias": {
+      "sessions": 2,
+      "observations": 214,
+      "brier": 0.17064565,
+      "log_loss": 0.5438037,
+      "directional_accuracy_pct": 100.0,
+      "session_mean_auc": 1.0,
+      "session_mean_calibration_error": 0.24455654
+    },
+    "v1": {
+      "sessions": 2,
+      "observations": 216,
+      "brier": 0.22319373,
+      "log_loss": 0.63893273,
+      "directional_accuracy_pct": 50.0,
+      "session_mean_auc": 1.0,
+      "session_mean_calibration_error": 0.04530324
+    },
+    "v2": {
+      "sessions": 2,
+      "observations": 216,
+      "brier": 0.20446893,
+      "log_loss": 0.59945392,
+      "directional_accuracy_pct": 100.0,
+      "session_mean_auc": 1.0,
+      "session_mean_calibration_error": 0.44317824
+    }
+  },
+  "winner_tests": [],
+  "reasons": [
+    "amostra abaixo do gate: 2/60 sessões"
+  ],
+  "objective": "nowcast da direção final da sessão WIN (close > open)",
+  "tactical_gate": {
+    "status": "NOT_EVALUATED",
+    "reason": "utilidade como filtro da regra GEX/MID/Pair/NWE exige regra de execução, fill, alvo, stop e custos separados"
+  }
+}

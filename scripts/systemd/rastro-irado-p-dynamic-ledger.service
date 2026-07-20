@@ -6,5 +6,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/mnt/c/Users/brenoperucchi/devs/rastro_irado
-ExecStart=/usr/bin/python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --timeout 15 --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json
-ExecStartPost=/usr/bin/python3 -X utf8 scripts/evaluate_p_dynamic_champions.py --ledger-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/champion_report.json
+ExecStart=/bin/sh -c '/usr/bin/python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --timeout 15 --session-date "$(TZ=America/Sao_Paulo date +%%Y-%%m-%%d)" --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json'
+# ExecStopPost, não ExecStartPost: o avaliador reagrega o ledger ACUMULADO e não
+# depende da captura de hoje. Sob ExecStartPost ele seria pulado sempre que o
+# ExecStart saísse não-zero (sessão parcial), deixando champion_report.json
+# obsoleto justamente nos dias em que se quer olhar o ledger.
+ExecStopPost=/usr/bin/python3 -X utf8 scripts/evaluate_p_dynamic_champions.py --ledger-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/champion_report.json

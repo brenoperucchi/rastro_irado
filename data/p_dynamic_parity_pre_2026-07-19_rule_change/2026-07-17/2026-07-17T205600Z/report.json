@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-17T20:56:00+00:00",
+  "target": "WIN$N",
+  "session_date": "2026-07-17",
+  "reference_source": "https://rastromacro-default-rtdb.firebaseio.com/series/WIN_N.json",
+  "candidate_sources": {
+    "v1": "http://localhost:8888/api/irai/series?session_date=2026-07-17&target=WIN%24N&version=v1",
+    "v2": "http://localhost:8888/api/irai/series?session_date=2026-07-17&target=WIN%24N&version=v2"
+  },
+  "source_errors": {},
+  "static_challengers": {},
+  "thresholds": {
+    "sell": 40.0,
+    "buy": 60.0,
+    "divergence_tolerance_points": 0.5
+  },
+  "reference": {
+    "rows": 288,
+    "operational_rows": 107,
+    "first_timestamp": "2026-07-17T00:00:00+00:00",
+    "last_timestamp": "2026-07-17T23:55:00+00:00",
+    "value_fields": {
+      "p_up": 288
+    },
+    "timezone_contract": "explicit_offset_normalized_to_utc"
+  },
+  "candidates": {
+    "v1": {
+      "series": {
+        "rows": 288,
+        "operational_rows": 108,
+        "first_timestamp": "2026-07-17T00:00:00+00:00",
+        "last_timestamp": "2026-07-17T23:55:00+00:00",
+        "value_fields": {
+          "p_up": 288
+        },
+        "timezone_contract": "explicit_offset_normalized_to_utc"
+      },
+      "all_bars": {
+        "reference_rows": 288,
+        "candidate_rows": 288,
+        "common_rows": 288,
+        "reference_coverage_pct": 100.0,
+        "candidate_coverage_pct": 100.0,
+        "correlation": 0.511253,
+        "mae": 37.28375,
+        "rmse": 38.751825,
+        "mean_difference": 17.155139,
+        "max_absolute_difference": 54.53,
+        "max_difference_point": {
+          "timestamp": "2026-07-17T22:15:00+00:00",
+          "reference": 98.43,
+          "candidate": 43.9,
+          "difference": -54.53,
+          "absolute_difference": 54.53
+        },
+        "regime_concordance_pct": 14.583333,
+        "regime_confusion": {
+          "buy": {
+            "buy": 14,
+            "neutral": 54
+          },
+          "neutral": {
+            "neutral": 11
+          },
+          "sell": {
+            "neutral": 192,
+            "sell": 17
+          }
+        },
+        "first_divergence": {
+          "timestamp": "2026-07-17T00:00:00+00:00",
+          "reference": 47.98,
+          "candidate": 57.07,
+          "difference": 9.09,
+          "absolute_difference": 9.09
+        }
+      },
+      "operational_bars": {
+        "reference_rows": 107,
+        "candidate_rows": 108,
+        "common_rows": 107,
+        "reference_coverage_pct": 100.0,
+        "candidate_coverage_pct": 99.074074,
+        "correlation": 0.824023,
+        "mae": 37.272897,
+        "rmse": 38.503748,
+        "mean_difference": -15.81271,
+        "max_absolute_difference": 54.53,
+        "max_difference_point": {
+          "timestamp": "2026-07-17T22:15:00+00:00",
+          "reference": 98.43,
+          "candidate": 43.9,
+          "difference": -54.53,
+          "absolute_difference": 54.53
+        },
+        "regime_concordance_pct": 28.971963,
+        "regime_confusion": {
+          "buy": {
+            "buy": 14,
+            "neutral": 52
+          },
+          "sell": {
+            "neutral": 24,
+            "sell": 17
+          }
+        },
+        "first_divergence": {
+          "timestamp": "2026-07-17T15:00:00+00:00",
+          "reference": 12.06,
+          "candidate": 50.45,
+          "difference": 38.39,
+          "absolute_difference": 38.39
+        }
+      }
+    },
+    "v2": {
+      "series": {
+        "rows": 288,
+        "operational_rows": 108,
+        "first_timestamp": "2026-07-17T00:00:00+00:00",
+        "last_timestamp": "2026-07-17T23:55:00+00:00",
+        "value_fields": {
+          "p_up": 288
+        },
+        "timezone_contract": "explicit_offset_normalized_to_utc"
+      },
+      "all_bars": {
+        "reference_rows": 288,
+        "candidate_rows": 288,
+        "common_rows": 288,
+        "reference_coverage_pct": 100.0,
+        "candidate_coverage_pct": 100.0,
+        "correlation": 0.597511,
+        "mae": 37.25434,
+        "rmse": 38.642514,
+        "mean_difference": 17.705243,
+        "max_absolute_difference": 53.39,
+        "max_difference_point": {
+          "timestamp": "2026-07-17T22:15:00+00:00",
+          "reference": 98.43,
+          "candidate": 45.04,
+          "difference": -53.39,
+          "absolute_difference": 53.39
+        },
+        "regime_concordance_pct": 15.277778,
+        "regime_confusion": {
+          "buy": {
+            "buy": 22,
+            "neutral": 46
+          },
+          "neutral": {
+            "neutral": 11
+          },
+          "sell": {
+            "neutral": 198,
+            "sell": 11
+          }
+        },
+        "first_divergence": {
+          "timestamp": "2026-07-17T00:00:00+00:00",
+          "reference": 47.98,
+          "candidate": 57.07,
+          "difference": 9.09,
+          "absolute_difference": 9.09
+        }
+      },
+      "operational_bars": {
+        "reference_rows": 107,
+        "candidate_rows": 108,
+        "common_rows": 107,
+        "reference_coverage_pct": 100.0,
+        "candidate_coverage_pct": 99.074074,
+        "correlation": 0.809551,
+        "mae": 37.209252,
+        "rmse": 38.22743,
+        "mean_difference": -14.34757,
+        "max_absolute_difference": 53.39,
+        "max_difference_point": {
+          "timestamp": "2026-07-17T22:15:00+00:00",
+          "reference": 98.43,
+          "candidate": 45.04,
+          "difference": -53.39,
+          "absolute_difference": 53.39
+        },
+        "regime_concordance_pct": 30.841121,
+        "regime_confusion": {
+          "buy": {
+            "buy": 22,
+            "neutral": 44
+          },
+          "sell": {
+            "neutral": 30,
+            "sell": 11
+          }
+        },
+        "first_divergence": {
+          "timestamp": "2026-07-17T15:00:00+00:00",
+          "reference": 12.06,
+          "candidate": 50.6,
+          "difference": 38.54,
+          "absolute_difference": 38.54
+        }
+      }
+    }
+  },
+  "ranking_basis": "operational_bars.mae",
+  "ranking_by_operational_mae": [
+    "v2",
+    "v1"
+  ],
+  "conclusion": {
+    "scope": "parity_only",
+    "comparable": true,
+    "operational_comparable": true,
+    "closest_candidate": "v2",
+    "closest_candidates": [
+      "v2"
+    ],
+    "parity_tie": false,
+    "quality_winner": null,
+    "reason": "menor MAE segundo operational_bars.mae",
+    "promotion_warning": "Proximidade com a curva do Miqueias não mede qualidade preditiva. A versão vencedora deve ser escolhida por avaliação OOS contra outcomes do WIN."
+  },
+  "capture_paths": {
+    "miqueias": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/miqueias.json",
+    "v1": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/v1.json",
+    "v2": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/v2.json",
+    "gex": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/gex.json",
+    "report": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/report.json",
+    "manifest": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z/manifest.json"
+  },
+  "capture_bundle": "data/p_dynamic_parity/2026-07-17/2026-07-17T205600Z"
+}
