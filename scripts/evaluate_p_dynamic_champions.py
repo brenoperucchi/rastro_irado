@@ -216,8 +216,21 @@ def _validate_raw_archive(manifest: dict, bundle: Path) -> None:
             raise ValueError(f"integridade do cru inválida para {name}")
 
 
+def _normalized_model_series(documents) -> dict[str, list]:
+    """Normaliza cada documento uma vez, com o contrato de campo correto."""
+    return {
+        model: normalize_series(
+            _extract_rows(document),
+            value_fields=(
+                PUBLIC_VALUE_FIELDS if model == PUBLIC_MODEL else LOCAL_VALUE_FIELDS
+            ),
+        )
+        for model, document in documents.items()
+    }
+
+
 def _aligned_forecasts(
-    documents, *, brt_offset_h: int, minimum_rows: int
+    normalized_models, *, brt_offset_h: int, minimum_rows: int
 ) -> dict[str, list[float]]:
     """Pontua todos os modelos exatamente nas MESMAS barras.
 
@@ -231,10 +244,9 @@ def _aligned_forecasts(
     contê-la com limiar de elegibilidade.
     """
     by_model: dict[str, dict[str, float]] = {}
-    for model, document in documents.items():
-        fields = PUBLIC_VALUE_FIELDS if model == "miqueias" else LOCAL_VALUE_FIELDS
+    for model, normalized_points in normalized_models.items():
         points = session_operational_points(
-            normalize_series(_extract_rows(document), value_fields=fields),
+            normalized_points,
             brt_offset_h=brt_offset_h,
         )
         series = {}
@@ -374,16 +386,9 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
             official_documents = {
                 name: session_documents[name] for name in TOURNAMENT_MODELS
             }
+            normalized_models = _normalized_model_series(official_documents)
             source_statuses = build_source_statuses(
-                {
-                    model: normalize_series(
-                        _extract_rows(document),
-                        value_fields=(
-                            PUBLIC_VALUE_FIELDS if model == PUBLIC_MODEL else LOCAL_VALUE_FIELDS
-                        ),
-                    )
-                    for model, document in official_documents.items()
-                },
+                normalized_models,
                 brt_offset_h=brt_offset_h,
             )
             incomplete_sources = sorted(
@@ -394,15 +399,7 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                     "fontes sem fechamento operacional: " + ", ".join(incomplete_sources)
                 )
             intersection = session_intersection_stats(
-                {
-                    model: normalize_series(
-                        _extract_rows(document),
-                        value_fields=(
-                            PUBLIC_VALUE_FIELDS if model == PUBLIC_MODEL else LOCAL_VALUE_FIELDS
-                        ),
-                    )
-                    for model, document in official_documents.items()
-                },
+                normalized_models,
                 brt_offset_h=brt_offset_h,
             )
             if not intersection["sufficient"]:
@@ -413,7 +410,7 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                     f"(gap máximo {intersection['max_gap_minutes']}min)"
                 )
             forecasts = _aligned_forecasts(
-                official_documents,
+                normalized_models,
                 brt_offset_h=brt_offset_h,
                 minimum_rows=intersection["min_rows"],
             )

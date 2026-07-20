@@ -347,9 +347,11 @@ intacta**. Quatro defeitos adicionais, dois deles em consenso das duas lentes:
 7. Menores: `--session-date` validado no argparse; `static_challengers` limpo quando o
    challenger falha o filtro.
 
-Regressão permanente em `tests/test_compare_p_dynamic_parity.py` e
-`tests/test_p_dynamic_champion_evaluator.py`. Suíte **completa** do repositório:
-`pytest -q tests` → **410 passed, 1 skipped**.
+**Registro histórico (2026-07-18):** as regressões permanentes então criadas em
+`tests/test_compare_p_dynamic_parity.py` e
+`tests/test_p_dynamic_champion_evaluator.py` levaram a suíte completa daquele
+checkout a `410 passed, 1 skipped`. Não é a contagem atual: a validação mais
+recente está registrada acima como `450 passed, 1 skipped`.
 
 *Correção de registro:* uma versão anterior desta seção afirmava que
 `tests/test_measure_tactical_gate3.py` exige dependências ausentes neste ambiente e
