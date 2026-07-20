@@ -46,6 +46,7 @@ from scripts.compare_p_dynamic_parity import (
     session_intersection_stats,
     session_operational_points,
 )
+from backend.irai.runtime_revision import validate_engine_revision
 
 
 DEFAULT_MIN_SESSIONS = 60
@@ -74,6 +75,24 @@ def _write_json(path: Path, payload) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def _engine_revision_from_manifest(manifest: dict) -> tuple[str, dict[str, str]]:
+    """Valida a identidade do motor que produziu um bundle do ledger.
+
+    ``methodology_version`` protege a regra de apuração. Ela não diz qual
+    implementação gerou p_up. Sem este contrato, um restart após alterar o
+    Kalman poderia acumular sessões incompatíveis no mesmo torneio.
+    """
+    try:
+        normalized = validate_engine_revision(manifest.get("engine_revision"))
+    except ValueError as exc:
+        raise ValueError(f"manifesto sem revisão verificável do motor: {exc}") from exc
+
+    fingerprint = hashlib.sha256(
+        json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("ascii")
+    ).hexdigest()
+    return fingerprint, normalized
 
 
 def _outcome_rows(document, *, brt_offset_h: int) -> list[dict]:
@@ -258,6 +277,8 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
         "selected_sessions": 0,
         "superseded_bundles": 0,
         "foreign_version_bundles": 0,
+        "mixed_engine_revision_bundles": 0,
+        "engine_revision_groups": {},
         "outcome_timestamps": {},
         "invalid_reasons": [],
         "dropped_models": [],
@@ -286,6 +307,7 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
             if not manifest.get("session", {}).get("closed", False):
                 audit["incomplete_bundles"] += 1
                 continue
+            _engine_revision_from_manifest(manifest)
             audit["closed_bundles"] += 1
             session_date = str(manifest["session_date"])
             captured_at = str(manifest.get("captured_at", ""))
@@ -297,8 +319,10 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
             audit["invalid_reasons"].append(f"{manifest_path}: {type(exc).__name__}: {exc}")
 
     sessions = []
+    revisions_by_session: dict[str, tuple[str, dict[str, str]]] = {}
     for session_date, (_, manifest_path, manifest) in sorted(latest_by_session.items()):
         try:
+            revision_fingerprint, revision = _engine_revision_from_manifest(manifest)
             bundle = manifest_path.parent
             files = manifest.get("files", {})
             documents = {
@@ -410,11 +434,26 @@ def load_ledger_sessions(root: str | Path) -> tuple[list[LedgerSession], dict]:
                     forecasts=forecasts,
                 )
             )
+            revisions_by_session[session_date] = (revision_fingerprint, revision)
         except Exception as exc:
             audit["invalid_bundles"] += 1
             audit["invalid_reasons"].append(
                 f"{manifest_path}: {type(exc).__name__}: {exc}"
             )
+    revision_groups: dict[str, dict] = {}
+    for session_date, (fingerprint, revision) in revisions_by_session.items():
+        group = revision_groups.setdefault(
+            fingerprint,
+            {"revision": revision, "session_dates": []},
+        )
+        group["session_dates"].append(session_date)
+    audit["engine_revision_groups"] = revision_groups
+    if len(revision_groups) > 1:
+        audit["mixed_engine_revision_bundles"] = len(sessions)
+        audit["invalid_reasons"].append(
+            "ledger contém múltiplas revisões do motor; não mistura sessões no torneio"
+        )
+        sessions = []
     audit["selected_sessions"] = len(sessions)
     return sessions, audit
 

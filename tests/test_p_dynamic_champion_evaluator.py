@@ -14,7 +14,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.compare_p_dynamic_parity import (  # noqa: E402
+    METHODOLOGY_VERSION,
     capture_session_status,
+    current_engine_revision,
     main as capture_main,
     normalize_series,
 )
@@ -72,6 +74,14 @@ def _add_auditable_raw(bundle, manifest):
         }
     manifest["session"]["raw_archive_complete"] = True
     manifest["raw"] = entries
+    manifest.setdefault(
+        "engine_revision",
+        {
+            "git_commit": "a" * 40,
+            "engine_sha256": "b" * 64,
+            "kalman_sha256": "c" * 64,
+        },
+    )
     return manifest
 
 
@@ -251,7 +261,8 @@ def test_captura_cria_manifest_preserva_envelope_e_tolera_gex_ausente(tmp_path):
 
     assert status == 0
     assert manifest["schema_version"] == 2
-    assert manifest["methodology_version"] == 2
+    assert manifest["methodology_version"] == METHODOLOGY_VERSION
+    assert manifest["engine_revision"] == current_engine_revision()
     assert manifest["session"]["closed"] is True
     assert manifest["gex"]["status"] == "unavailable"
     assert stored_v2["brt_offset_h"] == 6
@@ -394,7 +405,7 @@ def test_loader_ignora_barras_de_sessao_estrangeira_no_bundle(tmp_path):
         bundle,
         {
             "schema_version": 2,
-            "methodology_version": 2,
+            "methodology_version": METHODOLOGY_VERSION,
             "session_date": "2026-07-16",
             "session": {"closed": True},
             "models": ["miqueias", "v1", "v2"],
@@ -437,7 +448,7 @@ def test_loader_isola_modelo_ruim_sem_descartar_a_sessao_inteira(tmp_path):
         bundle,
         {
             "schema_version": 2,
-            "methodology_version": 2,
+            "methodology_version": METHODOLOGY_VERSION,
             "session_date": "2026-07-16",
             "session": {"closed": True},
             "models": ["miqueias", "v1", "v2", "extra"],
@@ -491,7 +502,7 @@ def test_avaliador_nunca_consome_o_payload_cru(tmp_path):
         json.dumps(
             {
                 "schema_version": 2,
-                "methodology_version": 2,
+                "methodology_version": METHODOLOGY_VERSION,
                 "session_date": "2026-07-16",
                 "session": {"closed": True, "raw_archive_complete": True},
                 "models": ["miqueias", "v1", "v2"],
@@ -501,6 +512,11 @@ def test_avaliador_nunca_consome_o_payload_cru(tmp_path):
                     "v2": "v2.json",
                 },
                 "raw": raw_entries,
+                "engine_revision": {
+                    "git_commit": "a" * 40,
+                    "engine_sha256": "b" * 64,
+                    "kalman_sha256": "c" * 64,
+                },
             }
         ),
         encoding="utf-8",
@@ -546,7 +562,7 @@ def test_outcome_ignora_after_market_da_propria_sessao(tmp_path):
         bundle,
         {
             "schema_version": 2,
-            "methodology_version": 2,
+            "methodology_version": METHODOLOGY_VERSION,
             "session_date": "2026-07-16",
             "session": {"closed": True},
             "models": ["miqueias", "v1", "v2"],
@@ -647,7 +663,7 @@ def test_outcome_nao_depende_de_qual_fonte_local_esta_mais_completa(tmp_path):
         bundle,
         {
             "schema_version": 2,
-            "methodology_version": 2,
+            "methodology_version": METHODOLOGY_VERSION,
             "session_date": "2026-07-16",
             "session": {"closed": True},
             "models": ["miqueias", "v1", "v2"],
@@ -670,7 +686,7 @@ def test_outcome_nao_depende_de_qual_fonte_local_esta_mais_completa(tmp_path):
 def test_loader_recusa_bundle_de_metodologia_futura(tmp_path):
     """A guarda era unidirecional: bundle gravado sob régua mais NOVA era
     agregado como se fosse desta. Um rollback só do avaliador misturaria épocas."""
-    for version, folder in ((1, "antigo"), (3, "futuro")):
+    for version, folder in ((1, "antigo"), (METHODOLOGY_VERSION + 1, "futuro")):
         bundle = tmp_path / folder / "capture"
         bundle.mkdir(parents=True)
         (bundle / "manifest.json").write_text(
@@ -733,7 +749,7 @@ def test_loader_exige_os_tres_participantes_do_torneio(tmp_path):
         json.dumps(
             {
                 "schema_version": 2,
-                "methodology_version": 2,
+                "methodology_version": METHODOLOGY_VERSION,
                 "session_date": "2026-07-16",
                 "session": {"closed": True},
                 "models": ["miqueias", "v1"],
@@ -812,13 +828,21 @@ def test_guarda_de_metodologia_recusa_versao_nao_inteira(tmp_path):
     assert audit["foreign_version_bundles"] + audit["invalid_bundles"] == 4
 
 
-def _forge_bundle(tmp_path, series, *, session_extra=None, raw=None):
+def _forge_bundle(
+    tmp_path,
+    series,
+    *,
+    session_extra=None,
+    raw=None,
+    capture_name="capture",
+    session_date="2026-07-16",
+):
     """Monta um bundle à mão, incluindo campos que o capturador nunca gravaria.
 
     O avaliador não pode confiar no manifesto: bundle antigo, corrompido ou
     forjado tem de ser revalidado a partir das séries.
     """
-    bundle = tmp_path / "2026-07-16" / "capture"
+    bundle = tmp_path / session_date / capture_name
     bundle.mkdir(parents=True, exist_ok=True)
     for name in ("miqueias", "v1", "v2"):
         (bundle / f"{name}.json").write_text(
@@ -826,8 +850,8 @@ def _forge_bundle(tmp_path, series, *, session_extra=None, raw=None):
         )
     manifest = {
         "schema_version": 2,
-        "methodology_version": 2,
-        "session_date": "2026-07-16",
+        "methodology_version": METHODOLOGY_VERSION,
+        "session_date": session_date,
         "session": {"closed": True, **(session_extra or {})},
         "models": ["miqueias", "v1", "v2"],
         "files": {
@@ -840,6 +864,14 @@ def _forge_bundle(tmp_path, series, *, session_extra=None, raw=None):
         _add_auditable_raw(bundle, manifest)
     else:
         manifest["raw"] = raw
+    manifest.setdefault(
+        "engine_revision",
+        {
+            "git_commit": "a" * 40,
+            "engine_sha256": "b" * 64,
+            "kalman_sha256": "c" * 64,
+        },
+    )
     (bundle / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return bundle
 
@@ -890,7 +922,7 @@ def test_ingestao_recusa_intersecao_insuficiente_com_fontes_elegiveis(tmp_path):
         bundle,
         {
             "schema_version": 2,
-            "methodology_version": 2,
+            "methodology_version": METHODOLOGY_VERSION,
             "session_date": "2026-07-16",
             "session": {"closed": True},
             "models": ["miqueias", "v1", "v2"],
@@ -950,6 +982,54 @@ def test_ingestao_recusa_manifesto_que_omite_o_cru_arquivado(tmp_path):
     assert "cru" in audit["invalid_reasons"][0]
 
 
+def test_ingestao_recusa_manifesto_sem_revisao_do_motor(tmp_path):
+    """Sem commit+hashes não há como saber se a previsão foi produzida pelo
+    mesmo motor que as demais sessões do torneio."""
+    series = _session_grid(
+        "2026-07-16", 50.0, count=108, win_open=110.0, win_current=105.0
+    )
+    bundle = _forge_bundle(tmp_path, series)
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("engine_revision")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    sessions, audit = load_ledger_sessions(tmp_path)
+
+    assert sessions == []
+    assert audit["invalid_bundles"] == 1
+    assert "revisão verificável" in audit["invalid_reasons"][0]
+
+
+def test_ingestao_recusa_ledger_com_revisoes_do_motor_mistas(tmp_path):
+    """A metodologia igual não autoriza misturar p_up gerados antes/depois de
+    uma alteração do Kalman. O avaliador deve parar, não escolher um grupo."""
+    series = _session_grid(
+        "2026-07-16", 50.0, count=108, win_open=110.0, win_current=105.0
+    )
+    _forge_bundle(tmp_path, series, capture_name="revision-a")
+    series_b = _session_grid(
+        "2026-07-17", 50.0, count=108, win_open=110.0, win_current=105.0
+    )
+    bundle_b = _forge_bundle(
+        tmp_path,
+        series_b,
+        capture_name="revision-b",
+        session_date="2026-07-17",
+    )
+    manifest_path = bundle_b / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["engine_revision"]["engine_sha256"] = "d" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    sessions, audit = load_ledger_sessions(tmp_path)
+
+    assert sessions == []
+    assert audit["mixed_engine_revision_bundles"] == 2
+    assert len(audit["engine_revision_groups"]) == 2
+    assert "múltiplas revisões" in audit["invalid_reasons"][-1]
+
+
 def test_ingestao_recusa_outcome_sem_preco_em_uma_fonte_local(tmp_path):
     """Uma fonte local sem preço operacional não pode desaparecer do
     desfecho: aceitar apenas v2 reintroduziria o rótulo dependente da fonte
@@ -1007,7 +1087,7 @@ def test_loader_ignora_bundle_de_sessao_incompleta(tmp_path):
         json.dumps(
             {
                 "schema_version": 2,
-                "methodology_version": 2,
+                "methodology_version": METHODOLOGY_VERSION,
                 "session_date": "2026-07-16",
                 "session": {"closed": False},
                 "files": {},

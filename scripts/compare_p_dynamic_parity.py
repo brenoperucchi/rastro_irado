@@ -77,7 +77,11 @@ MANIFEST_SCHEMA_VERSION = 2
 # versão 1 não são comparáveis com estes e o avaliador os recusa -- sem isso, o
 # corte de época dependeria só de mover diretórios, e qualquer restore de backup
 # reinjetaria sessões apuradas por régua diferente.
-METHODOLOGY_VERSION = 2
+# 3 (2026-07-20): identidade verificável de engine.py/kalman.py. A regra de
+# elegibilidade passa a recusar bundles sem proveniência do motor e o avaliador
+# recusa um ledger com mais de uma revisão -- misturar versões do Kalman também
+# invalida uma comparação OOS, mesmo com a mesma métrica.
+METHODOLOGY_VERSION = 3
 
 # v1/v2 definem o outcome do WIN, então exigem a sessão inteira até 17:50 BRT.
 # A referência pública é publicada por terceiro e fecha exatamente no limiar
@@ -112,7 +116,6 @@ RESERVED_CANDIDATE_NAMES = frozenset(
     {PUBLIC_MODEL, "gex", "report", "manifest", "miqueias_static"}
 )
 
-
 def close_not_before_for(model: str) -> str:
     """Limiar de fechamento por fonte. Capturador e avaliador precisam usar o
     MESMO limiar, senão um bundle gravado como fechado seria recusado depois."""
@@ -138,6 +141,7 @@ def raw_archive_is_complete(raw_entries: Mapping[str, object]) -> bool:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from backend.irai.runtime_revision import build_engine_revision, validate_engine_revision
 from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.irai.miqueias_static import (
     MiqueiasStaticConfig,
@@ -145,6 +149,11 @@ from backend.irai.miqueias_static import (
     describe_miqueias_static_config,
     load_miqueias_static_config,
 )
+
+
+def current_engine_revision() -> dict[str, str]:
+    """Usada somente em captura offline, sem API local para consultar."""
+    return build_engine_revision()
 
 
 DEFAULT_PUBLIC_SOURCE = (
@@ -790,6 +799,18 @@ def _local_series_url(base_url: str, *, session_date: str, target: str, version:
     return f"{base_url.rstrip('/')}/api/irai/series?{query}"
 
 
+def _local_runtime_revision_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/api/internal/p-dynamic-runtime-revision"
+
+
+def _load_local_runtime_revision(base_url: str, *, timeout: float) -> dict[str, str]:
+    """Lê a revisão congelada pelo MESMO processo que serve v1/v2."""
+    payload = load_json_document(_local_runtime_revision_url(base_url), timeout=timeout)
+    if not isinstance(payload, dict):
+        raise ValueError("endpoint de revisão do motor retornou JSON inválido")
+    return validate_engine_revision(payload.get("engine_revision"))
+
+
 def _local_gex_url(base_url: str, *, target: str) -> str:
     return f"{base_url.rstrip('/')}/api/irai/gex?{urlencode({'target': target})}"
 
@@ -896,6 +917,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     capture_base = (
         Path(args.capture_dir) / session_date / stamp if args.capture_dir else None
     )
+    if capture_base is not None:
+        try:
+            engine_revision = (
+                current_engine_revision()
+                if args.skip_local_api
+                else _load_local_runtime_revision(args.local_api, timeout=args.timeout)
+            )
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Erro: captura sem revisão verificável do motor: {exc}", file=sys.stderr)
+            return 1
+    else:
+        engine_revision = None
     raw_manifest: dict[str, dict] = {}
 
     def archive(name: str, payload: bytes, source: str) -> None:
@@ -953,6 +986,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 candidate_sources[version] = source
             except Exception as exc:
                 source_errors[version] = f"{type(exc).__name__}: {exc}"
+
+        # O checkout pode ser editado e a API pode reiniciar durante a captura.
+        # A mesma revisão antes e depois das duas séries prova que v1/v2 vieram
+        # de um único processo, não de duas versões do Kalman misturadas.
+        if capture_base is not None:
+            try:
+                final_engine_revision = _load_local_runtime_revision(
+                    args.local_api, timeout=args.timeout
+                )
+            except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+                print(
+                    f"Erro: API sem revisão verificável após capturar v1/v2: {exc}",
+                    file=sys.stderr,
+                )
+                return 1
+            if final_engine_revision != engine_revision:
+                print(
+                    "Erro: a revisão do motor mudou durante a captura de v1/v2",
+                    file=sys.stderr,
+                )
+                return 1
 
     for name, source in args.candidate:
         if name in RESERVED_CANDIDATE_NAMES:
@@ -1238,6 +1292,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "methodology_version": METHODOLOGY_VERSION,
+            "engine_revision": engine_revision,
             "captured_at": generated_at,
             "session_date": session_date,
             "target": args.target,

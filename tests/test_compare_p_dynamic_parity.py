@@ -76,9 +76,23 @@ class _RoutedFakeUrlopen:
         self.calls.append(url)
         for key, payload in self.routes.items():
             if key in url:
+                if isinstance(payload, list):
+                    payload = payload.pop(0)
                 if isinstance(payload, Exception):
                     raise payload
                 return io.BytesIO(payload)
+        if "p-dynamic-runtime-revision" in url:
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "engine_revision": {
+                            "git_commit": "a" * 40,
+                            "engine_sha256": "b" * 64,
+                            "kalman_sha256": "c" * 64,
+                        }
+                    }
+                ).encode("utf-8")
+            )
         raise AssertionError(f"URL inesperada no fake: {url}")
 
 
@@ -849,6 +863,65 @@ def _run_routed(public, captures, fake, extra=()):
         ])
     finally:
         compare_p_dynamic_parity.urlopen = original_urlopen
+
+
+def test_captura_registra_revisao_congelada_da_api_nao_do_checkout(tmp_path, monkeypatch):
+    """A API pode estar viva com código antigo enquanto o checkout já mudou.
+    O manifesto precisa registrar quem efetivamente serviu v1/v2."""
+    public, captures, fake = _routed_session(
+        tmp_path, public_last="2026-07-16T23:50:00Z", local_last="2026-07-16T23:55:00Z"
+    )
+    runtime_revision = {
+        "git_commit": "a" * 40,
+        "engine_sha256": "b" * 64,
+        "kalman_sha256": "c" * 64,
+    }
+    monkeypatch.setattr(
+        compare_p_dynamic_parity,
+        "current_engine_revision",
+        lambda: (_ for _ in ()).throw(AssertionError("não deve ler o checkout")),
+    )
+
+    status = _run_routed(public, captures, fake)
+    manifest = json.loads(
+        next(captures.glob("2026-07-16/*/manifest.json")).read_text(encoding="utf-8")
+    )
+
+    assert status == 0
+    assert manifest["engine_revision"] == runtime_revision
+
+
+def test_captura_recusa_api_que_reiniciou_entre_v1_e_v2(tmp_path):
+    """Se o processo muda durante a captura, uma sessão não pode receber uma
+    identidade arbitrária e entrar no ledger como se fosse homogênea."""
+    public, captures, fake = _routed_session(
+        tmp_path, public_last="2026-07-16T23:50:00Z", local_last="2026-07-16T23:55:00Z"
+    )
+    fake.routes["p-dynamic-runtime-revision"] = [
+        json.dumps(
+            {
+                "engine_revision": {
+                    "git_commit": "a" * 40,
+                    "engine_sha256": "b" * 64,
+                    "kalman_sha256": "c" * 64,
+                }
+            }
+        ).encode("utf-8"),
+        json.dumps(
+            {
+                "engine_revision": {
+                    "git_commit": "d" * 40,
+                    "engine_sha256": "e" * 64,
+                    "kalman_sha256": "f" * 64,
+                }
+            }
+        ).encode("utf-8"),
+    ]
+
+    status = _run_routed(public, captures, fake)
+
+    assert status == 1
+    assert not list(captures.glob("**/manifest.json"))
 
 
 def test_manifesto_aceita_referencia_publica_atrasada_uma_barra(tmp_path):

@@ -33,6 +33,7 @@ from backend.irai.engine import (
     DEFAULT_DIV_THRESHOLD, DEFAULT_P_UP_GATE_HI, DEFAULT_P_UP_GATE_LO,
 )
 from backend.irai.timezones import brt_to_tickmill_offset_hours
+from backend.irai.runtime_revision import build_engine_revision
 from backend.irai.zscore import PAIR_THRESHOLD
 from backend.irai.miqueias_static import (
     build_miqueias_static_rows,
@@ -41,6 +42,7 @@ from backend.irai.miqueias_static import (
 
 # ── Engine singleton ──────────────────────────────────────
 engine: IRAIEngine = None
+p_dynamic_runtime_revision: dict | None = None
 ws_clients: dict = {}
 data_updated_event = asyncio.Event()
 
@@ -163,8 +165,17 @@ async def ws_broadcast_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global engine
+    global engine, p_dynamic_runtime_revision
     migrate_to_head(DB_PATH)
+    # Congelada no startup: o ledger precisa identificar o processo que de fato
+    # calculou v1/v2, não os bytes que podem ser editados depois no checkout.
+    try:
+        p_dynamic_runtime_revision = build_engine_revision()
+    except RuntimeError as exc:
+        # A API continua servindo o dashboard, mas a captura do ledger falha
+        # fechada pelo endpoint 503 em vez de inventar uma proveniência.
+        p_dynamic_runtime_revision = None
+        print(f"IRAI runtime revision unavailable: {exc}")
     engine = IRAIEngine()
     print(f"IRAI Engine loaded: {len(engine.models)} models, {len(engine.registered_targets)} targets")
     task = asyncio.create_task(ws_broadcast_loop())
@@ -197,6 +208,14 @@ async def notify_update():
     miqueias_public_cache.clear()
     data_updated_event.set()
     return {"status": "ok"}
+
+
+@app.get("/api/internal/p-dynamic-runtime-revision")
+async def get_p_dynamic_runtime_revision():
+    """Identidade do motor congelada quando este processo da API iniciou."""
+    if p_dynamic_runtime_revision is None:
+        raise HTTPException(status_code=503, detail="revisão do motor ainda indisponível")
+    return {"engine_revision": p_dynamic_runtime_revision}
 
 
 @app.get("/api/irai/gex")

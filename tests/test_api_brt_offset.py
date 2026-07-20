@@ -119,12 +119,19 @@ def test_lifespan_migra_banco_legado_antes_de_criar_engine(tmp_path, monkeypatch
 
     monkeypatch.setattr(api_main, "DB_PATH", str(db_path))
     monkeypatch.setattr(api_main, "IRAIEngine", EngineFake)
+    revision = {
+        "git_commit": "a" * 40,
+        "engine_sha256": "b" * 64,
+        "kalman_sha256": "c" * 64,
+    }
+    monkeypatch.setattr(api_main, "build_engine_revision", lambda: revision)
 
     async def subir_api():
         async with api_main.lifespan(api_main.app):
             pass
 
     asyncio.run(subir_api())
+    assert api_main.p_dynamic_runtime_revision == revision
 
 
 def _seed(db_path, *, target, source, session, session_start_h):
