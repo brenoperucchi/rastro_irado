@@ -172,9 +172,9 @@ não é trabalho pendente, é a task IRAI-18 (`scripts/evaluate_p_dynamic_champi
 timer diário `rastro-irado-p-dynamic-ledger.timer`, Mon-Fri 17:56 BRT, capturando desde
 2026-07-16). Ver §8.
 
-## 8. Estado do ledger champion-challenger (IRAI-18) em 2026-07-19
+## 8. Estado do ledger champion-challenger (IRAI-18) em 2026-07-20
 
-**`methodology_version: 2` — ledger reiniciado em 0/60.**
+**`methodology_version: 3` — ledger permanece em 0/60.**
 
 Estado real de `data/p_dynamic_parity/`: **vazio**. `sessões=0/60`,
 `status: INCONCLUSIVE`, `quality_winner: null`. A contagem recomeça do zero sob a
@@ -200,7 +200,7 @@ enviesadas:
   teriam o desfecho invertido, concentradas nos dias de menor `|close−open|`, que são
   justamente onde os modelos discordam.
 
-Regras da `methodology_version: 2`, gravadas em cada manifesto e revalidadas na leitura:
+Regras da `methodology_version: 3`, gravadas em cada manifesto e revalidadas na leitura:
 
 | Regra | Valor |
 |---|---|
@@ -211,6 +211,7 @@ Regras da `methodology_version: 2`, gravadas em cada manifesto e revalidadas na 
 | Fechamento | ≥ 17:50 BRT (v1/v2); ≥ 17:45 para a referência pública |
 | Trio obrigatório | `miqueias`, `v1`, `v2` — challenger não altera elegibilidade nem placar |
 | Cru auditável | os três payloads arquivados, validados por sha256 e tamanho |
+| Revisão do motor | commit Git + SHA-256 de `engine.py` e `kalman.py`; uma mistura torna o ledger inconclusivo |
 | Métrica | Brier/log-loss na **interseção** de timestamps operacionais em sessão |
 | Desfecho | última barra comum a **v1 e v2**, dentro da janela, preços consensuais |
 
@@ -259,6 +260,17 @@ diferente. Verificado: apontar para `data/` alcança os 5 manifestos arquivados 
 `sessões=0, superseded=5`. O `champion_report.json` também carrega a
 `methodology_version`, para que um relatório solto seja auto-datável quanto à época.
 
+Além da metodologia, cada captura registra `engine_revision` (commit Git e hashes de
+`backend/irai/engine.py` e `backend/irai/kalman.py`) que a **API congela no startup** e
+expõe internamente. O capturador lê essa identidade antes e depois de receber v1/v2; se a
+API reiniciar no intervalo, a captura falha sem criar uma sessão elegível. Portanto, o
+manifesto não confunde o checkout editado com o processo que efetivamente calculou as
+curvas. A identidade é obrigatória e validada pelo leitor; se sessões fechadas contiverem
+mais de uma revisão, o avaliador retorna **zero sessões selecionadas** e registra
+`mixed_engine_revision_bundles`, em vez de escolher silenciosamente a revisão majoritária.
+A versão 3 foi criada antes da primeira sessão deste ledger, portanto nenhum dado
+elegível foi descartado por essa mudança de contrato.
+
 Custo real da troca de métrica, medido nos bundles preservados: Brier v1
 0.22319373 → 0.22334139, **ranking inalterado**. O número maior (+0,066) que aparece na
 justificativa do código refere-se a **degradação simulada**, não ao delta antigo→novo
@@ -269,7 +281,7 @@ série de uma barra tardia; duas barras com âncora de madrugada; 98 timestamps 
 grade M5 (gap de 438 min); cobertura só à tarde; lacunas disjuntas entre fontes
 individualmente elegíveis; bundle sem o trio obrigatório; manifesto forjado `closed=true`;
 cru ausente; cru adulterado (detectado por hash). Sessão íntegra segue ingerindo
-normalmente. Suíte do repositório: **435 passed, 1 skipped**.
+normalmente. Suíte do repositório: **450 passed, 1 skipped**.
 
 Corte de calibração confirmado em `data/irai.db`/`model_params` (`effective_from`): WIN
 `2026-07-10T19:53:35Z`, WDO `2026-07-10T05:47:55Z` — datas diferentes, não uma calibração
@@ -360,3 +372,48 @@ desnecessária e a contagem "384 passed" era de suíte parcial.
 **Pendente de confirmação do usuário (fora deste ambiente Linux de edição):** se
 `rastro-irado-p-dynamic-ledger.timer` está de fato habilitado e ativo no Ryzen5WSL de
 produção — sem isso, o gate nunca fecha mesmo com o tempo passando.
+
+## 9. Walk-forward histórico local (2026-07-20)
+
+O código do upstream do Miqueias e a configuração divulgada em
+`backend/irai/config/miqueias_static_win_2026-06-23.json` permitem reconstruir uma
+**curva estática diagnóstica**, mas não a versão dinâmica dele: o upstream carrega
+`model_params`/`asset_models` de um banco que não versiona a história dos parâmetros,
+nem os estados/covariâncias Kalman ou os Q/R usados em cada sessão. Portanto, a série
+histórica foi separada em duas perguntas:
+
+- `v1_pit` versus `v2_pit`: replay walk-forward local, com calibração limitada a cada
+  cutoff e estado v2 encadeado cronologicamente;
+- `miqueias_static_disclosed`: somente a configuração estática divulgada, após
+  `effective_from: 2026-06-23`; diagnóstico sem poder de promoção e sem alegação de
+  paridade com o deploy v2 do upstream.
+
+O script novo é `scripts/backtest_p_dynamic_walkforward.py`. Ele exige
+`--snapshot-db`, recusa WAL/journal pendente e calcula SHA-256 antes e depois do replay;
+isso evita misturar leituras do collector vivo entre Windows e WSL. A execução abaixo
+usou uma cópia fechada de `data/backups/irai_pre_gex_reclass_20260716_142148.db`, movida
+para filesystem Linux local, com SHA-256
+`2635c029791e5b8e637d769f98bd219c1b7f4eac1ed416470ed64308c066e230`.
+
+Contrato temporal: a previsão de `10:00 BRT` usa a última M5 **já fechada** (início
+`09:55`); previsão e desfecho aceitam apenas 09:00–18:00 BRT no eixo Tickmill. Isso
+impede tanto a leitura da barra 10:00 ainda em formação como barras pós-pregão do
+rótulo seguinte. O estado v2 persistido/herdado usa o posterior da última barra real
+dessa mesma janela: não inclui pós-pregão que, no verão, cruza para o rótulo seguinte
+e, no inverno, permanece no mesmo rótulo Tickmill. Regressões permanentes cobrem os
+dois offsets sazonais.
+
+Resultado descritivo, amostra OOS de 230 sessões (2025-07-01 a 2026-07-15):
+
+| Braço | Sessões | Brier | Log-loss | AUC | Acerto direcional |
+|---|---:|---:|---:|---:|---:|
+| v1 PIT | 230 | 0,24329206 | 0,67930164 | 0,58893775 | 57,391304% |
+| v2 PIT | 230 | 0,24006482 | 0,67306793 | 0,61877322 | 57,391304% |
+| Miqueias estático divulgado | 16 | 0,25350311 | 0,70564141 | 0,63492063 | 56,25% |
+
+O delta Brier pareado `v2 - v1` foi `-0,00322724`, IC95% bootstrap por sessão
+`[-0,00726876, 0,00084694]`. O ponto favorece v2, mas o intervalo ainda inclui zero:
+**não há promoção, troca de P_up de produção ou conclusão sobre Miqueias**. O braço
+estático tem apenas 16 sessões e o seu IC95% contra v2 também inclui zero. A comparação
+prospectiva de três braços do ledger IRAI-18 continua necessária para confrontar a curva
+publicada do Miqueias sob regras idênticas.
