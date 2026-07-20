@@ -660,6 +660,15 @@ class IRAIEngine:
         snapshots = []
         cum_delta = 0.0
         cum_real_vol = 0.0
+        # B3 pode imprimir pós-pregão; depois do alinhamento essa barra cai no
+        # rótulo seguinte no verão, mas permanece no mesmo rótulo no inverno.
+        # Em ambos os casos guardamos o posterior da última barra BRT <18:00.
+        last_persistable_kalman_state = None
+        next_session_label = datetime.fromisoformat(session_date) + timedelta(days=1)
+        is_b3_target = session_start == 9 and session_end == 18
+        b3_offset = brt_to_tickmill_offset_hours(
+            datetime.fromisoformat(f"{session_date}T12:00:00")
+        ) if is_b3_target else None
         # -1 = sentinela de PRÉ-MERCADO ("o target ainda não negociou hoje").
         # Os fatores globais negociam 24h e all_timestamps é a UNIÃO, então há
         # ~180 barras M5 antes da 1ª barra do target B3. Ver Fase 3 do plano e
@@ -904,6 +913,29 @@ class IRAIEngine:
                 snap.win_low = (
                     float(row["low"]) if row.get("low") is not None else None
                 )
+                if version == "v2" and kf is not None:
+                    snapshot_axis = datetime.fromisoformat(
+                        snap.timestamp.replace("Z", "+00:00")
+                    )
+                    if snapshot_axis.tzinfo is not None:
+                        snapshot_axis = snapshot_axis.replace(tzinfo=None)
+                    if is_b3_target:
+                        brt_snapshot = snapshot_axis - timedelta(hours=b3_offset)
+                        persistable = (
+                            brt_snapshot.date().isoformat() == session_date
+                            and (9, 0) <= (brt_snapshot.hour, brt_snapshot.minute) < (18, 0)
+                        )
+                    else:
+                        persistable = snapshot_axis < next_session_label
+                    if persistable:
+                        state_mean, state_covariance = kf.get_state()
+                        last_persistable_kalman_state = (
+                            np.array(state_mean, copy=True),
+                            np.array(state_covariance, copy=True),
+                            snap.johansen_p_value,
+                            snap.is_cointegrated,
+                            snap.timestamp,
+                        )
 
             # Barra crua p/ o NWE (mesmo eixo já alinhado). Ghost/pré-mercado não
             # têm OHLC/volume reais — passam None e ficam de fora do kernel/ATR/VWAP.
@@ -1002,11 +1034,9 @@ class IRAIEngine:
                     setattr(snap, key, value)
 
         # Salvar o último estado do Kalman no banco
-        if snapshots and version == "v2" and kf is not None and persist_state and is_live_session:
-            last_ts = snapshots[-1].timestamp
-            last_p = snapshots[-1].johansen_p_value
-            last_coint = snapshots[-1].is_cointegrated
-            s_mean, s_cov = kf.get_state()
+        if (version == "v2" and persist_state and is_live_session
+                and last_persistable_kalman_state is not None):
+            s_mean, s_cov, last_p, last_coint, last_ts = last_persistable_kalman_state
             conn2 = get_connection(self.db_path)
             save_kalman_state(
                 conn2, slug, s_mean, s_cov, last_p, last_coint, last_ts,

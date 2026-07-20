@@ -123,6 +123,7 @@ from scripts.measure_d1_inflation import (
 
 
 DEFAULT_TARGETS = ("WIN$N", "WDO$N")
+B3_TARGETS = frozenset(DEFAULT_TARGETS)
 COST_MULTIPLIERS = (0.5, 1.0, 1.5, 2.0)
 # Mesma fonte que scripts/measure_tactical_gate3.py:61 — não importada de lá
 # pra não puxar sklearn/scipy (este script não treina nenhum modelo).
@@ -165,9 +166,33 @@ def _make_capturing_kalman(base_cls):
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
+            self.state_after_updates = []
             _Capturing.last = self
 
+        def update(self, *args, **kwargs):
+            result = super().update(*args, **kwargs)
+            mean, covariance = self.get_state()
+            self.state_after_updates.append(
+                (copy.deepcopy(mean), copy.deepcopy(covariance))
+            )
+            return result
+
     return _Capturing
+
+
+def _state_snapshot_belongs_to_session(snapshot, session_date: str, target: str) -> bool:
+    """A barra pode alimentar o estado Kalman herdado na próxima sessão?"""
+    axis = _parse_axis_ts(snapshot.timestamp)
+    if target not in B3_TARGETS:
+        return axis < datetime.fromisoformat(session_date) + timedelta(days=1)
+    offset = brt_to_tickmill_offset_hours(
+        datetime.fromisoformat(f"{session_date}T12:00:00")
+    )
+    brt = axis - timedelta(hours=offset)
+    return (
+        brt.date().isoformat() == session_date
+        and (9, 0) <= (brt.hour, brt.minute) < (18, 0)
+    )
 
 
 @contextmanager
@@ -181,6 +206,12 @@ def chronological_replay(db_path: str, *, kalman_cls=KalmanFilterWrapper):
     calibração point-in-time em memória (scripts/pit_calibration.py,
     achado C1-a) ANTES de cada `compute()`, sem nunca reconstruir o
     engine (o que reiniciaria o encadeamento do Kalman do zero).
+
+    A série B3 pode carregar barras pós-pregão; no verão elas cruzam o rótulo
+    Tickmill e no inverno não. Em ambos os casos não podem carimbar nem
+    contaminar o estado que a engine herda na próxima sessão. Por isso o helper
+    guarda o posterior de cada atualização real e persiste exatamente o que
+    existia na última barra da janela econômica BRT 09:00–18:00.
 
     `kalman_cls` é injetável só pra teste (evita depender do pykalman real,
     ausente no ambiente Linux de dev) — produção sempre usa o default."""
@@ -202,13 +233,23 @@ def chronological_replay(db_path: str, *, kalman_cls=KalmanFilterWrapper):
                 session_date, target=target, version="v2", persist_state=False,
             )
             real = _real_snapshots(snapshots)
-            if capturing_cls.last is not None and real:
-                mean, cov = capturing_cls.last.get_state()
+            in_session = [
+                snapshot
+                for snapshot in real
+                if _state_snapshot_belongs_to_session(snapshot, session_date, target)
+            ]
+            if capturing_cls.last is not None and in_session:
+                history = capturing_cls.last.state_after_updates
+                if len(history) != len(real):
+                    raise RuntimeError(
+                        "replay Kalman inconsistente: updates reais não coincidem com snapshots"
+                    )
+                mean, cov = history[len(in_session) - 1]
                 factors = instance.models.get(slug, {}).get("factors", [])
                 chained_state[slug] = {
                     "state_mean": mean,
                     "state_covariance": cov,
-                    "timestamp_utc": real[-1].timestamp,
+                    "timestamp_utc": in_session[-1].timestamp,
                     "factor_signature": factor_signature(factors),
                 }
             return snapshots

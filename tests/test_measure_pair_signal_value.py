@@ -20,6 +20,7 @@ import sqlite3
 import tempfile
 import types
 from contextlib import contextmanager
+from datetime import datetime
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -527,6 +528,117 @@ def test_chronological_replay_encadeia_estado_entre_sessoes():
             assert abs(got_cov[r][col] - expected_cell) < 1e-9, (
                 f"covariância herdada não bate com a da 1ª sessão: {got_cov} "
                 f"vs esperado diag({expected_value})")
+
+
+def test_chronological_replay_ignora_estado_de_barra_pos_pregao():
+    """A última barra B3 pode cair no rótulo do dia seguinte após o alinhamento.
+
+    Antes do fix, esse timestamp impedia ``state_ts < session_start`` e a
+    sessão seguinte reiniciava o Kalman. Só trocar o timestamp também seria
+    insuficiente: o posterior salvo precisa ser o da última atualização ANTES
+    da barra pós-pregão, não o estado já contaminado por ela.
+    """
+    _FakeKalman.set_state_calls = []
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    tp._seed(db)
+    c = sqlite3.connect(db)
+    rows = c.execute(
+        "SELECT symbol, source, timeframe, timestamp_utc, open, high, low, close, "
+        "volume, real_volume, delta FROM market_bars WHERE timestamp_utc LIKE '2026-07-10%'"
+    ).fetchall()
+    for row in rows:
+        symbol, source, timeframe, ts, o, h, l, close, vol, rvol, delta = row
+        c.execute(
+            "INSERT OR IGNORE INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+            "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (symbol, source, timeframe, ts.replace("2026-07-10", "2026-07-11"),
+             o, h, l, close, vol, rvol, delta),
+        )
+    # B3 18:30, alinhada em 00:30 do rótulo seguinte: não pertence ao
+    # estado que deve entrar na sessão de 2026-07-11.
+    c.execute(
+        "INSERT INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+        "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (tp.TARGET, "br", "M5", "2026-07-10T18:30:00Z",
+         tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, 10, 10, 0),
+    )
+    c.commit()
+    c.close()
+
+    with chronological_replay(db, kalman_cls=_FakeKalman) as (compute, _instance):
+        first = compute("2026-07-10", tp.TARGET)
+        before_next_label = [
+            snapshot for snapshot in first
+            if not snapshot.is_ghost and snapshot.timestamp < "2026-07-11T00:00:00"
+        ]
+        after_market = [
+            snapshot for snapshot in first
+            if not snapshot.is_ghost and snapshot.timestamp >= "2026-07-11T00:00:00"
+        ]
+        assert before_next_label and after_market, "fixture precisa cruzar o rótulo"
+        compute("2026-07-11", tp.TARGET)
+
+    assert len(_FakeKalman.set_state_calls) == 1
+    got_mean, _ = _FakeKalman.set_state_calls[0]
+    expected = float(len(before_next_label))
+    assert all(value == expected for value in got_mean), (
+        "o estado herdado deve parar na última barra anterior ao pós-pregão")
+
+
+def test_chronological_replay_ignora_pos_pregao_no_inverno_sem_cruzar_rotulo():
+    """Com offset 5, B3 18:30 vira 23:30 no MESMO rótulo Tickmill."""
+    _FakeKalman.set_state_calls = []
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    tp._seed(db)
+    session_date, following_date = "2026-01-12", "2026-01-13"
+    c = sqlite3.connect(db)
+    c.execute(
+        "UPDATE market_bars SET timestamp_utc=REPLACE(timestamp_utc, ?, ?)",
+        ("2026-07-10", session_date),
+    )
+    c.execute(
+        "UPDATE market_bars SET timestamp_utc=REPLACE(timestamp_utc, ?, ?)",
+        ("2026-07-09", "2026-01-11"),
+    )
+    rows = c.execute(
+        "SELECT symbol, source, timeframe, timestamp_utc, open, high, low, close, "
+        "volume, real_volume, delta FROM market_bars WHERE timestamp_utc LIKE ?",
+        (f"{session_date}%",),
+    ).fetchall()
+    for row in rows:
+        symbol, source, timeframe, ts, o, h, l, close, vol, rvol, delta = row
+        c.execute(
+            "INSERT OR IGNORE INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+            "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (symbol, source, timeframe, ts.replace(session_date, following_date),
+             o, h, l, close, vol, rvol, delta),
+        )
+    c.execute(
+        "INSERT INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+        "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (tp.TARGET, "br", "M5", f"{session_date}T18:30:00Z",
+         tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, 10, 10, 0),
+    )
+    c.commit()
+    c.close()
+
+    with chronological_replay(db, kalman_cls=_FakeKalman) as (compute, _instance):
+        first = compute(session_date, tp.TARGET)
+        cutoff = datetime.fromisoformat(f"{session_date}T23:00:00")
+        before_close = [
+            snapshot for snapshot in first
+            if not snapshot.is_ghost and psv._parse_axis_ts(snapshot.timestamp) < cutoff
+        ]
+        after_close = [
+            snapshot for snapshot in first
+            if not snapshot.is_ghost and psv._parse_axis_ts(snapshot.timestamp) >= cutoff
+        ]
+        assert before_close and after_close, "fixture precisa conter pós-pregão de inverno"
+        compute(following_date, tp.TARGET)
+
+    assert len(_FakeKalman.set_state_calls) == 1
+    got_mean, _ = _FakeKalman.set_state_calls[0]
+    assert all(value == float(len(before_close)) for value in got_mean)
 
 
 # ── 4. run() / burn-in ───────────────────────────────────────────────────

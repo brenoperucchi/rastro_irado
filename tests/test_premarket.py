@@ -471,6 +471,46 @@ def test_replay_historico_nao_persiste_estado():
         eng_mod.KalmanFilterWrapper = orig
 
 
+def test_estado_kalman_vivo_ignora_print_b3_pos_pregao_no_inverno():
+    """No inverno, B3 18:30 alinha para 23:30 no mesmo rótulo.
+
+    Persisti-lo como último estado faria a próxima sessão recusar o restore
+    (`state_ts < session_start`), reiniciando o Kalman sem alarde.
+    """
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    _seed(db)
+    c = sqlite3.connect(db)
+    winter_session = "2026-01-12"
+    c.execute(
+        "UPDATE market_bars SET timestamp_utc=REPLACE(timestamp_utc, ?, ?)",
+        ("2026-07-10", winter_session),
+    )
+    c.execute(
+        "UPDATE market_bars SET timestamp_utc=REPLACE(timestamp_utc, ?, ?)",
+        ("2026-07-09", "2026-01-11"),
+    )
+    c.execute(
+        """INSERT INTO market_bars
+           (symbol, source, timeframe, timestamp_utc, open, high, low, close,
+            volume, real_volume, delta)
+           VALUES (?, ?, 'M5', ?, ?, ?, ?, ?, 10, 10, 0)""",
+        (TARGET, "br", f"{winter_session}T18:30:00Z", TODAY_OPEN, TODAY_OPEN,
+         TODAY_OPEN, TODAY_OPEN),
+    )
+    c.commit()
+    c.close()
+
+    _engine(db).compute_from_db(winter_session, target=TARGET, version="v2")
+
+    c = sqlite3.connect(db)
+    saved = c.execute(
+        "SELECT timestamp_utc FROM kalman_state WHERE slug=?", (SLUG,)
+    ).fetchone()
+    c.close()
+    assert saved is not None
+    assert saved[0] == "2026-01-12T17:15:00+00:00"
+
+
 # ── 10. INTEGRAÇÃO: markers nunca caem em barra sintética (engine real) ──
 def test_engine_nao_emite_marker_em_barra_sintetica():
     """test_markers.py trava a SEMÂNTICA da máquina de transição isoladamente;
