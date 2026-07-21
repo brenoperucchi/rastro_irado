@@ -46,7 +46,10 @@ from scripts.compare_p_dynamic_parity import (
     session_intersection_stats,
     session_operational_points,
 )
-from backend.irai.runtime_revision import validate_engine_revision
+from backend.irai.runtime_revision import (
+    prediction_revision_fingerprint,
+    validate_engine_revision,
+)
 
 
 DEFAULT_MIN_SESSIONS = 60
@@ -89,9 +92,7 @@ def _engine_revision_from_manifest(manifest: dict) -> tuple[str, dict[str, str]]
     except ValueError as exc:
         raise ValueError(f"manifesto sem revisão verificável do motor: {exc}") from exc
 
-    fingerprint = hashlib.sha256(
-        json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("ascii")
-    ).hexdigest()
+    fingerprint = prediction_revision_fingerprint(normalized)
     return fingerprint, normalized
 
 

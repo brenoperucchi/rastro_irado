@@ -81,6 +81,27 @@ def test_observacao_usa_ultimo_snapshot_comum_antes_do_horario_de_decisao():
     assert observation.actual_up is True
 
 
+def test_observacao_ignora_timestamp_fora_da_grade_m5_que_fecha_apos_decisao():
+    """09:57 BRT não é M5 válida e fecharia às 10:02, após a decisão 10:00."""
+    v1 = [
+        _snapshot("2026-07-16T15:00:00+00:00", 40.0),
+        _snapshot("2026-07-16T15:57:00+00:00", 99.0),
+        _snapshot("2026-07-16T23:55:00+00:00", 50.0, current=101.0),
+    ]
+    v2 = [
+        _snapshot("2026-07-16T15:00:00+00:00", 45.0),
+        _snapshot("2026-07-16T15:57:00+00:00", 98.0),
+        _snapshot("2026-07-16T23:55:00+00:00", 55.0, current=101.0),
+    ]
+
+    observation = build_observation(
+        "2026-07-16", v1, v2, decision_time=(10, 0), static_config=_config()
+    )
+
+    assert observation.decision_timestamp == "2026-07-16T15:00:00+00:00"
+    assert observation.v1_pit == pytest.approx(0.40)
+
+
 def test_observacao_nao_extrapola_configuracao_estatica_antes_da_vigencia():
     v1 = [
         _snapshot("2026-06-22T15:00:00+00:00", 45.0),

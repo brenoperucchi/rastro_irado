@@ -172,15 +172,24 @@ não é trabalho pendente, é a task IRAI-18 (`scripts/evaluate_p_dynamic_champi
 timer diário `rastro-irado-p-dynamic-ledger.timer`, Mon-Fri 17:56 BRT, capturando desde
 2026-07-16). Ver §8.
 
-## 8. Estado do ledger champion-challenger (IRAI-18) em 2026-07-20
+## 8. Estado do ledger champion-challenger (IRAI-18) em 2026-07-21
 
-**`methodology_version: 3` — ledger em 1/60.**
+**Estado implantado em 2026-07-20: `methodology_version: 3`, ledger em 1/60.**
 
 Após a captura regular de 2026-07-20, `data/p_dynamic_parity/` contém uma sessão
 elegível da revisão runtime `f0b63d4`. `sessões=1/60`, `status: INCONCLUSIVE`,
 `quality_winner: null`. Métricas de uma única sessão não têm AUC definida e não são
 interpretadas como evidência de qualidade; a captura diária segue acumulando sob a regra
 nova.
+
+**Atualização pendente de implantação em 2026-07-21: `methodology_version: 4`.** A
+identidade runtime da v3 só continha o commit Git e hashes de `engine.py`/`kalman.py`.
+Ela não distinguia uma recalibração ativa do WIN em `asset_models`/`model_params`, mas
+tratava um commit documental como motor diferente e zerava o ledger. A v4 registra um
+hash do código que alimenta `P_up` e outro da configuração ativa **do WIN**; o commit
+continua no manifesto para auditoria, mas não integra o agrupamento semântico. O único
+bundle v3 será mantido e contado como `superseded` após a implantação, não misturado com
+v4; por isso a nova contagem começará em `0/60` de forma deliberada.
 
 As duas sessões que existiam (2026-07-16 e 2026-07-17) foram movidas para
 `data/p_dynamic_parity_pre_2026-07-19_rule_change/` — **superseded**, não apagadas. Elas
@@ -202,7 +211,8 @@ enviesadas:
   teriam o desfecho invertido, concentradas nos dias de menor `|close−open|`, que são
   justamente onde os modelos discordam.
 
-Regras da `methodology_version: 3`, gravadas em cada manifesto e revalidadas na leitura:
+Regras de elegibilidade preservadas na `methodology_version: 4`, gravadas em cada
+manifesto e revalidadas na leitura:
 
 | Regra | Valor |
 |---|---|
@@ -213,7 +223,7 @@ Regras da `methodology_version: 3`, gravadas em cada manifesto e revalidadas na 
 | Fechamento | ≥ 17:50 BRT (v1/v2); ≥ 17:45 para a referência pública |
 | Trio obrigatório | `miqueias`, `v1`, `v2` — challenger não altera elegibilidade nem placar |
 | Cru auditável | os três payloads arquivados, validados por sha256 e tamanho |
-| Revisão do motor | commit Git + SHA-256 de `engine.py` e `kalman.py`; uma mistura torna o ledger inconclusivo |
+| Revisão do motor | hashes de código runtime + configuração ativa que altera `P_up` do WIN; commit Git é auditável, mas não fragmenta sessões semanticamente idênticas |
 | Métrica | Brier/log-loss na **interseção** de timestamps operacionais em sessão |
 | Desfecho | última barra comum a **v1 e v2**, dentro da janela, preços consensuais |
 
@@ -262,16 +272,17 @@ diferente. Verificado: apontar para `data/` alcança os 5 manifestos arquivados 
 `sessões=0, superseded=5`. O `champion_report.json` também carrega a
 `methodology_version`, para que um relatório solto seja auto-datável quanto à época.
 
-Além da metodologia, cada captura registra `engine_revision` (commit Git e hashes de
-`backend/irai/engine.py` e `backend/irai/kalman.py`) que a **API congela no startup** e
-expõe internamente. O capturador lê essa identidade antes e depois de receber v1/v2; se a
-API reiniciar no intervalo, a captura falha sem criar uma sessão elegível. Portanto, o
-manifesto não confunde o checkout editado com o processo que efetivamente calculou as
-curvas. A identidade é obrigatória e validada pelo leitor; se sessões fechadas contiverem
-mais de uma revisão, o avaliador retorna **zero sessões selecionadas** e registra
+Além da metodologia, cada captura registra `engine_revision` que a **API congela no
+startup** e expõe internamente: o commit Git para auditoria, hashes individuais de
+`engine.py`/`kalman.py`, um hash composto dos módulos que alimentam `P_up` e um hash da
+configuração ativa que altera `P_up` do WIN (`asset_models` do alvo e os parâmetros
+`w_*`, `sigma_*`, `alpha` e `intercept` do seu slug). O capturador lê a identidade
+semântica antes e depois de receber v1/v2; se o cálculo ou a calibração mudar no
+intervalo, a captura falha sem criar uma sessão elegível. Um restart após commit
+documental com a mesma semântica não falha a captura nem fragmenta o ledger. O leitor
+recusa versões sem todos esses campos e, se sessões fechadas contiverem mais de uma
+identidade semântica, retorna **zero sessões selecionadas** e registra
 `mixed_engine_revision_bundles`, em vez de escolher silenciosamente a revisão majoritária.
-A versão 3 foi criada antes da primeira sessão deste ledger, portanto nenhum dado
-elegível foi descartado por essa mudança de contrato.
 
 Custo real da troca de métrica, medido nos bundles preservados: Brier v1
 0.22319373 → 0.22334139, **ranking inalterado**. O número maior (+0,066) que aparece na
@@ -283,7 +294,7 @@ série de uma barra tardia; duas barras com âncora de madrugada; 98 timestamps 
 grade M5 (gap de 438 min); cobertura só à tarde; lacunas disjuntas entre fontes
 individualmente elegíveis; bundle sem o trio obrigatório; manifesto forjado `closed=true`;
 cru ausente; cru adulterado (detectado por hash). Sessão íntegra segue ingerindo
-normalmente. Suíte do repositório: **450 passed, 1 skipped**.
+normalmente. Suíte do repositório após a atualização da v4: **477 passed, 1 skipped**.
 
 Corte de calibração confirmado em `data/irai.db`/`model_params` (`effective_from`): WIN
 `2026-07-10T19:53:35Z`, WDO `2026-07-10T05:47:55Z` — datas diferentes, não uma calibração
@@ -353,7 +364,7 @@ intacta**. Quatro defeitos adicionais, dois deles em consenso das duas lentes:
 `tests/test_compare_p_dynamic_parity.py` e
 `tests/test_p_dynamic_champion_evaluator.py` levaram a suíte completa daquele
 checkout a `410 passed, 1 skipped`. Não é a contagem atual: a validação mais
-recente está registrada acima como `450 passed, 1 skipped`.
+recente está registrada acima como `477 passed, 1 skipped`.
 
 *Correção de registro:* uma versão anterior desta seção afirmava que
 `tests/test_measure_tactical_gate3.py` exige dependências ausentes neste ambiente e
@@ -407,7 +418,10 @@ dessa mesma janela: não inclui pós-pregão que, no verão, cruza para o rótul
 e, no inverno, permanece no mesmo rótulo Tickmill. Regressões permanentes cobrem os
 dois offsets sazonais.
 
-Resultado descritivo, amostra OOS de 230 sessões (2025-07-01 a 2026-07-15):
+Resultado descritivo, amostra OOS de 230 sessões (2025-07-01 a 2026-07-15). **Esta tabela
+foi rebaselinada em 2026-07-21 — ver seção 11**: reexecutada sob o harness corrigido
+(candidatos 1/2/3/5 da revisão `/tri-r`), idêntica ao valor abaixo. A seção 10 (AUC/log-
+loss pareados, ECE) **não** foi recoberta por este rebaseline — ver ressalva na seção 11.
 
 | Braço | Sessões | Brier | Log-loss | AUC | Acerto direcional |
 |---|---:|---:|---:|---:|---:|
@@ -445,3 +459,98 @@ prova que v2 esteja pior calibrada e não justifica recalibração. Qualquer aju
 limiar ou calibração escolhido nesta mesma amostra seria in-sample e introduziria
 lookahead. A decisão permanece: manter v1/v2 em paralelo, sem promoção, e acumular
 evidência prospectiva no ledger IRAI-18.
+
+## 11. Rebaseline pós-correção PIT (2026-07-21)
+
+**Escopo desta seção:** cobre exclusivamente o que `scripts/backtest_p_dynamic_walkforward.py`
+calcula — a tabela de métricas por braço e o delta Brier pareado (seção 9). Ele **não**
+calcula IC pareado de AUC, delta pareado de log-loss nem ECE — essas vêm de uma
+computação separada (seção 10) que este rebaseline não reexecutou. Ver ressalva ao final.
+
+A revisão `/tri-r` do branch `fix/irai-18-methodology-v2` confirmou e corrigiu quatro
+bugs de metodologia (candidatos 1, 2, 3 e 5 de
+`docs/artifacts/irai-18/review-candidates-2026-07-21-UNVERIFIED.md`), entre eles um
+possível lookahead na elegibilidade de barra do próprio walk-forward (candidato 5:
+`_is_b3_session_timestamp`/`build_observation` aceitavam qualquer timestamp `< horário de
+decisão`, sem exigir que a barra pertencesse à grade M5 canônica e já tivesse fechado —
+um print fora da grade que abre antes mas fecha depois do instante de decisão podia
+"vazar" para dentro do score). Este rebaseline reexecuta o walk-forward de 230 sessões
+(seção 9) sob o harness corrigido, contra a mesma cópia fechada do banco, para confirmar
+se a tabela da seção 9 continua válida ou precisa ser substituída.
+
+**Reprodução:**
+
+```
+python3 scripts/backtest_p_dynamic_walkforward.py \
+  --snapshot-db data/backups/irai_pre_gex_reclass_20260716_142148.db \
+  --output-json <saída>
+```
+
+- Snapshot: `data/backups/irai_pre_gex_reclass_20260716_142148.db`, SHA-256
+  `2635c029791e5b8e637d769f98bd219c1b7f4eac1ed416470ed64308c066e230` (idêntico ao da
+  seção 9 — mesma cópia fechada, não a base viva do collector).
+- Código: working tree do branch `fix/irai-18-methodology-v2` sobre o commit
+  `3e495cd` (HEAD), com os candidatos 1/2/3/5 já aplicados e ainda não commitados no
+  momento deste rebaseline; `pytest -q tests` → 481 passed, 1 skipped.
+- Resultado do rerun: idêntico à tabela da seção 9 — `v1_pit` Brier `0,24329206`,
+  `v2_pit` Brier `0,24006482`, delta pareado `v2-v1` `-0,00322724`, IC95%
+  `[-0,00726876; 0,00084694]`, 230 sessões, mesmo conjunto de 214 sessões descartadas.
+  Artefato salvo em
+  `docs/artifacts/irai-17/rebaseline-2026-07-21/walkforward_postfix.json`, SHA-256
+  `21f5c572244a2a6f5bd59db1f9a319576fb3efe82f9a5bd63bc3dc14935cf653`.
+
+**Verificação do candidato 5 (a correção do lookahead muda algum número real?).**
+Resultado idêntico não prova por si só que a correção teve efeito nulo — poderia ser
+coincidência, ou o relatório original já podia ter sido gerado com o código corrigido.
+Para isolar a pergunta, o walk-forward foi reexecutado uma segunda vez com uma cópia
+standalone de `scripts/backtest_p_dynamic_walkforward.py` no estado **anterior** à
+correção (`git show HEAD:scripts/backtest_p_dynamic_walkforward.py`, ou seja, sem a
+checagem de grade M5 `brt.minute % 5 == 0 and brt.second == 0 and brt.microsecond == 0`),
+contra a mesmíssima cópia fechada do banco, mantendo os demais módulos importados
+(`scripts/measure_pair_signal_value.py`, `scripts/pit_calibration.py`, `backend/irai/*`)
+no estado atual — isso isola o efeito marginal só do candidato 5, sem contaminação de
+import/bytecode. Resultado: o JSON de saída da versão pré-fix e o da versão corrigida são
+**byte-idênticos entre si** (mesmo SHA-256,
+`21f5c572244a2a6f5bd59db1f9a319576fb3efe82f9a5bd63bc3dc14935cf653` — arquivos salvos em
+`docs/artifacts/irai-17/rebaseline-2026-07-21/walkforward_postfix.json` e
+`walkforward_prefix_candidate5.json`). Conclusão: o candidato 5 é uma correção real e
+necessária (o cenário de exploração usava uma fixture construída com timestamp fora de
+grade, `09:57`, para demonstrar o defeito). Quanto a esta base real: **verificado
+diretamente** (não apenas assumido) via consulta ao snapshot fechado —
+`SELECT timestamp_utc FROM market_bars WHERE symbol=? AND timeframe='M5' AND source='br'`
+sobre as 138.711 barras M5 de `WIN$N` e as 139.958 de `WDO$N` em todo o histórico do
+snapshot — **zero timestamps fora da grade de 5 minutos** em qualquer uma das duas séries
+(nenhum minuto não-múltiplo-de-5, nenhum segundo/microssegundo não-zero). Isso explica
+mecanicamente por que os dois reruns deram byte-idênticos: não há, nesta base, nenhum
+print que a checagem mais estrita pudesse excluir. A correção é necessária mesmo assim
+como blindagem estrutural (garante a invariante sob qualquer fonte de dados futura, e sob
+qualquer `--decision-time` que não caia num múltiplo de 5 minutos — o CLI não valida isso
+hoje), mas **não altera nenhum número já publicado na seção 9**.
+
+**Veredito do rebaseline:** a tabela da seção 9 permanece válida. A comparação pré/pós-fix
+do candidato 5 é reprodutível (hash de entrada idêntico, comando documentado acima, hash
+de saída idêntico) — isso não é o mesmo que uma cadeia de proveniência automatizada
+completa: os JSONs de artefato registram o hash do snapshot e os resultados, mas não
+embutem o hash do commit/script exato nem a saída bruta do `pytest` — esses ficam
+registrados apenas em texto nesta seção (commit `3e495cd` + candidatos 1/2/3/5 aplicados
+no working tree; `pytest -q tests` → 481 passed, 1 skipped, conforme relatado acima), não
+como artefato verificável à parte. **A seção 10 não foi revalidada por este rebaseline** —
+seus números (IC
+pareado de AUC, delta pareado de log-loss, ECE) vêm de uma computação distinta que
+`backtest_p_dynamic_walkforward.py` não reproduz. Nota à parte: o delta Brier pareado
+implícito na tabela da seção 9 (`0,24006482 − 0,24329206 = -0,00322724`) e o delta Brier
+pareado declarado na seção 10 (`-0,00322375`) **diferem na 6ª casa decimal** — inconsistência
+pré-existente entre as duas seções (não introduzida por este rebaseline, não afeta
+nenhuma conclusão, já que ambos os IC95% incluem zero), mas que fica registrada aqui para
+não ser silenciada; investigar a fonte da seção 10 é trabalho futuro, fora do escopo
+deste rebaseline. O relatório de candidatos
+(`docs/artifacts/irai-18/review-candidates-2026-07-21-UNVERIFIED.md`) pode ser atualizado
+para refletir esta confirmação empírica do candidato 5.
+
+**Revisão adversarial (`/codex-r`, 2026-07-21):** apontou corretamente que uma versão
+anterior desta seção alegava validar a seção 10 sem tê-la recomputado (corrigido acima) e
+que os JSONs de saída não estavam em local durável (corrigido acima). Também alegou que
+`warmup_sessions` teria mudado de 133 para 0 e os descartes de 81 para 214 entre as
+execuções pré/pós-fix — **verificado e refutado**: os dois JSONs de saída são idênticos
+campo a campo (`warmup_sessions=0` e 214 descartes em ambos, confirmado por comparação de
+dicionário completa em Python, não só pelos campos de métricas).

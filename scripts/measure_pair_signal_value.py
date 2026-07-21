@@ -233,23 +233,28 @@ def chronological_replay(db_path: str, *, kalman_cls=KalmanFilterWrapper):
                 session_date, target=target, version="v2", persist_state=False,
             )
             real = _real_snapshots(snapshots)
-            in_session = [
-                snapshot
-                for snapshot in real
+            in_session_indices = [
+                index
+                for index, snapshot in enumerate(real)
                 if _state_snapshot_belongs_to_session(snapshot, session_date, target)
             ]
-            if capturing_cls.last is not None and in_session:
+            if capturing_cls.last is not None and in_session_indices:
                 history = capturing_cls.last.state_after_updates
                 if len(history) != len(real):
                     raise RuntimeError(
                         "replay Kalman inconsistente: updates reais não coincidem com snapshots"
                     )
-                mean, cov = history[len(in_session) - 1]
+                # ``real`` também contém prints antes/depois da janela B3. A
+                # posição da última barra econômica não é sua contagem: um
+                # pré-mercado real desloca o índice e encadearia o posterior
+                # da barra errada para a sessão seguinte.
+                state_index = in_session_indices[-1]
+                mean, cov = history[state_index]
                 factors = instance.models.get(slug, {}).get("factors", [])
                 chained_state[slug] = {
                     "state_mean": mean,
                     "state_covariance": cov,
-                    "timestamp_utc": in_session[-1].timestamp,
+                    "timestamp_utc": real[state_index].timestamp,
                     "factor_signature": factor_signature(factors),
                 }
             return snapshots

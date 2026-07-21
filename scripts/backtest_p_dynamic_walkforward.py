@@ -20,7 +20,7 @@ import random
 import statistics
 import sys
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
@@ -69,6 +69,7 @@ DEFAULT_BOOTSTRAP_ITERATIONS = 2_000
 EPSILON = 1e-6
 SESSION_START_TIME = (9, 0)
 SESSION_END_TIME = (18, 0)
+M5_BAR_DURATION = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -148,11 +149,14 @@ def _real_by_timestamp(snapshots: Iterable) -> dict[str, object]:
 
 
 def _is_b3_session_timestamp(timestamp: str, session_date: str) -> bool:
-    """Aceita apenas a janela de pregão que define previsão e desfecho."""
+    """Aceita apenas inícios canônicos de barras M5 do pregão B3."""
     brt = _brt_datetime(timestamp, session_date)
     return (
         brt.date() == date.fromisoformat(session_date)
         and SESSION_START_TIME <= (brt.hour, brt.minute) < SESSION_END_TIME
+        and brt.minute % 5 == 0
+        and brt.second == 0
+        and brt.microsecond == 0
     )
 
 
@@ -195,10 +199,10 @@ def build_observation(
 
     O rótulo vem da primeira abertura e do último fechamento comum às duas
     fontes locais, independentemente de ``p_up``. A previsão é a última barra
-    M5 comum que já havia FECHADO até o horário de decisão BRT. Como o
-    timestamp M5 identifica o início da barra, ela precisa começar antes do
-    horário solicitado; portanto, nunca lê a barra ainda em formação nem o
-    fechamento posterior da mesma sessão para construir o score.
+    M5 canônica comum que já havia FECHADO até o horário de decisão BRT. Como
+    o timestamp M5 identifica o início da barra, ele precisa somado aos cinco
+    minutos do período caber no instante de decisão; portanto, nunca lê a
+    barra ainda em formação nem um print fora da grade para construir o score.
     """
     v1 = _real_by_timestamp(v1_snapshots)
     v2 = _real_by_timestamp(v2_snapshots)
@@ -210,11 +214,15 @@ def build_observation(
     if not common:
         raise ValueError("v1/v2 não compartilham snapshots reais na sessão B3")
 
+    decision_at = datetime.combine(
+        date.fromisoformat(session_date),
+        time(*decision_time),
+        tzinfo=_brt_datetime(common[0], session_date).tzinfo,
+    )
     eligible = [
         timestamp
         for timestamp in common
-        if _brt_datetime(timestamp, session_date).time()
-        < datetime(2000, 1, 1, *decision_time).time()
+        if _brt_datetime(timestamp, session_date) + M5_BAR_DURATION <= decision_at
     ]
     if not eligible:
         raise ValueError("nenhum snapshot comum antes do horário de decisão")

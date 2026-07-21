@@ -89,6 +89,8 @@ class _RoutedFakeUrlopen:
                             "git_commit": "a" * 40,
                             "engine_sha256": "b" * 64,
                             "kalman_sha256": "c" * 64,
+                            "runtime_code_sha256": "d" * 64,
+                            "model_config_sha256": "e" * 64,
                         }
                     }
                 ).encode("utf-8")
@@ -529,6 +531,19 @@ def test_cli_exige_session_date_explicito(tmp_path):
     assert excinfo.value.code == 2
 
 
+def test_cli_recusa_target_fora_do_contrato_do_ledger(tmp_path):
+    """WDO não pode receber o hash de configuração específico do WIN."""
+    with pytest.raises(SystemExit) as excinfo:
+        main([
+            "--public-source", str(tmp_path / "public.json"),
+            "--skip-local-api",
+            "--session-date", "2026-07-16",
+            "--target", "WDO$N",
+        ])
+
+    assert excinfo.value.code == 2
+
+
 def test_cli_rejeita_referencia_publica_de_sessao_diferente_da_esperada(tmp_path):
     """O timer fornece a sessão esperada; se o Firebase ainda não publicou a
     sessão do dia (cache stale, atraso de publicação) e só devolve barras de
@@ -875,6 +890,8 @@ def test_captura_registra_revisao_congelada_da_api_nao_do_checkout(tmp_path, mon
         "git_commit": "a" * 40,
         "engine_sha256": "b" * 64,
         "kalman_sha256": "c" * 64,
+        "runtime_code_sha256": "d" * 64,
+        "model_config_sha256": "e" * 64,
     }
     monkeypatch.setattr(
         compare_p_dynamic_parity,
@@ -904,6 +921,8 @@ def test_captura_recusa_api_que_reiniciou_entre_v1_e_v2(tmp_path):
                     "git_commit": "a" * 40,
                     "engine_sha256": "b" * 64,
                     "kalman_sha256": "c" * 64,
+                    "runtime_code_sha256": "d" * 64,
+                    "model_config_sha256": "e" * 64,
                 }
             }
         ).encode("utf-8"),
@@ -913,6 +932,8 @@ def test_captura_recusa_api_que_reiniciou_entre_v1_e_v2(tmp_path):
                     "git_commit": "d" * 40,
                     "engine_sha256": "e" * 64,
                     "kalman_sha256": "f" * 64,
+                    "runtime_code_sha256": "g" * 64,
+                    "model_config_sha256": "h" * 64,
                 }
             }
         ).encode("utf-8"),
@@ -922,6 +943,32 @@ def test_captura_recusa_api_que_reiniciou_entre_v1_e_v2(tmp_path):
 
     assert status == 1
     assert not list(captures.glob("**/manifest.json"))
+
+
+def test_captura_aceita_restart_da_api_quando_so_commit_muda(tmp_path):
+    """Troca de commit documental não muda o P_up capturado entre v1 e v2."""
+    public, captures, fake = _routed_session(
+        tmp_path, public_last="2026-07-16T23:50:00Z", local_last="2026-07-16T23:55:00Z"
+    )
+    unchanged = {
+        "engine_sha256": "b" * 64,
+        "kalman_sha256": "c" * 64,
+        "runtime_code_sha256": "d" * 64,
+        "model_config_sha256": "e" * 64,
+    }
+    fake.routes["p-dynamic-runtime-revision"] = [
+        json.dumps({"engine_revision": {"git_commit": "a" * 40, **unchanged}}).encode(
+            "utf-8"
+        ),
+        json.dumps({"engine_revision": {"git_commit": "f" * 40, **unchanged}}).encode(
+            "utf-8"
+        ),
+    ]
+
+    status = _run_routed(public, captures, fake)
+
+    assert status == 0
+    assert list(captures.glob("**/manifest.json"))
 
 
 def test_manifesto_aceita_referencia_publica_atrasada_uma_barra(tmp_path):

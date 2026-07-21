@@ -1,11 +1,11 @@
 ---
 id: IRAI-18
 title: Construir ledger diário champion-challenger do WIN
-status: Done
+status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:41'
-updated_date: '2026-07-16 05:26'
+updated_date: '2026-07-21 06:16'
 labels:
   - validation
   - win
@@ -16,19 +16,7 @@ references:
   - 'backlog://task/IRAI-17'
 documentation:
   - docs/plans/2026-07-13-irai-plano-consolidado.md
-modified_files:
-  - scripts/compare_p_dynamic_parity.py
-  - scripts/evaluate_p_dynamic_champions.py
-  - tests/test_compare_p_dynamic_parity.py
-  - tests/test_p_dynamic_champion_evaluator.py
-  - scripts/systemd/rastro-irado-p-dynamic-ledger.service
-  - scripts/systemd/rastro-irado-p-dynamic-ledger.timer
-  - backend/irai/engine.py
-  - backend/api/main.py
-  - tests/test_api_nwe_contract.py
-  - tests/test_nwe_causality.py
 priority: high
-type: feature
 ordinal: 18000
 ---
 
@@ -76,7 +64,17 @@ Correção do NO-GO: fallback de `brt_offset_h` agora usa a regra sazonal compar
 Validação systemd revelou que o novo import de timezone dependia do cwd. Regressão subprocess fora da raiz falhou antes com `ModuleNotFoundError: backend`; o CLI agora adiciona explicitamente a raiz do repositório ao `sys.path`. Suíte mantida atual: 210 passed, 17 skipped.
 
 Validação final no Ryzen5WSL após `13334ef`: 19 testes específicos passaram; serviço systemd executou com Result=success/ExecMainStatus=0; bundle `2026-07-16T051102Z` registrou offset 6 e status separado de Miqueias/v1/v2, todos corretamente incompletos no pré-mercado.
+
+2026-07-21: revisão xhigh automática foi abortada; validação manual confirmou três falhas de integridade. (1) chronological_replay escolhe posterior Kalman errado quando há barra B3 real antes de 09:00 BRT; (2) engine_revision não inclui a calibração carregada de model_params; (3) walk-forward aceita barra fora da grade M5 que fecha após decision_time. Implementação reaberta: acrescentar regressões, corrigir e revisar independentemente antes de aceitar novas sessões do ledger.
+
+2026-07-21: correção pós-revisão xhigh. Confirmados e corrigidos: (1) chronological_replay encadeava posterior errado com print B3 pré-abertura; (2) identidade runtime não cobria calibração/configuração que altera P_up; (3) git_commit fragmentava o ledger apesar de semântica idêntica; (4) walk-forward aceitava print fora da grade M5 ainda em formação. Revisão independente pipeline_deep_reviewer: GO após remediações adicionais (retry SQLite transitório, hash específico do WIN, rejeição de target fora do contrato, fail-closed sem WIN ativo). Metodologia sobe de 3 para 4; bundle v3 será preservado como superseded e a nova contagem inicia 0/60 após implantação. Validação: pytest -q tests -> 477 passed, 1 skipped; pytest focado -> 129 passed; git diff --check; python3 -m py_compile dos módulos alterados.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Ledger diário champion-challenger do WIN implementado, publicado e validado no Ryzen. Preserva Miqueias/v1/v2, OHLC M5, Pair/NWE, GEX/MID e metadados; exige fechamento causal por fonte, usa offset sazonal e rejeita manifesto adulterado. Avaliador exige 60 sessões e IC95% pareado antes de promover vencedor. Re-review independente: GO; 210 passed, 17 skipped.
+<!-- SECTION:FINAL_SUMMARY:END -->
 
 ## Comments
 
@@ -160,9 +158,3 @@ Baseline e bootstrap não foram re-tocados por estes commits — meu veredito
 anterior sobre eles (corretos) continua válido.
 ---
 <!-- COMMENTS:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Ledger diário champion-challenger do WIN implementado, publicado e validado no Ryzen. Preserva Miqueias/v1/v2, OHLC M5, Pair/NWE, GEX/MID e metadados; exige fechamento causal por fonte, usa offset sazonal e rejeita manifesto adulterado. Avaliador exige 60 sessões e IC95% pareado antes de promover vencedor. Re-review independente: GO; 210 passed, 17 skipped.
-<!-- SECTION:FINAL_SUMMARY:END -->

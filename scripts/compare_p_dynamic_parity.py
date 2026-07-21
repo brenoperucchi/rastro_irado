@@ -81,7 +81,12 @@ MANIFEST_SCHEMA_VERSION = 2
 # elegibilidade passa a recusar bundles sem proveniência do motor e o avaliador
 # recusa um ledger com mais de uma revisão -- misturar versões do Kalman também
 # invalida uma comparação OOS, mesmo com a mesma métrica.
-METHODOLOGY_VERSION = 3
+# 4 (2026-07-21): a identidade semântica inclui o código de runtime que
+# alimenta P_up e a configuração ativa do WIN em asset_models/model_params.
+# git_commit fica apenas como auditoria: um restart após commit documental não
+# reinicia o ledger, mas uma mudança de cálculo ou recalibração continua
+# incompatível.
+METHODOLOGY_VERSION = 4
 
 # v1/v2 definem o outcome do WIN, então exigem a sessão inteira até 17:50 BRT.
 # A referência pública é publicada por terceiro e fecha exatamente no limiar
@@ -141,7 +146,11 @@ def raw_archive_is_complete(raw_entries: Mapping[str, object]) -> bool:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.irai.runtime_revision import build_engine_revision, validate_engine_revision
+from backend.irai.runtime_revision import (
+    build_engine_revision,
+    prediction_revision_fingerprint,
+    validate_engine_revision,
+)
 from backend.irai.timezones import brt_to_tickmill_offset_hours
 from backend.irai.miqueias_static import (
     MiqueiasStaticConfig,
@@ -787,6 +796,15 @@ def _session_date_arg(raw: str) -> str:
         ) from exc
 
 
+def _irai18_target_arg(value: str) -> str:
+    """O ledger champion-challenger IRAI-18 tem contrato somente para WIN."""
+    if value != DEFAULT_TARGET:
+        raise argparse.ArgumentTypeError(
+            f"IRAI-18 só suporta target={DEFAULT_TARGET}; recebido {value!r}"
+        )
+    return value
+
+
 def _parse_named_source(raw: str) -> tuple[str, str]:
     name, separator, source = raw.partition("=")
     if not separator or not name.strip() or not source.strip():
@@ -887,7 +905,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "a resposta local v2 carregada nesta execução."
         ),
     )
-    parser.add_argument("--target", default=DEFAULT_TARGET)
+    parser.add_argument(
+        "--target",
+        default=DEFAULT_TARGET,
+        type=_irai18_target_arg,
+        help=f"IRAI-18 só aceita {DEFAULT_TARGET}.",
+    )
     parser.add_argument(
         "--session-date",
         required=True,
@@ -1001,7 +1024,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            if final_engine_revision != engine_revision:
+            if (
+                prediction_revision_fingerprint(final_engine_revision)
+                != prediction_revision_fingerprint(engine_revision)
+            ):
                 print(
                     "Erro: a revisão do motor mudou durante a captura de v1/v2",
                     file=sys.stderr,

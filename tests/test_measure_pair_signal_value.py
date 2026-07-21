@@ -530,6 +530,50 @@ def test_chronological_replay_encadeia_estado_entre_sessoes():
                 f"vs esperado diag({expected_value})")
 
 
+def test_chronological_replay_encadeia_ultimo_posterior_economico_com_print_pre_abertura():
+    """Print B3 real antes de 09:00 não pode deslocar o índice do posterior."""
+    _FakeKalman.set_state_calls = []
+    db = os.path.join(tempfile.mkdtemp(), "t.db")
+    tp._seed(db)
+    c = sqlite3.connect(db)
+    c.execute(
+        "INSERT INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+        "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (tp.TARGET, "br", "M5", "2026-07-10T08:55:00Z",
+         tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, tp.TODAY_OPEN, 10, 10, 0),
+    )
+    rows = c.execute(
+        "SELECT symbol, source, timeframe, timestamp_utc, open, high, low, close, "
+        "volume, real_volume, delta FROM market_bars WHERE timestamp_utc LIKE '2026-07-10%'"
+    ).fetchall()
+    for row in rows:
+        symbol, source, timeframe, ts, o, h, low, close, vol, rvol, delta = row
+        c.execute(
+            "INSERT OR IGNORE INTO market_bars (symbol, source, timeframe, timestamp_utc, "
+            "open, high, low, close, volume, real_volume, delta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (symbol, source, timeframe, ts.replace("2026-07-10", "2026-07-11"),
+             o, h, low, close, vol, rvol, delta),
+        )
+    c.commit()
+    c.close()
+
+    with chronological_replay(db, kalman_cls=_FakeKalman) as (compute, _instance):
+        first = compute("2026-07-10", tp.TARGET)
+        real = [snapshot for snapshot in first if not snapshot.is_ghost]
+        eligible = [
+            snapshot for snapshot in real
+            if psv._state_snapshot_belongs_to_session(snapshot, "2026-07-10", tp.TARGET)
+        ]
+        assert len(real) == len(eligible) + 1
+        compute("2026-07-11", tp.TARGET)
+
+    got_mean, _ = _FakeKalman.set_state_calls[0]
+    assert all(value == len(real) for value in got_mean), (
+        "o estado seguinte deve usar o posterior da última barra elegível, "
+        "não a contagem de barras elegíveis como índice"
+    )
+
+
 def test_chronological_replay_ignora_estado_de_barra_pos_pregao():
     """A última barra B3 pode cair no rótulo do dia seguinte após o alinhamento.
 

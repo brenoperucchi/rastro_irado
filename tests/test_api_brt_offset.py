@@ -123,8 +123,10 @@ def test_lifespan_migra_banco_legado_antes_de_criar_engine(tmp_path, monkeypatch
         "git_commit": "a" * 40,
         "engine_sha256": "b" * 64,
         "kalman_sha256": "c" * 64,
+        "runtime_code_sha256": "d" * 64,
+        "model_config_sha256": "e" * 64,
     }
-    monkeypatch.setattr(api_main, "build_engine_revision", lambda: revision)
+    monkeypatch.setattr(api_main, "build_engine_revision", lambda **_kwargs: revision)
 
     async def subir_api():
         async with api_main.lifespan(api_main.app):
@@ -132,6 +134,45 @@ def test_lifespan_migra_banco_legado_antes_de_criar_engine(tmp_path, monkeypatch
 
     asyncio.run(subir_api())
     assert api_main.p_dynamic_runtime_revision == revision
+
+
+def test_lifespan_nao_anuncia_revisao_se_calibracao_muda_no_startup(
+    tmp_path, monkeypatch
+):
+    """O hash precisa representar os parâmetros que o engine realmente carregou."""
+    if _skip_if_no_fastapi():
+        return
+
+    db_path = tmp_path / "runtime.db"
+    connection = sqlite3.connect(db_path)
+    connection.executescript(SCHEMA)
+    connection.close()
+
+    class EngineFake:
+        models = {}
+        registered_targets = []
+
+    before = {
+        "git_commit": "a" * 40,
+        "engine_sha256": "b" * 64,
+        "kalman_sha256": "c" * 64,
+        "runtime_code_sha256": "d" * 64,
+        "model_config_sha256": "e" * 64,
+    }
+    after = {**before, "model_config_sha256": "f" * 64}
+    revisions = iter((before, after))
+    monkeypatch.setattr(api_main, "DB_PATH", str(db_path))
+    monkeypatch.setattr(api_main, "IRAIEngine", EngineFake)
+    monkeypatch.setattr(
+        api_main, "build_engine_revision", lambda **_kwargs: next(revisions)
+    )
+
+    async def subir_api():
+        async with api_main.lifespan(api_main.app):
+            pass
+
+    asyncio.run(subir_api())
+    assert api_main.p_dynamic_runtime_revision is None
 
 
 def _seed(db_path, *, target, source, session, session_start_h):

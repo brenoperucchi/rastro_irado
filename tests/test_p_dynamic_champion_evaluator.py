@@ -80,6 +80,8 @@ def _add_auditable_raw(bundle, manifest):
             "git_commit": "a" * 40,
             "engine_sha256": "b" * 64,
             "kalman_sha256": "c" * 64,
+            "runtime_code_sha256": "d" * 64,
+            "model_config_sha256": "e" * 64,
         },
     )
     return manifest
@@ -516,6 +518,8 @@ def test_avaliador_nunca_consome_o_payload_cru(tmp_path):
                     "git_commit": "a" * 40,
                     "engine_sha256": "b" * 64,
                     "kalman_sha256": "c" * 64,
+                    "runtime_code_sha256": "d" * 64,
+                    "model_config_sha256": "e" * 64,
                 },
             }
         ),
@@ -870,6 +874,8 @@ def _forge_bundle(
             "git_commit": "a" * 40,
             "engine_sha256": "b" * 64,
             "kalman_sha256": "c" * 64,
+            "runtime_code_sha256": "d" * 64,
+            "model_config_sha256": "e" * 64,
         },
     )
     (bundle / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -1001,6 +1007,24 @@ def test_ingestao_recusa_manifesto_sem_revisao_do_motor(tmp_path):
     assert "revisão verificável" in audit["invalid_reasons"][0]
 
 
+def test_ingestao_recusa_revisao_sem_configuracao_calibrada(tmp_path):
+    """Um manifesto sem hash de configuração não prova qual P_up produziu."""
+    series = _session_grid(
+        "2026-07-16", 50.0, count=108, win_open=110.0, win_current=105.0
+    )
+    bundle = _forge_bundle(tmp_path, series)
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["engine_revision"].pop("model_config_sha256")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    sessions, audit = load_ledger_sessions(tmp_path)
+
+    assert sessions == []
+    assert audit["invalid_bundles"] == 1
+    assert "model_config_sha256" in audit["invalid_reasons"][0]
+
+
 def test_ingestao_recusa_ledger_com_revisoes_do_motor_mistas(tmp_path):
     """A metodologia igual não autoriza misturar p_up gerados antes/depois de
     uma alteração do Kalman. O avaliador deve parar, não escolher um grupo."""
@@ -1019,7 +1043,7 @@ def test_ingestao_recusa_ledger_com_revisoes_do_motor_mistas(tmp_path):
     )
     manifest_path = bundle_b / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["engine_revision"]["engine_sha256"] = "d" * 64
+    manifest["engine_revision"]["runtime_code_sha256"] = "f" * 64
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     sessions, audit = load_ledger_sessions(tmp_path)
@@ -1028,6 +1052,32 @@ def test_ingestao_recusa_ledger_com_revisoes_do_motor_mistas(tmp_path):
     assert audit["mixed_engine_revision_bundles"] == 2
     assert len(audit["engine_revision_groups"]) == 2
     assert "múltiplas revisões" in audit["invalid_reasons"][-1]
+
+
+def test_ingestao_nao_descarta_ledger_quando_so_git_commit_muda(tmp_path):
+    """Commit de docs não muda o motor de previsão nem reinicia 60 sessões."""
+    _forge_bundle(
+        tmp_path,
+        _session_grid("2026-07-16", 50.0, count=108, win_open=110.0, win_current=105.0),
+        capture_name="revision-a",
+        session_date="2026-07-16",
+    )
+    second = _forge_bundle(
+        tmp_path,
+        _session_grid("2026-07-17", 50.0, count=108, win_open=110.0, win_current=105.0),
+        capture_name="revision-b",
+        session_date="2026-07-17",
+    )
+    manifest_path = second / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["engine_revision"]["git_commit"] = "d" * 40
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    sessions, audit = load_ledger_sessions(tmp_path)
+
+    assert len(sessions) == 2
+    assert audit["mixed_engine_revision_bundles"] == 0
+    assert len(audit["engine_revision_groups"]) == 1
 
 
 def test_ingestao_recusa_outcome_sem_preco_em_uma_fonte_local(tmp_path):
