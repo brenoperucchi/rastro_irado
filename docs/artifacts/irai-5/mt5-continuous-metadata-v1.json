@@ -1,0 +1,36 @@
+{
+  "schema_version": "irai.mt5-continuous-metadata.v1",
+  "captured_at": "2026-07-20T23:09:41+00:00",
+  "terminal": {
+    "requested_executable": "E:\\MetaTradersWSL\\wdowin\\irai\\terminal64.exe",
+    "path": "E:\\MetaTradersWSL\\wdowin\\irai",
+    "data_path": "E:\\MetaTradersWSL\\wdowin\\irai",
+    "company": "MetaQuotes Software Corp.",
+    "connected": true
+  },
+  "account_company": "XP Investimentos CCTVM S/A",
+  "symbols": {
+    "WIN$N": {
+      "name": "WIN$N",
+      "description": "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes",
+      "path": "BMF\\SERIES CONTINUAS\\WIN$N",
+      "currency_base": "BRL",
+      "currency_profit": "BRL",
+      "trade_mode": 0,
+      "visible": true,
+      "start_time": 0,
+      "expiration_time": 0
+    },
+    "WDO$N": {
+      "name": "WDO$N",
+      "description": "DOLAR MINI - Por Liquidez (WDOQ26) - Sem Ajustes",
+      "path": "BMF\\SERIES CONTINUAS\\WDO$N",
+      "currency_base": "BRL",
+      "currency_profit": "BRL",
+      "trade_mode": 0,
+      "visible": true,
+      "start_time": 0,
+      "expiration_time": 0
+    }
+  }
+}

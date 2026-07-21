@@ -2,17 +2,21 @@
   "schema_version": "irai.rollover-audit.v1",
   "symbol": "WIN$N",
   "source": "br",
-  "database": "/mnt/c/Users/brenoperucchi/devs/rastro_irado/data/irai.db",
+  "database": "/tmp/irai-p-dynamic-snapshot-20260720.db",
+  "database_fingerprint": {
+    "size_bytes": 813817856,
+    "sha256": "2635c029791e5b8e637d769f98bd219c1b7f4eac1ed416470ed64308c066e230"
+  },
   "mt5_series_description": "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes",
   "continuous_method": "liquidity_continuous_unadjusted",
   "calendar_rule": "B3 WIN: even months, Wednesday nearest the 15th; next trading session when the contractual date has no session",
   "calendar_source_url": "https://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/renda-variavel/futuro-mini-de-ibovespa.htm",
   "audit": {
-    "sessions_observed": 1251,
+    "sessions_observed": 1252,
     "first_session": "2021-07-12",
-    "last_session": "2026-07-15",
+    "last_session": "2026-07-16",
     "median_absolute_overnight_gap_points": 340.0,
-    "p95_absolute_overnight_gap_points": 1498.2499999999993,
+    "p95_absolute_overnight_gap_points": 1497.5,
     "window_sessions_each_side": 1,
     "excluded_sessions": [
       "2021-08-17",
@@ -383,5 +387,29 @@
     "The MT5 description classifies the broker series, but does not expose every historical switch timestamp.",
     "Contractual expiries are mapped to observed sessions; liquidity-driven switches may occur earlier.",
     "Event-result sensitivity must be computed from the NF-01 event ledger using excluded_sessions."
-  ]
+  ],
+  "mt5_capture": {
+    "schema_version": "irai.mt5-continuous-metadata.v1",
+    "captured_at": "2026-07-20T23:09:41+00:00",
+    "terminal": {
+      "requested_executable": "E:\\MetaTradersWSL\\wdowin\\irai\\terminal64.exe",
+      "path": "E:\\MetaTradersWSL\\wdowin\\irai",
+      "data_path": "E:\\MetaTradersWSL\\wdowin\\irai",
+      "company": "MetaQuotes Software Corp.",
+      "connected": true
+    },
+    "symbols": {
+      "WIN$N": {
+        "name": "WIN$N",
+        "description": "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes",
+        "path": "BMF\\SERIES CONTINUAS\\WIN$N",
+        "currency_base": "BRL",
+        "currency_profit": "BRL",
+        "trade_mode": 0,
+        "visible": true,
+        "start_time": 0,
+        "expiration_time": 0
+      }
+    }
+  }
 }

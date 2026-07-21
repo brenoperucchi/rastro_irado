@@ -644,7 +644,9 @@ implementação: `codex` (worktree isolada, sem gravação em produção,
 5. 🚧 **NF-01B/VAL-04:** braço executável concluído sem edge promovível nos markers atuais;
    comparar o Pair fixo e avaliar a regra local com/sem IRAI, mantendo exploração separada
    do gate confirmatório.
-6. Auditar rollover e aplicar o gate: parar, promover regra simples ou autorizar NF-02.
+6. 🚧 Auditar rollover: construção WIN/WDO e sensibilidade de calendário concluídas; manter o
+   gate provisório até evidência do instante histórico do switch por liquidez, antes de parar,
+   promover regra simples ou autorizar NF-02.
 7. Executar NF-02 somente se houver hipótese incremental pré-registrada.
 8. Criar migrações e implementar estados/eventos apenas para hipótese aprovada.
 9. Implementar governança, drift, despromoção, API/Firebase e UI com flag desligada.
@@ -681,8 +683,10 @@ Alegar validação live a partir do Linux. Polimento de frontend (Parte 3).
 Isto é resultado, não omissão:
 - **F3** (`real_volume=0` histórico) segue **SOLO**, não verificado. Não deve virar código
   antes de uma checagem. O D4 já foi confirmado e corrigido; não pertence mais a esta lista.
-- **Rollover de contratos** — se a série `$N` é ajustada ou concatenada crua, e quantas rolagens
-  caem na janela, exige inspeção no MT5.
+- **Timestamp histórico do rollover por liquidez** — a captura MT5 confirmou que `WIN$N` e
+  `WDO$N` são séries "Por Liquidez" sem ajustes, e a sensibilidade de calendário foi medida;
+  ainda falta provar quando cada troca efetiva ocorreu. Isso requer contratos individuais ou
+  agenda histórica do broker, não apenas o calendário de vencimento da B3.
 - **Convenção de DST do broker** — medi o comportamento (regra dos EUA), não a política oficial
   documentada da Tickmill. A tabela de offsets deve ser **derivada do dado**, não do calendário.
 - **Firebase de produção** — exige auth (401); o contrato real servido ao mobile não foi inspecionado.

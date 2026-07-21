@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-07-15 22:48'
-updated_date: '2026-07-16 14:12'
+updated_date: '2026-07-20 23:24'
 labels:
   - validation
   - operations
@@ -13,15 +13,7 @@ milestone: m-0
 dependencies: []
 references:
   - docs/plans/2026-07-13-irai-plano-consolidado.md
-modified_files:
-  - scripts/audit_continuous_rollover.py
-  - scripts/measure_rollover_sensitivity.py
-  - tests/test_audit_continuous_rollover.py
-  - tests/test_measure_rollover_sensitivity.py
-  - docs/artifacts/irai-5/win-rollover-audit-v1.json
-  - docs/artifacts/irai-5/win-rollover-sensitivity-v1.json
 priority: high
-type: spike
 ordinal: 5000
 ---
 
@@ -33,7 +25,7 @@ Determinar no MT5 se as séries $N são ajustadas, concatenadas cruas ou tratada
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Método de construção de WIN$N e WDO$N é verificado no ambiente Windows/MT5
+- [x] #1 Método de construção de WIN$N e WDO$N é verificado no ambiente Windows/MT5
 - [x] #2 Datas de rollover relevantes são identificadas no histórico do NF-01
 - [x] #3 Sensibilidade dos resultados com e sem janelas de rollover é reportada
 - [ ] #4 Gate econômico deixa de carregar status provisório somente após esta auditoria
@@ -49,6 +41,8 @@ Determinar no MT5 se as séries $N são ajustadas, concatenadas cruas ou tratada
 
 <!-- SECTION:NOTES:BEGIN -->
 Trabalho iniciado em paralelo ao fechamento do IRAI-2 pelo Claude. A primeira fatia é WIN$N, coerente com o piloto atual; nenhuma conclusão do NF-01 será promovida antes deste gate.
+
+2026-07-20: WIN$N e WDO$N verificados read-only no MT5/XP: ambas as descricoes sao "Por Liquidez" e "Sem Ajustes". Auditorias e sensibilidades foram regeneradas do snapshot fechado /tmp/irai-p-dynamic-snapshot-20260720.db (SHA-256 2635c029...e230), com captura MT5, fingerprint do SQLite e intervalo de auditoria validados pelo consumidor. Revisor independente aprovou R1/R3; R2 permanece aberto: calendario B3 nao prova o timestamp historico da troca efetiva por liquidez. Arquivos: scripts/audit_continuous_rollover.py, scripts/capture_mt5_continuous_metadata.py, scripts/measure_rollover_sensitivity.py, docs/artifacts/irai-5/. Validacao: py_compile; pytest focal 22 passed; pytest -q tests 464 passed, 1 skipped; reproducao WIN/WDO com bootstrap 10000.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

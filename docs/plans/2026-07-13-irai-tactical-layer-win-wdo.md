@@ -191,12 +191,20 @@ se as séries `$N` são ajustadas, concatenadas cruas ou tratadas de outra forma
 deve identificar rollovers relevantes e reportar sensibilidade com e sem suas janelas.
 Gaps artificiais não podem ser interpretados como distorção econômica.
 
-**Auditoria WIN de 2026-07-16.** O MT5/XP identifica `WIN$N` como série contínua por
-liquidez **sem ajustes**. No ledger executável do NF-01B, excluir uma sessão antes, a sessão
-de vencimento e uma sessão depois removeu 261/3.697 eventos Pair (7,06%), não criou edge
-positivo e tornou o agregado `h=3` significativamente negativo. Portanto, o rollover
-mascarava parte da perda em vez de fabricar a ausência de edge. O gate continua provisório
-até completar o WDO.
+**Auditoria WIN/WDO de 2026-07-20.** A captura read-only do MT5/XP identifica `WIN$N` e
+`WDO$N` como séries contínuas **por liquidez, sem ajustes**. As auditorias reproduzíveis
+(`docs/artifacts/irai-5/*-rollover-audit-v1.json`) usam o snapshot fechado até 2026-07-16,
+guardam fingerprint do SQLite, calendário oficial da B3 e a descrição MT5 que qualifica cada
+série. A sensibilidade NF-01 exclui uma sessão antes, a sessão contratual e uma depois: no
+Pair removeu 261/3.693 eventos WIN (7,07%) e 556/3.833 eventos WDO (14,51%). Em `h=3`, WIN
+permanece sem edge significativo (IC95% inclui zero) e WDO permanece significativamente
+negativo com e sem exclusão. Logo, a janela de calendário não cria edge positivo.
+
+O gate econômico **continua `provisional`**: a descrição "Por Liquidez" e o calendário de
+vencimento não provam o timestamp histórico em que o broker trocou cada contrato. Para
+encerrá-lo é necessário evidência de contratos individuais ou agenda histórica de rollover do
+broker; até lá, as janelas usadas são teste de sensibilidade de calendário, não identificação
+do switch efetivo por liquidez.
 
 ### 5.5 Resultado do braço executável do NF-01B
 

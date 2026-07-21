@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audita o rollover da série contínua WIN sem modificar o banco.
+"""Audita o rollover de séries contínuas B3 sem modificar o banco.
 
 A série ``$N`` é fornecida pelo broker. Este utilitário combina a descrição
 observada no MT5 com o calendário contratual da B3 e as descontinuidades
@@ -10,7 +10,7 @@ Exemplo (WIN):
 
     python3 -X utf8 scripts/audit_continuous_rollover.py \
       --db data/irai.db --symbol 'WIN$N' --source br \
-      --series-description 'IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes' \
+      --mt5-metadata docs/artifacts/irai-5/mt5-continuous-metadata-v1.json \
       --output-json win_rollover_audit.json
 
 O script não tenta inferir sozinho o instante intradiário da troca do contrato:
@@ -20,20 +20,27 @@ as séries vencidas não necessariamente permanecem disponíveis no servidor MT5
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import ntpath
 import sqlite3
 from dataclasses import asdict, dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import median
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 
 SCHEMA_VERSION = "irai.rollover-audit.v1"
+MT5_METADATA_SCHEMA_VERSION = "irai.mt5-continuous-metadata.v1"
 EVEN_MONTHS = (2, 4, 6, 8, 10, 12)
 B3_WIN_CONTRACT_URL = (
     "https://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/"
     "renda-variavel/futuro-mini-de-ibovespa.htm"
+)
+B3_WDO_CONTRACT_URL = (
+    "https://www.b3.com.br/pt_br/produtos-e-servicos/negociacao/moedas/"
+    "futuro-mini-de-taxa-de-cambio-de-reais-por-dolar-comercial.htm"
 )
 
 
@@ -50,6 +57,10 @@ class DailyBar:
 
 def _parse_date(value: str) -> date:
     return date.fromisoformat(value[:10])
+
+
+def _same_windows_path(left: str, right: str) -> bool:
+    return ntpath.normcase(ntpath.normpath(left)) == ntpath.normcase(ntpath.normpath(right))
 
 
 def _nearest_wednesday_to_15(year: int, month: int) -> date:
@@ -80,18 +91,59 @@ def expected_win_expiries(start: str, end: str) -> list[date]:
     return result
 
 
+def expected_wdo_expiries(start: str, end: str) -> list[date]:
+    """Vencimentos mensais do WDO no intervalo inclusivo.
+
+    A B3 define o vencimento como o primeiro dia de sessão de negociação do
+    mês. A data civil abaixo é convertida pela ``audit_rollovers`` para a
+    primeira sessão observada no banco, cobrindo fins de semana e feriados sem
+    manter um calendário B3 paralelo no código.
+    """
+    start_date = _parse_date(start)
+    end_date = _parse_date(end)
+    if end_date < start_date:
+        raise ValueError("end deve ser igual ou posterior a start")
+
+    result = []
+    for year in range(start_date.year, end_date.year + 1):
+        for month in range(1, 13):
+            expiry = date(year, month, 1)
+            if start_date <= expiry <= end_date:
+                result.append(expiry)
+    return result
+
+
 def calendar_for_symbol(symbol: str, start: str, end: str) -> list[date]:
     """Seleciona uma regra explicitamente validada para o ativo.
 
-    O primeiro corte do IRAI-5 é deliberadamente WIN. Falhar de forma clara
-    evita aplicar ao WDO, por conveniência, uma regra contratual que não foi
-    implementada nem validada nesta fatia.
+    WIN e WDO têm regras contratuais distintas. Falhar de forma clara evita
+    aplicar por conveniência o calendário de um ativo a outro.
     """
     if symbol == "WIN$N":
         return expected_win_expiries(start, end)
+    if symbol == "WDO$N":
+        return expected_wdo_expiries(start, end)
     raise NotImplementedError(
-        f"calendário de rollover de {symbol!r} ainda não implementado; "
-        "esta versão do auditor cobre somente WIN$N"
+        f"calendário de rollover de {symbol!r} ainda não implementado"
+    )
+
+
+def calendar_metadata_for_symbol(symbol: str) -> tuple[str, str]:
+    """Retorna regra legível e fonte oficial do calendário do ativo."""
+    if symbol == "WIN$N":
+        return (
+            "B3 WIN: even months, Wednesday nearest the 15th; next trading "
+            "session when the contractual date has no session",
+            B3_WIN_CONTRACT_URL,
+        )
+    if symbol == "WDO$N":
+        return (
+            "B3 WDO: first trading session of each contract month; next observed "
+            "session when the civil first day has no session",
+            B3_WDO_CONTRACT_URL,
+        )
+    raise NotImplementedError(
+        f"metadados de calendário de rollover de {symbol!r} ainda não implementados"
     )
 
 
@@ -152,6 +204,16 @@ def load_daily_bars(db_path: str, symbol: str, source: str = "br") -> list[Daily
             bars=len(session_rows),
         ))
     return daily
+
+
+def fingerprint_database(db_path: str) -> dict:
+    """Identifica a cópia SQLite usada para a auditoria offline."""
+    path = Path(db_path).resolve()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return {"size_bytes": path.stat().st_size, "sha256": digest.hexdigest()}
 
 
 def audit_rollovers(
@@ -233,18 +295,17 @@ def build_report(
     if not bars:
         raise RuntimeError(f"nenhuma barra M5 encontrada para {symbol!r}/{source!r}")
     expiries = calendar_for_symbol(symbol, bars[0].session_date, bars[-1].session_date)
+    calendar_rule, calendar_source_url = calendar_metadata_for_symbol(symbol)
     return {
         "schema_version": SCHEMA_VERSION,
         "symbol": symbol,
         "source": source,
         "database": str(Path(db_path).resolve()),
+        "database_fingerprint": fingerprint_database(db_path),
         "mt5_series_description": series_description,
         "continuous_method": infer_continuous_method(series_description),
-        "calendar_rule": (
-            "B3 WIN: even months, Wednesday nearest the 15th; next trading "
-            "session when the contractual date has no session"
-        ),
-        "calendar_source_url": B3_WIN_CONTRACT_URL,
+        "calendar_rule": calendar_rule,
+        "calendar_source_url": calendar_source_url,
         "audit": audit_rollovers(
             bars,
             expected_expiries=expiries,
@@ -263,21 +324,90 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", required=True)
     parser.add_argument("--symbol", default="WIN$N")
     parser.add_argument("--source", default="br")
-    parser.add_argument("--series-description")
+    parser.add_argument(
+        "--mt5-metadata",
+        required=True,
+        help=(
+            "JSON do capture_mt5_continuous_metadata.py; usa a descrição do "
+            "símbolo e preserva sua proveniência no relatório"
+        ),
+    )
     parser.add_argument("--window-sessions", type=int, default=1)
     parser.add_argument("--output-json")
     return parser
 
 
+def validate_mt5_capture(document: Mapping[str, object], symbol: str) -> dict:
+    """Valida a prova MT5 incorporada no artefato de auditoria.
+
+    A captura tem de ser estruturalmente suficiente por si só: o consumidor da
+    sensibilidade não deve confiar apenas no campo ``continuous_method``.
+    """
+    if document.get("schema_version") != MT5_METADATA_SCHEMA_VERSION:
+        raise ValueError("captura MT5 possui schema_version incompatível")
+    captured_at = document.get("captured_at")
+    if not isinstance(captured_at, str) or not captured_at:
+        raise ValueError("captura MT5 não contém captured_at")
+    try:
+        datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("captura MT5 possui captured_at inválido") from exc
+    symbols = document.get("symbols")
+    selected = symbols.get(symbol) if isinstance(symbols, Mapping) else None
+    if not isinstance(selected, dict):
+        raise ValueError(f"captura MT5 não contém {symbol!r}")
+    if selected.get("name") != symbol:
+        raise ValueError(f"captura MT5 contém símbolo inconsistente para {symbol!r}")
+    description = selected.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError(f"captura MT5 não contém descrição de {symbol!r}")
+    terminal = document.get("terminal")
+    if (
+        not isinstance(terminal, Mapping)
+        or terminal.get("connected") is not True
+        or not isinstance(terminal.get("requested_executable"), str)
+        or not terminal.get("requested_executable")
+        or not isinstance(terminal.get("data_path"), str)
+        or not terminal.get("data_path")
+        or not isinstance(terminal.get("path"), str)
+        or not terminal.get("path")
+    ):
+        raise ValueError("captura MT5 não comprova terminal conectado")
+    executable = terminal["requested_executable"]
+    expected_data_path = ntpath.dirname(executable)
+    if not _same_windows_path(terminal["data_path"], expected_data_path):
+        raise ValueError("captura MT5 possui data_path incompatível com o executável")
+    if not (
+        _same_windows_path(terminal["path"], executable)
+        or _same_windows_path(terminal["path"], expected_data_path)
+    ):
+        raise ValueError("captura MT5 possui path incompatível com o executável")
+    return {
+        "schema_version": document["schema_version"],
+        "captured_at": captured_at,
+        "terminal": dict(terminal),
+        "symbols": {symbol: selected},
+    }
+
+
+def mt5_metadata_for_symbol(path: str, symbol: str) -> dict:
+    """Carrega a captura MT5 e a valida antes da auditoria offline."""
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    return validate_mt5_capture(document, symbol)
+
+
 def main() -> int:
     args = _parser().parse_args()
+    mt5_capture = mt5_metadata_for_symbol(args.mt5_metadata, args.symbol)
+    description = mt5_capture["symbols"][args.symbol]["description"]
     report = build_report(
         args.db,
         args.symbol,
         args.source,
-        args.series_description,
+        description,
         args.window_sessions,
     )
+    report["mt5_capture"] = mt5_capture
     payload = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output_json:
         output = Path(args.output_json)

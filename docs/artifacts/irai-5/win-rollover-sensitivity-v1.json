@@ -1,6 +1,6 @@
 {
   "schema_version": "irai.rollover-sensitivity.v1",
-  "generated_at": "2026-07-16T12:35:40+00:00",
+  "generated_at": "2026-07-20T23:20:39+00:00",
   "target": "WIN$N",
   "bootstrap_iterations": 10000,
   "rollover_window_sessions_each_side": 1,
@@ -108,7 +108,39 @@
   },
   "rollover_source": {
     "schema_version": "irai.rollover-audit.v1",
-    "continuous_method": "liquidity_continuous_unadjusted"
+    "continuous_method": "liquidity_continuous_unadjusted",
+    "database_fingerprint": {
+      "size_bytes": 813817856,
+      "sha256": "2635c029791e5b8e637d769f98bd219c1b7f4eac1ed416470ed64308c066e230"
+    },
+    "audit_interval": {
+      "first_session": "2021-07-12",
+      "last_session": "2026-07-16"
+    },
+    "mt5_capture": {
+      "schema_version": "irai.mt5-continuous-metadata.v1",
+      "captured_at": "2026-07-20T23:09:41+00:00",
+      "terminal": {
+        "requested_executable": "E:\\MetaTradersWSL\\wdowin\\irai\\terminal64.exe",
+        "path": "E:\\MetaTradersWSL\\wdowin\\irai",
+        "data_path": "E:\\MetaTradersWSL\\wdowin\\irai",
+        "company": "MetaQuotes Software Corp.",
+        "connected": true
+      },
+      "symbols": {
+        "WIN$N": {
+          "name": "WIN$N",
+          "description": "IBOVESPA MINI - Por Liquidez (WINQ26) - Sem Ajustes",
+          "path": "BMF\\SERIES CONTINUAS\\WIN$N",
+          "currency_base": "BRL",
+          "currency_profit": "BRL",
+          "trade_mode": 0,
+          "visible": true,
+          "start_time": 0,
+          "expiration_time": 0
+        }
+      }
+    }
   },
   "signals": {
     "pair": {

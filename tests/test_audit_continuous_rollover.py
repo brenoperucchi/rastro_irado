@@ -7,10 +7,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.audit_continuous_rollover import (
     DailyBar,
+    _parser,
     audit_rollovers,
     calendar_for_symbol,
+    expected_wdo_expiries,
     expected_win_expiries,
     infer_continuous_method,
+    mt5_metadata_for_symbol,
 )
 
 
@@ -71,10 +74,102 @@ def test_descricao_mt5_sem_ajustes_classifica_serie_crua_por_liquidez():
     assert infer_continuous_method(description) == "liquidity_continuous_unadjusted"
 
 
-def test_auditor_nao_aplica_calendario_win_ao_wdo_silenciosamente():
+def test_calendario_wdo_usa_primeiro_dia_do_mes_e_nao_herda_regra_win():
+    expiries = expected_wdo_expiries("2026-01-01", "2026-04-30")
+
+    assert [expiry.isoformat() for expiry in expiries] == [
+        "2026-01-01",
+        "2026-02-01",
+        "2026-03-01",
+        "2026-04-01",
+    ]
+    assert calendar_for_symbol("WDO$N", "2026-01-01", "2026-04-30") == expiries
+
+
+def test_vencimento_wdo_em_fim_de_semana_mapeia_para_proxima_sessao_observada():
+    bars = [
+        _bar("2026-01-30", 5_300.0, 5_305.0),
+        _bar("2026-02-02", 5_350.0, 5_360.0),
+    ]
+
+    report = audit_rollovers(
+        bars,
+        expected_expiries=expected_wdo_expiries("2026-02-01", "2026-02-28"),
+    )
+
+    rollover = report["rollovers"][0]
+    assert rollover["contractual_expiry"] == "2026-02-01"
+    assert rollover["effective_session"] == "2026-02-02"
+    assert rollover["previous_session"] == "2026-01-30"
+
+
+def test_captura_mt5_exige_terminal_conectado_e_descricao_do_simbolo(tmp_path):
+    path = tmp_path / "metadata.json"
+    path.write_text(
+        """{
+          "schema_version": "irai.mt5-continuous-metadata.v1",
+          "captured_at": "2026-07-20T22:48:45+00:00",
+          "terminal": {
+            "connected": true,
+            "requested_executable": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai\\\\terminal64.exe",
+            "data_path": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai",
+            "path": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai"
+          },
+          "symbols": {
+            "WDO$N": {"name": "WDO$N", "description": "DOLAR MINI - Por Liquidez (WDOQ26) - Sem Ajustes"}
+          }
+        }""",
+        encoding="utf-8",
+    )
+
+    result = mt5_metadata_for_symbol(str(path), "WDO$N")
+
+    assert result["symbols"]["WDO$N"]["description"].endswith("Sem Ajustes")
+
+
+def test_captura_mt5_recusa_schema_incompativel(tmp_path):
+    path = tmp_path / "metadata.json"
+    path.write_text("{}", encoding="utf-8")
+
     try:
-        calendar_for_symbol("WDO$N", "2026-01-01", "2026-12-31")
-    except NotImplementedError as exc:
-        assert "WDO$N" in str(exc)
+        mt5_metadata_for_symbol(str(path), "WDO$N")
+    except ValueError as exc:
+        assert "schema_version" in str(exc)
     else:
-        raise AssertionError("WDO não pode herdar a regra de vencimento do WIN")
+        raise AssertionError("schema de captura desconhecido não pode ser aceito")
+
+
+def test_captura_mt5_recusa_connected_que_nao_seja_booleano_exato(tmp_path):
+    path = tmp_path / "metadata.json"
+    path.write_text(
+        """{
+          "schema_version": "irai.mt5-continuous-metadata.v1",
+          "captured_at": "2026-07-20T22:48:45+00:00",
+          "terminal": {
+            "connected": "true",
+            "requested_executable": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai\\\\terminal64.exe",
+            "data_path": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai",
+            "path": "E:\\\\MetaTradersWSL\\\\wdowin\\\\irai"
+          },
+          "symbols": {
+            "WDO$N": {"name": "WDO$N", "description": "DOLAR MINI - Por Liquidez - Sem Ajustes"}
+          }
+        }""",
+        encoding="utf-8",
+    )
+
+    try:
+        mt5_metadata_for_symbol(str(path), "WDO$N")
+    except ValueError as exc:
+        assert "conectado" in str(exc)
+    else:
+        raise AssertionError("connected textual não pode comprovar terminal MT5")
+
+
+def test_cli_exige_captura_mt5_para_nao_gerar_auditoria_sem_proveniencia():
+    try:
+        _parser().parse_args(["--db", "irai.db"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("--mt5-metadata deve ser obrigatório")
