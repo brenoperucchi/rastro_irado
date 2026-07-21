@@ -174,11 +174,13 @@ timer diário `rastro-irado-p-dynamic-ledger.timer`, Mon-Fri 17:56 BRT, capturan
 
 ## 8. Estado do ledger champion-challenger (IRAI-18) em 2026-07-20
 
-**`methodology_version: 3` — ledger permanece em 0/60.**
+**`methodology_version: 3` — ledger em 1/60.**
 
-Estado real de `data/p_dynamic_parity/`: **vazio**. `sessões=0/60`,
-`status: INCONCLUSIVE`, `quality_winner: null`. A contagem recomeça do zero sob a
-regra nova; a captura diária volta a acumular a partir da próxima sessão útil.
+Após a captura regular de 2026-07-20, `data/p_dynamic_parity/` contém uma sessão
+elegível da revisão runtime `f0b63d4`. `sessões=1/60`, `status: INCONCLUSIVE`,
+`quality_winner: null`. Métricas de uma única sessão não têm AUC definida e não são
+interpretadas como evidência de qualidade; a captura diária segue acumulando sob a regra
+nova.
 
 As duas sessões que existiam (2026-07-16 e 2026-07-17) foram movidas para
 `data/p_dynamic_parity_pre_2026-07-19_rule_change/` — **superseded**, não apagadas. Elas
@@ -419,3 +421,27 @@ O delta Brier pareado `v2 - v1` foi `-0,00322724`, IC95% bootstrap por sessão
 estático tem apenas 16 sessões e o seu IC95% contra v2 também inclui zero. A comparação
 prospectiva de três braços do ledger IRAI-18 continua necessária para confrontar a curva
 publicada do Miqueias sob regras idênticas.
+
+## 10. Diagnóstico AUC, Brier e acurácia (2026-07-20)
+
+A acurácia idêntica não é coincidência nem indica curvas iguais. No mesmo artefato de
+230 observações, v1 e v2 discordam em 28 decisões ao limiar de 50%: v1 acerta sozinha
+14 e v2 acerta sozinha 14. Por isso ambas terminam com 132/230 acertos (57,391304%),
+mesmo com probabilidades diferentes (correlação 0,935969; diferença absoluta média de
+0,024438).
+
+O AUC mede a ordenação entre sessões positivas e negativas, enquanto a acurácia usa
+apenas o lado de um único limiar. A v2 melhora o AUC pontual em `+0,02983547`, mas o
+bootstrap pareado de 20.000 reamostragens por sessão (seed `20260720`) deu IC95%
+`[-0,00321763, +0,06394788]`; portanto, também não sustenta promoção. Os deltas
+pareados v2-v1 para Brier e log-loss são, respectivamente, `-0,00322375` (IC95%
+`[-0,00725652, +0,00081670]`) e `-0,00622642` (IC95%
+`[-0,01457327, +0,00213587]`). Os três pontos favorecem v2, mas os três intervalos
+ainda contêm zero.
+
+A calibração por faixas fixas é somente descritiva nesta amostra: o ECE de seis faixas
+foi 0,043506 para v1 e 0,060663 para v2, com várias faixas de 24 a 58 sessões. Isto não
+prova que v2 esteja pior calibrada e não justifica recalibração. Qualquer ajuste de
+limiar ou calibração escolhido nesta mesma amostra seria in-sample e introduziria
+lookahead. A decisão permanece: manter v1/v2 em paralelo, sem promoção, e acumular
+evidência prospectiva no ledger IRAI-18.

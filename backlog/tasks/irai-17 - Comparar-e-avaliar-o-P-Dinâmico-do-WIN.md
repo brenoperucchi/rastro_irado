@@ -5,7 +5,7 @@ status: Review
 assignee:
   - '@codex'
 created_date: '2026-07-16 04:15'
-updated_date: '2026-07-16 12:29'
+updated_date: '2026-07-20 21:26'
 labels:
   - validation
   - win
@@ -16,13 +16,7 @@ references:
   - 'https://rastromacro-default-rtdb.firebaseio.com/series/WIN_N.json'
 documentation:
   - docs/plans/2026-07-13-irai-plano-consolidado.md
-modified_files:
-  - scripts/compare_p_dynamic_parity.py
-  - tests/test_compare_p_dynamic_parity.py
-  - .gitignore
-  - docs/plans/2026-07-13-irai-plano-consolidado.md
 priority: high
-type: spike
 ordinal: 17000
 ---
 
@@ -62,6 +56,14 @@ Execução real no Ryzen5WSL em 2026-07-16 04:27 UTC, após push/pull, contra Fi
 Validação executada: `pytest -q tests/test_compare_p_dynamic_parity.py` → 9 passed localmente e 9 passed no Ryzen5WSL; `python3 -m py_compile scripts/compare_p_dynamic_parity.py`; execução produtiva via `python3 -X utf8 scripts/compare_p_dynamic_parity.py --local-api http://localhost:8888 --capture-dir data/p_dynamic_parity --output-json data/p_dynamic_parity/latest.json`. Commits publicados e aplicados no WSL: `9f4631a`, `8ffb7b0`, `06f2f73`.
 
 Captura operacional de fechamento agendada no Ryzen5WSL com timer de usuário `irai-p-dynamic-parity-close-20260716.timer` para 2026-07-16 17:56 BRT (AccuracySec=30s), antes da virada do eixo Tickmill. O serviço executará o mesmo comparador e atualizará `data/p_dynamic_parity/latest.json`, mantendo o bundle bruto Miqueias/v1/v2.
+
+2026-07-20: retomada para diagnosticar a divergência AUC/Brier e a acurácia idêntica do walk-forward v1/v2. Escopo analítico: decomposição por limiar, calibração e ranking; sem retreino, promoção ou alteração de produção.
+
+2026-07-20: diagnóstico do walk-forward PIT concluído (230 sessões). A acurácia idêntica vem de 28 discordâncias a 50%, com 14 acertos exclusivos para cada versão (132/230 ambas), não de curvas iguais. AUC v2-v1 = +0,02983547, bootstrap pareado 20.000x IC95% [-0,00321763, +0,06394788]; Brier = -0,00322375, IC95% [-0,00725652, +0,00081670]; log-loss = -0,00622642, IC95% [-0,01457327, +0,00213587]. Nenhum intervalo permite promoção. Artefato atualizado: docs/artifacts/irai-17/p_dynamic_config_comparison.md §10. Sem retreino, alteração de produção ou troca do P_up.
+
+2026-07-20: ledger prospectivo IRAI-18 confirmou primeira captura regular sob methodology_version 3 e engine_revision f0b63d4; estado 1/60, INCONCLUSIVE, sem AUC e sem interpretação de qualidade para N=1.
+
+2026-07-20: escopo analítico desta retomada concluído; enviado a Review. Resultado: v2 sem promoção estatística; coleta prospectiva segue no IRAI-18.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
