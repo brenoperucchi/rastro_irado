@@ -14,12 +14,21 @@ build/
 venv/
 
 # Data
-data/irai.db
+data/*.db
 data/*.db-wal
 data/*.db-shm
+data/backups/
+/irai.db
 data/p_dynamic_parity/
 data/ticks/
 data/gex_history_cache/
+
+# Artefatos brutos de exploração (não são entregáveis; ficam só locais)
+data/gex_history_*.json
+/nf0*.json
+# Bruto descompactado: a versão versionada é o .json.gz irmão. docs/artifacts/
+# versiona *_summary.json e *.json.gz de propósito -- não ignorar *.json em bloco lá.
+docs/artifacts/irai-21/pair_fixo_challenger.json
 
 # IDE
 .idea/
@@ -41,6 +50,7 @@ package-lock.json
 # Logs
 *.log
 logs/
+*.out
 
 # DB
 *.sqlite

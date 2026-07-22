@@ -335,11 +335,14 @@ def test_avaliador_bloqueia_vencedor_abaixo_do_gate():
         forecasts={"miqueias": [0.7], "v1": [0.6], "v2": [0.8]},
     )
 
-    report = evaluate_champions([session], min_sessions=20, bootstrap_iterations=100)
+    report = evaluate_champions([session], min_sessions=20)
 
     assert report["status"] == "INCONCLUSIVE"
-    assert report["quality_winner"] is None
+    assert report["sequential_winner"] is None
+    assert report["long_run_winner"] is None
     assert report["common_sessions"] == 1
+    assert report["sequential_tests"] == []
+    assert report["long_run_tests"] == []
     assert report["tactical_gate"]["status"] == "NOT_EVALUATED"
 
 
@@ -355,7 +358,7 @@ def test_baseline_climatologico_usa_somente_sessoes_anteriores():
     assert augmented[1].forecasts["baseline_climatology"] == [2 / 3]
 
 
-def test_avaliador_promove_apenas_vencedor_significante_no_bootstrap():
+def test_sequential_winner_separa_taticamente_sem_autorizar_promocao_via_long_run_winner():
     sessions = []
     for index in range(60):
         actual_up = index % 2 == 0
@@ -371,17 +374,157 @@ def test_avaliador_promove_apenas_vencedor_significante_no_bootstrap():
             )
         )
 
-    report = evaluate_champions(
-        sessions,
-        min_sessions=60,
-        bootstrap_iterations=1_000,
-        seed=7,
-    )
+    report = evaluate_champions(sessions, min_sessions=60)
 
-    assert report["status"] == "WINNER"
-    assert report["quality_winner"] == "v2"
+    assert report["status"] == "EVALUATED"
+    # WSR (sequential_winner) já rejeita H0 condicional contra os 3
+    # concorrentes com esta amostra; HRMS (long_run_winner) ainda não separa
+    # de "miqueias" em 60 sessões (UCB positivo por pouco) -- exatamente o
+    # tradeoff de poder documentado em LAMBDA_MAX (WSR mais potente que HRMS
+    # no regime de variância baixa/moderada). Não é um bug: HRMS precisaria
+    # de mais sessões para o mesmo efeito, ver
+    # tests/test_hrms_sequential_test.py.
+    assert report["sequential_winner"] == "v2"
+    assert report["long_run_winner"] is None
     assert report["ranking_by_brier"][0] == "v2"
-    assert all(comparison["ci_high"] < 0 for comparison in report["winner_tests"])
+    v2_seq_tests = [test for test in report["sequential_tests"] if test["candidate"] == "v2"]
+    assert len(v2_seq_tests) == 3  # vence miqueias, v1 e baseline_climatology
+    assert all(test["rejects_null"] for test in v2_seq_tests)
+    assert all(
+        test["log_capital"] >= test["log_threshold"] for test in v2_seq_tests
+    )
+    v2_long_run_tests = [test for test in report["long_run_tests"] if test["candidate"] == "v2"]
+    assert len(v2_long_run_tests) == 3
+    v2_vs_miqueias_long_run = next(
+        test for test in v2_long_run_tests if test["opponent"] == "miqueias"
+    )
+    assert v2_vs_miqueias_long_run["rejects_null"] is False
+
+
+def test_avaliador_nao_promove_quando_efeito_nao_separa_de_todos_concorrentes():
+    """v2 vence miqueias e v1 com folga, mas empata com baseline_climatology
+    (ambos ~50% acerto): o gate exige separação de TODOS os concorrentes."""
+    sessions = []
+    for index in range(60):
+        actual_up = index % 2 == 0
+        sessions.append(
+            LedgerSession(
+                session_date=f"s{index:02d}",
+                actual_up=actual_up,
+                forecasts={
+                    "miqueias": [0.6 if actual_up else 0.4],
+                    "v1": [0.55 if actual_up else 0.45],
+                    "v2": [0.5],
+                },
+            )
+        )
+
+    report = evaluate_champions(sessions, min_sessions=60)
+
+    assert report["status"] == "EVALUATED"
+    assert report["sequential_winner"] is None
+    assert report["long_run_winner"] is None
+    v2_vs_baseline_seq = next(
+        test
+        for test in report["sequential_tests"]
+        if test["candidate"] == "v2" and test["opponent"] == "baseline_climatology"
+    )
+    assert v2_vs_baseline_seq["rejects_null"] is False
+    v2_vs_baseline_long_run = next(
+        test
+        for test in report["long_run_tests"]
+        if test["candidate"] == "v2" and test["opponent"] == "baseline_climatology"
+    )
+    assert v2_vs_baseline_long_run["rejects_null"] is False
+
+
+def test_gate_alpha_e_reservado_por_candidato_entre_os_k_modelos():
+    sessions = [
+        LedgerSession(
+            session_date=f"s{index:02d}",
+            actual_up=index % 2 == 0,
+            forecasts={"v1": [0.5], "v2": [0.5]},
+        )
+        for index in range(60)
+    ]
+
+    report = evaluate_champions(sessions, min_sessions=60, alpha=0.05)
+
+    # v1, v2 e baseline_climatology => K=3 candidatos-em-espera.
+    assert len(report["common_models"]) == 3
+    assert report["candidate_alpha"] == pytest.approx(0.05 / 3)
+    assert all(
+        test["alpha"] == pytest.approx(0.05 / 3) for test in report["sequential_tests"]
+    )
+    assert all(
+        test["alpha"] == pytest.approx(0.05 / 3) for test in report["long_run_tests"]
+    )
+    # Cada campo reserva alpha=0,05/K de forma INDEPENDENTE (ver docstring do
+    # módulo) -- a probabilidade combinada de QUALQUER UM dos dois apontar um
+    # vencedor errado é limitada por união de eventos a <= 2*alpha, não alpha.
+    assert report["combined_family_wise_alpha_bound"] == pytest.approx(0.1)
+
+
+def test_long_run_winner_promove_e_depois_regride_para_none_end_to_end():
+    """Integração ponta-a-ponta em ``evaluate_champions`` (não só na função
+    interna ``_hrms_sequential_test``): 150 sessões favoráveis a "cand"
+    promovem via ``long_run_winner``; mais 20 sessões desfavoráveis (mesmo
+    padrão de alternância, sinal invertido) revertem a decisão para ``None``.
+    ``sequential_winner`` e os diagnósticos históricos (``running_min_...``/
+    ``first_rejection_session``) devem permanecer inalterados pela reversão --
+    só ``upper_confidence_bound``/``rejects_null`` (o valor ATUAL) se movem.
+    """
+    n1, n2 = 150, 20
+    sessions = []
+    for index in range(n1):
+        actual_up = index % 2 == 0
+        sessions.append(
+            LedgerSession(
+                session_date=f"s{index:03d}",
+                actual_up=actual_up,
+                forecasts={"cand": [0.9 if actual_up else 0.1], "opp": [0.5]},
+            )
+        )
+    for index in range(n1, n1 + n2):
+        actual_up = index % 2 == 0
+        sessions.append(
+            LedgerSession(
+                session_date=f"s{index:03d}",
+                actual_up=actual_up,
+                forecasts={"cand": [0.1 if actual_up else 0.9], "opp": [0.5]},
+            )
+        )
+
+    report_promoted = evaluate_champions(sessions[:n1], min_sessions=60, alpha=0.05)
+    assert report_promoted["status"] == "EVALUATED"
+    assert report_promoted["long_run_winner"] == "cand"
+    assert report_promoted["sequential_winner"] == "cand"
+    cand_vs_opp_promoted = next(
+        test
+        for test in report_promoted["long_run_tests"]
+        if test["candidate"] == "cand" and test["opponent"] == "opp"
+    )
+    assert cand_vs_opp_promoted["upper_confidence_bound"] == pytest.approx(-0.071558)
+    assert cand_vs_opp_promoted["running_min_upper_confidence_bound"] == pytest.approx(-0.071558)
+    assert cand_vs_opp_promoted["first_rejection_session"] == 106
+    assert cand_vs_opp_promoted["rejects_null"] is True
+
+    report_regressed = evaluate_champions(sessions, min_sessions=60, alpha=0.05)
+    assert report_regressed["status"] == "EVALUATED"
+    assert report_regressed["long_run_winner"] is None
+    # sequential_winner é independente de long_run_winner e não regride junto.
+    assert report_regressed["sequential_winner"] == "cand"
+    cand_vs_opp_regressed = next(
+        test
+        for test in report_regressed["long_run_tests"]
+        if test["candidate"] == "cand" and test["opponent"] == "opp"
+    )
+    assert cand_vs_opp_regressed["upper_confidence_bound"] == pytest.approx(0.113853)
+    assert cand_vs_opp_regressed["rejects_null"] is False
+    # Diagnóstico histórico persiste inalterado -- prova que ele não é
+    # "recalculado para trás" nem descartado quando a decisão atual reverte.
+    assert cand_vs_opp_regressed["running_min_upper_confidence_bound"] == pytest.approx(-0.071558)
+    assert cand_vs_opp_regressed["first_rejection_session"] == 106
 
 
 def test_loader_ignora_barras_de_sessao_estrangeira_no_bundle(tmp_path):
