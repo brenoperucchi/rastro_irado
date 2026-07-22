@@ -243,10 +243,10 @@ async def get_gex(
 ):
     """Níveis de GEX live ou do snapshot histórico da sessão pedida.
 
-    Sem ``date``, entrega o último cálculo live, que precisa ser fresco. Com
-    ``date``, consulta o snapshot PIT disponível naquela sessão em
-    ``gex_history_levels``; não pode recuar para o live, que pertence a outro
-    contexto temporal.
+    Sem ``date``, entrega o cálculo live mais recente quando ele for
+    plotável. Caso ele falhe na validação, pode exibir o último snapshot PIT
+    válido e fresco, sempre identificado como fallback. Com ``date``, consulta
+    estritamente o snapshot PIT daquela sessão; nunca recua para outro dia.
     """
     import sqlite3 as _sq
     conn = get_connection()
@@ -254,6 +254,7 @@ async def get_gex(
     # objeto Query em vez de None. No request real, só uma string ISO ativa o
     # caminho histórico.
     historical = isinstance(session_date, str) and bool(session_date)
+    fallback_live = None
     try:
         if historical:
             row = conn.execute(
@@ -267,6 +268,84 @@ async def get_gex(
                 "SELECT * FROM gex_levels WHERE target=? ORDER BY session_date DESC LIMIT 1",
                 (target,),
             ).fetchone()
+
+            # O cálculo mais recente continua sendo a fonte primária. Quando
+            # ele não for usável, o dashboard live pode exibir o último PIT
+            # válido, mas nunca disfarçado de cálculo corrente.
+            if row:
+                live = dict(row)
+                try:
+                    live_walls = json.loads(live.get("walls") or "[]")
+                except Exception:
+                    live_walls = []
+                live_walls = _current_gex_walls(live, live_walls)
+                try:
+                    live_age = (date.today() - date.fromisoformat(live["session_date"])).days
+                except Exception:
+                    live_age = 999
+                live_usable = bool(live.get("valid")) and bool(live_walls) and 0 <= live_age <= 4
+                if not bool(live.get("valid")):
+                    live_fallback_reason = "live_snapshot_invalid"
+                elif not 0 <= live_age <= 4:
+                    live_fallback_reason = "live_snapshot_stale"
+                else:
+                    live_fallback_reason = "live_snapshot_without_walls"
+            else:
+                live = None
+                live_age = None
+                live_usable = False
+                live_fallback_reason = "live_snapshot_missing"
+
+            if not live_usable:
+                try:
+                    candidates = conn.execute(
+                        """SELECT * FROM gex_history_levels
+                           WHERE target=? AND valid=1
+                             AND source_session_date<effective_session_date
+                             AND effective_session_date<=?
+                           ORDER BY effective_session_date DESC,
+                                    source_session_date DESC""",
+                        (target, date.today().isoformat()),
+                    ).fetchall()
+                except _sq.OperationalError as e:
+                    if "no such table" not in str(e):
+                        raise
+                    candidates = []
+
+                for candidate in candidates:
+                    candidate_data = dict(candidate)
+                    try:
+                        candidate_walls = json.loads(candidate_data.get("walls") or "[]")
+                    except Exception:
+                        candidate_walls = []
+                    candidate_walls = _current_gex_walls(candidate_data, candidate_walls)
+                    try:
+                        candidate_source = date.fromisoformat(candidate_data["source_session_date"])
+                        candidate_effective = date.fromisoformat(
+                            candidate_data["effective_session_date"]
+                        )
+                        candidate_age = (
+                            date.today()
+                            - candidate_effective
+                        ).days
+                    except Exception:
+                        candidate_source = None
+                        candidate_effective = None
+                        candidate_age = 999
+                    if (
+                        candidate_source
+                        and candidate_effective
+                        and candidate_source < candidate_effective <= date.today()
+                        and bool(candidate_walls)
+                        and 0 <= candidate_age <= 4
+                    ):
+                        row = candidate
+                        fallback_live = {
+                            "row": live,
+                            "age_days": live_age,
+                            "reason": live_fallback_reason,
+                        }
+                        break
     except _sq.OperationalError as e:
         if "no such table" not in str(e):
             raise  # erro real de banco não pode virar "sem dados" silencioso
@@ -309,15 +388,27 @@ async def get_gex(
         return response
 
     try:
-        age = (date.today() - date.fromisoformat(d["session_date"])).days
+        as_of = d["effective_session_date"] if fallback_live else d["session_date"]
+        age = (date.today() - date.fromisoformat(as_of)).days
     except Exception:
+        as_of = None
         age = 999
     fresh = 0 <= age <= 4  # idade negativa = data futura corrompida -> não fresco
     response.update({
         "active": response["active"] and fresh,
-        "as_of": d["session_date"],
+        "as_of": as_of,
         "age_days": age,
+        "fallback": bool(fallback_live),
     })
+    if fallback_live:
+        live = fallback_live["row"]
+        response.update({
+            "source_as_of": d["source_session_date"],
+            "fallback_reason": fallback_live["reason"],
+            "live_as_of": live.get("session_date") if live else None,
+            "live_valid": bool(live.get("valid")) if live else False,
+            "live_age_days": fallback_live["age_days"],
+        })
     return response
 
 

@@ -255,6 +255,114 @@ def test_get_gex_invalido_no_banco_fica_active_false_mesmo_fresco():
         "compute_gex marcou como inválido -- não pode virar active mesmo fresco", result)
 
 
+def test_get_gex_live_invalido_usa_ultimo_snapshot_pit_valido_e_fresco():
+    """Live não pode apagar o GEX operacional por uma invalidação pontual.
+
+    Reproduz o caso de 20/07: o cálculo mais recente é preservado em
+    ``gex_levels`` com ``valid=False``, mas há um snapshot causal anterior em
+    ``gex_history_levels`` que ainda é utilizável na sessão live. A resposta
+    precisa expor claramente que não é o cálculo corrente; uma chamada
+    histórica com ``date`` continua estrita em outro teste.
+    """
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    today = date.today()
+    live_date = today.isoformat()
+    effective_date = (today - timedelta(days=1)).isoformat()
+    source_date = (today - timedelta(days=2)).isoformat()
+    conn = db_mod.get_connection(path)
+    gex_worker.save(
+        conn, live_date,
+        _mk_gex_result(spot=190000.0, gamma_flip=205000.0, valid=False),
+        target="WIN$N",
+    )
+    save_history_result(
+        conn, source_date, effective_date,
+        _mk_gex_result(spot=175000.0, gamma_flip=176000.0, valid=True),
+        target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(api_main.get_gex(target="WIN$N"))
+    finally:
+        _restore_get_connection(orig)
+
+    assert result["active"] is True, result
+    assert result["fallback"] is True, result
+    assert result["fallback_reason"] == "live_snapshot_invalid", result
+    assert result["live_as_of"] == live_date, result
+    assert result["live_valid"] is False, result
+    assert result["as_of"] == effective_date, result
+    assert result["source_as_of"] == source_date, result
+    assert result["gamma_flip"] == 176000.0, result
+    assert result["age_days"] == 1, result
+
+
+def test_get_gex_live_fallback_recusa_snapshot_pit_com_fonte_futura():
+    """Fallback live só aceita causalidade estrita: EOD < sessão efetiva.
+
+    Um registro corrompido com data efetiva atual, mas fonte futura, jamais
+    pode ser promovido a GEX ativo por parecer fresco.
+    """
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    today = date.today()
+    conn = db_mod.get_connection(path)
+    gex_worker.save(
+        conn, today.isoformat(), _mk_gex_result(valid=False), target="WIN$N",
+    )
+    save_history_result(
+        conn, (today + timedelta(days=1)).isoformat(), today.isoformat(),
+        _mk_gex_result(valid=True), target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(api_main.get_gex(target="WIN$N"))
+    finally:
+        _restore_get_connection(orig)
+
+    assert result["active"] is False, result
+    assert result["fallback"] is False, result
+
+
+def test_get_gex_live_fallback_explica_snapshot_live_envelhecido():
+    """Proveniência não pode chamar de inválido um live válido, só vencido."""
+    if _skip_without_fastapi():
+        return
+    path = tempfile.mktemp(suffix=".db")
+    today = date.today()
+    conn = db_mod.get_connection(path)
+    gex_worker.save(
+        conn, (today - timedelta(days=5)).isoformat(),
+        _mk_gex_result(valid=True, gamma_flip=150000.0), target="WIN$N",
+    )
+    save_history_result(
+        conn, (today - timedelta(days=2)).isoformat(),
+        (today - timedelta(days=1)).isoformat(),
+        _mk_gex_result(valid=True, gamma_flip=176000.0), target="WIN$N",
+    )
+    conn.close()
+
+    orig = _patch_get_connection(path)
+    try:
+        result = asyncio.run(api_main.get_gex(target="WIN$N"))
+    finally:
+        _restore_get_connection(orig)
+
+    assert result["active"] is True, result
+    assert result["fallback"] is True, result
+    assert result["fallback_reason"] == "live_snapshot_stale", result
+    assert result["live_valid"] is True, result
+    assert result["live_age_days"] == 5, result
+    assert result["gamma_flip"] == 176000.0, result
+
+
 def test_get_gex_pega_o_pregao_mais_recente_do_target():
     """Review codex: o mesmo target pode ter mais de uma linha (WIN$N e
     WDO$N rodam todo dia útil). `ORDER BY session_date DESC LIMIT 1` tem
@@ -772,6 +880,9 @@ TESTS = [
     test_get_gex_dado_velho_fica_active_false_mesmo_com_valid_true,
     test_get_gex_fresco_e_valido_fica_active_true,
     test_get_gex_invalido_no_banco_fica_active_false_mesmo_fresco,
+    test_get_gex_live_invalido_usa_ultimo_snapshot_pit_valido_e_fresco,
+    test_get_gex_live_fallback_recusa_snapshot_pit_com_fonte_futura,
+    test_get_gex_live_fallback_explica_snapshot_live_envelhecido,
     test_get_gex_pega_o_pregao_mais_recente_do_target,
     test_get_gex_regera_grid_legado_no_spot_sem_alterar_niveis_gamma,
     test_get_gex_historico_regera_grid_legado_no_spot,

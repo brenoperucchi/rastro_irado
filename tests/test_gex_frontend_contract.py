@@ -23,3 +23,11 @@ def test_gex_historico_envia_data_efetiva_no_request():
     """Ao sair do live, GEX deve usar a mesma sessão do gráfico."""
     assert "if (!liveMode && effectiveDate)" in APP
     assert "gexParams.set('date', effectiveDate)" in APP
+
+
+def test_gex_live_fallback_identifica_o_ultimo_snapshot_valido():
+    """O operador não pode confundir fallback live com o cálculo atual."""
+    assert "gex.fallback" in APP
+    assert "fallback_reason" in APP
+    assert "ÚLTIMO VÁLIDO" in APP
+    assert "gex.source_as_of" in APP

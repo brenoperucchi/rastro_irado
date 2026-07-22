@@ -752,6 +752,12 @@ export default function App() {
   const validSeries = useMemo(() => series.filter(s => s.win_current !== undefined), [series]);
   const now = validSeries.length > 0 ? validSeries[validSeries.length - 1] : null
   const hasFlow = now && 'flow_confirms' in now
+  const gexFallbackDescription = {
+    live_snapshot_invalid: 'foi invalidado',
+    live_snapshot_stale: 'está envelhecido',
+    live_snapshot_without_walls: 'não contém walls plotáveis',
+    live_snapshot_missing: 'não está disponível',
+  }[gex?.fallback_reason] || 'não está plotável'
 
   const isOffline = error && (error.includes('Failed to fetch') || error.includes('NetworkError') || error.includes('Load failed'));
 
@@ -1141,14 +1147,16 @@ export default function App() {
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}>
                     movimento {seriesInfo.display_name || selectedTarget}
-                    {/* Toggle GEX: só aparece quando há walls; `active` = válido e
-                        fresco (D-1). Envelhecido fica desabilitado com o as-of. */}
+                    {/* Toggle GEX: `active` só habilita snapshot válido/fresco. Quando
+                        o live recua para o último PIT válido, a origem fica visível. */}
                     {gex && gex.target === selectedTarget && (
                       <button
                         disabled={!gex.active}
                         onClick={() => gex.active && setShowGex(v => !v)}
                         title={gex.active
-                          ? `gamma walls do fechamento de ${gex.as_of}`
+                          ? (gex.fallback
+                            ? `Último GEX válido: disponível em ${gex.as_of}, calculado no EOD de ${gex.source_as_of}. O cálculo live de ${gex.live_as_of} ${gexFallbackDescription}.`
+                            : `gamma walls do fechamento de ${gex.as_of}`)
                           : `GEX de ${gex.as_of} (envelhecido/inválido — não plotável)`}
                         style={{
                           fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.08em',
@@ -1159,6 +1167,16 @@ export default function App() {
                         }}>
                         GEX {gex.as_of?.slice(5)}
                       </button>
+                    )}
+                    {gex && gex.target === selectedTarget && gex.active && gex.fallback && (
+                      <span
+                        title={`Último snapshot GEX válido disponível: EOD ${gex.source_as_of}; o cálculo live de ${gex.live_as_of} ${gexFallbackDescription}.`}
+                        style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 8, letterSpacing: '0.08em',
+                          color: '#F59E0B', whiteSpace: 'nowrap',
+                        }}>
+                        ÚLTIMO VÁLIDO · EOD {gex.source_as_of?.slice(5)}
+                      </span>
                     )}
                     {gex && gex.target === selectedTarget && gex.active && showGex && (
                       <button
