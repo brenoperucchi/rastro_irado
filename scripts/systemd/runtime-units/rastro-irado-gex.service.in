@@ -1,0 +1,14 @@
+[Unit]
+Description=IRAI GEX worker (gamma walls EOD, IBOV -> WIN$N)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@RUNTIME_ROOT@
+ExecStart=/usr/bin/env bash @RUNTIME_ROOT@/scripts/systemd/gex-worker.sh
+Environment=IRAI_PYTHON=/mnt/c/Users/brenoperucchi/AppData/Local/Microsoft/WindowsApps/py.exe
+Environment=IRAI_PYTHON_VERSION_FLAG=-3.12
+
+[Install]
+WantedBy=default.target
