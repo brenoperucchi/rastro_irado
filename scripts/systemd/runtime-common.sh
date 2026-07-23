@@ -148,6 +148,23 @@ runtime_assert_state_dir_outside_runtime() {
     printf '%s\n' "$state_dir"
 }
 
+runtime_assert_script_dir_inside_root() {
+    # snapshot-runtime-state.sh captures its rollback bootstrap from its own
+    # directory, so it must run from the runtime's own on-disk code. Running it
+    # from an unrelated checkout (e.g. the development tree) would capture that
+    # checkout's rollback interpreter as the known-good bootstrap.
+    local script_dir runtime_root
+    script_dir="$(runtime_resolve_existing "$1")" || return 1
+    runtime_root="$(runtime_resolve_existing "$2")" || return 1
+    case "${script_dir}/" in
+        "${runtime_root}/"*)
+            return 0
+            ;;
+    esac
+    runtime_error "script precisa executar de dentro da raiz de runtime, não de outro checkout: $script_dir fora de $runtime_root"
+    return 1
+}
+
 runtime_assert_materialized_unit_backup() {
     local backup_dir="$1" unit_name
     [[ -f "${backup_dir}/enabled-states.txt" ]] || {

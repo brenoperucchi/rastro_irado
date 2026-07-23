@@ -55,6 +55,7 @@ done
 }
 
 runtime_root="$(runtime_require_drvfs_root "$runtime_root")" || exit 1
+runtime_assert_script_dir_inside_root "$SCRIPT_DIR" "$runtime_root" || exit 1
 state_parent="$(runtime_require_drvfs_root "$(dirname -- "$state_dir")")" || exit 1
 state_dir="${state_parent}/$(basename -- "$state_dir")"
 state_dir="$(runtime_assert_state_dir_outside_runtime "$runtime_root" "$state_dir")" || exit 1

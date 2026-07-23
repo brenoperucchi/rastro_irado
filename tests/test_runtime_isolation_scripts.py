@@ -290,6 +290,9 @@ def _runtime_clone(tmp_path: Path) -> Path:
     shutil.copytree(
         ROOT / "scripts" / "systemd" / "runtime-units",
         runtime_root / "scripts" / "systemd" / "runtime-units",
+        # runtime-units/ is tracked since 102d679, so the clone already carries
+        # it; overlay the working-tree copy on top instead of colliding.
+        dirs_exist_ok=True,
     )
     for setting in (("user.email", "tests@example.invalid"), ("user.name", "IRAI tests")):
         configured = _run(["git", "-C", str(runtime_root), "config", *setting])
@@ -307,7 +310,12 @@ def _runtime_clone(tmp_path: Path) -> Path:
         ]
     )
     assert added.returncode == 0, added.stderr
-    committed = _run(["git", "-C", str(runtime_root), "commit", "-m", "test: pin frontend lockfile"])
+    # --allow-empty: once the IRAI-25 tooling is committed upstream, the overlay
+    # reproduces identical content and there is nothing new to stage; the commit
+    # must still succeed to give the clone a clean detach point.
+    committed = _run(
+        ["git", "-C", str(runtime_root), "commit", "--allow-empty", "-m", "test: pin frontend lockfile"]
+    )
     assert committed.returncode == 0, committed.stderr
     commit = _run(["git", "-C", str(runtime_root), "rev-parse", "HEAD"])
     assert commit.returncode == 0, commit.stderr
@@ -659,6 +667,33 @@ def test_deployment_scripts_reject_symbolic_refs(tmp_path: Path) -> None:
     )
     assert preflight.returncode != 0
     assert "SHA Git completo" in preflight.stderr
+
+
+def test_snapshot_state_refuses_to_run_from_a_foreign_checkout(tmp_path: Path) -> None:
+    # Risk 3: the rollback bootstrap is captured from the invoking script's own
+    # directory. Running the development-tree script against a runtime clone
+    # would capture the development checkout's rollback code as known-good; the
+    # provenance guard must reject it before any bootstrap is captured.
+    runtime_root = _runtime_clone(tmp_path)
+    unit_dir = tmp_path / "units"
+    env = _fake_wslpath(tmp_path)
+    env |= _fake_systemctl(tmp_path, unit_dir, env)
+    state_dir = tmp_path / "update-state"
+
+    foreign = _run(
+        [
+            str(SNAPSHOT_RUNTIME_STATE),  # ROOT/scripts/systemd, outside runtime_root
+            "--runtime-root",
+            str(runtime_root),
+            "--state-dir",
+            str(state_dir),
+            "--apply",
+        ],
+        env=env,
+    )
+    assert foreign.returncode != 0
+    assert "de dentro da raiz de runtime" in foreign.stderr
+    assert not (state_dir / "rollback-bin").exists()
 
 
 def test_snapshot_materializes_loaded_units_for_transient_safe_rollback(tmp_path: Path) -> None:
