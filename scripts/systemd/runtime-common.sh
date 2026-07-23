@@ -268,9 +268,18 @@ runtime_restore_materialized_units() {
     while IFS=: read -r unit_name enabled_state; do
         [[ -n "$unit_name" && "$unit_name" != \#* ]] || continue
         case "$enabled_state" in
-            enabled|enabled-runtime)
+            enabled)
                 systemctl --user enable "$unit_name" || {
                     runtime_error "não foi possível habilitar unit restaurada: $unit_name"
+                    return 1
+                }
+                ;;
+            enabled-runtime)
+                # Enablement runtime-only (symlinks em /run) não deve ser
+                # promovido a persistente no rollback: restaure com o mesmo
+                # escopo capturado, senão a unit passa a sobreviver a logout.
+                systemctl --user enable --runtime "$unit_name" || {
+                    runtime_error "não foi possível habilitar (runtime) unit restaurada: $unit_name"
                     return 1
                 }
                 ;;

@@ -171,11 +171,34 @@ dados novos que não existem no checkout de desenvolvimento.
 
 ```bash
 systemctl --user start rastro-irado-collector.service rastro-irado-win-ticks.service
+# reenable (não apenas start): recria os symlinks timers.target.wants a partir do
+# fragment do runtime, tornando o enablement PERSISTENTE e repontando qualquer
+# symlink herdado do checkout de dev. Isso cobre a forma que o CORTE poderia
+# deixar o timer silenciosamente sem disparar. Risco residual à parte (NÃO coberto
+# por reenable/linger): o ledger é Persistent=false de propósito — a captura das
+# 17:56 é sensível ao wall-clock, então um catch-up tardio escreveria uma linha de
+# sessão errada. Logo um dia com a máquina desligada às 17:56 é um buraco de UMA
+# sessão, aceito por design; não é perda da acumulação já gravada nem deve virar
+# Persistent=true.
+systemctl --user reenable rastro-irado-gex.timer rastro-irado-p-dynamic-ledger.timer
 systemctl --user start rastro-irado-gex.timer rastro-irado-p-dynamic-ledger.timer
 systemctl --user enable rastro-irado-frontend.service
+# Timers --user só disparam sem sessão interativa (distro headless) se o usuário
+# tem linger. É estado PERSISTENTE do host (sobrevive a logout e boot); para o
+# próprio usuário não exige root. Reverter: loginctl disable-linger "$USER".
+loginctl enable-linger "$USER"
 systemctl --user status rastro-irado-api.service rastro-irado-collector.service \
   rastro-irado-win-ticks.service rastro-irado-frontend.service \
   rastro-irado-gex.timer rastro-irado-p-dynamic-ledger.timer --no-pager
+
+# Gate de durabilidade: falha fechado se algum timer não estiver persistentemente
+# enabled, ativo, com o symlink wants resolvendo para dentro do runtime, com um
+# próximo disparo agendado e (com --require-linger) linger ligado. Protege contra
+# o CORTE deixar o timer silenciosamente desabilitado / apontando pro checkout de
+# dev / runtime-only / inativo — não contra a máquina estar desligada às 17:56
+# (esse buraco de uma sessão é aceito por design; ver comentário do reenable).
+"$RUNTIME_ROOT/scripts/systemd/verify-runtime-units.sh" \
+  --unit-dir "$UNIT_DIR" --require-linger
 ```
 
 ### Rollback do Corte Inicial
@@ -254,4 +277,6 @@ antes de escolher uma direção.
 
 Anexar ao IRAI-25, após a execução humana, os SHAs de runtime e rollback, os
 manifestos, `integrity_check`, `runtime-preflight` antes/depois da API, status
-das units e a confirmação de que o frontend persistente responde em `:5175`.
+das units, a saída de `verify-runtime-units.sh --require-linger` (prova de que os
+timers ficaram persistentes, ativos e wants-linked no runtime) e a confirmação de
+que o frontend persistente responde em `:5175`.

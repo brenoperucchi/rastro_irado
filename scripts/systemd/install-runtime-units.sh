@@ -72,6 +72,11 @@ done
 
 runtime_root="$(runtime_require_drvfs_root "$runtime_root")" || exit 1
 [[ -d "$runtime_root/.git" ]] || runtime_die "runtime root não é checkout Git: $runtime_root"
+# render_template lê os templates de ${SCRIPT_DIR}/runtime-units, então instalar
+# a partir de outro checkout (ex.: a árvore de desenvolvimento) materializaria as
+# units daquele checkout, não do runtime pinado. Exija que o script rode de dentro
+# da própria raiz de runtime, como o snapshot-runtime-state.sh.
+runtime_assert_script_dir_inside_root "$SCRIPT_DIR" "$runtime_root" || exit 1
 
 if [[ "$apply" -eq 1 && "$daemon_reload" -eq 1 ]]; then
     runtime_require_command systemctl || exit 1

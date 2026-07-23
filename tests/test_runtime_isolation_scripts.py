@@ -27,6 +27,7 @@ SNAPSHOT_RUNTIME_STATE = SYSTEMD_DIR / "snapshot-runtime-state.sh"
 RESTORE_RUNTIME_STATE = SYSTEMD_DIR / "restore-runtime-state.sh"
 RESTORE_RUNTIME_UNITS = SYSTEMD_DIR / "restore-runtime-units.sh"
 PROVISION_RUNTIME_FRONTEND = SYSTEMD_DIR / "provision-runtime-frontend.sh"
+VERIFY_RUNTIME_UNITS = SYSTEMD_DIR / "verify-runtime-units.sh"
 SCRIPTS = (
     SYSTEMD_DIR / "runtime-common.sh",
     SYSTEMD_DIR / "runtime-data.sh",
@@ -39,6 +40,7 @@ SCRIPTS = (
     RESTORE_RUNTIME_STATE,
     RESTORE_RUNTIME_UNITS,
     PROVISION_RUNTIME_FRONTEND,
+    VERIFY_RUNTIME_UNITS,
     PREFLIGHT,
 )
 RUNTIME_TOOLING = (
@@ -54,6 +56,7 @@ RUNTIME_TOOLING = (
     "scripts/systemd/snapshot-runtime-state.sh",
     "scripts/systemd/snapshot-runtime-units.sh",
     "scripts/systemd/update-runtime-ref.sh",
+    "scripts/systemd/verify-runtime-units.sh",
 )
 SERVICE_UNITS = (
     "rastro-irado-api.service",
@@ -112,7 +115,10 @@ def _fake_systemctl(
         "    exit 0 ;;\n"
         "  show)\n"
         "    unit=\"${!#}\"\n"
-        "    if [[ \"$*\" == *DropInPaths* ]]; then\n"
+        "    if [[ \"$*\" == *NextElapseUSecRealtime* ]]; then\n"
+        "      printf '%s\\n' \"${FAKE_SYSTEMCTL_NEXT_ELAPSE:-1893456000000000}\"\n"
+        "      exit 0\n"
+        "    elif [[ \"$*\" == *DropInPaths* ]]; then\n"
         "      exit 0\n"
         "    elif [[ \"$unit\" == \"rastro-irado-frontend.service\" && -n \"${FAKE_FRONTEND_FRAGMENT:-}\" ]]; then\n"
         "      printf '%s\\n' \"$FAKE_FRONTEND_FRAGMENT\"\n"
@@ -122,12 +128,14 @@ def _fake_systemctl(
         "      printf '%s/%s\\n' \"$FAKE_UNIT_DIR\" \"$unit\"\n"
         "    fi\n"
         "    exit 0 ;;\n"
-        "  is-active) exit 3 ;;\n"
-        "  is-enabled) printf '%s\\n' enabled; exit 0 ;;\n"
+        "  is-active)\n"
+        "    if [[ \"${FAKE_SYSTEMCTL_ACTIVE:-0}\" == \"1\" ]]; then exit 0; fi\n"
+        "    exit 3 ;;\n"
+        "  is-enabled) printf '%s\\n' \"${FAKE_SYSTEMCTL_ENABLED:-enabled}\"; exit 0 ;;\n"
         "  enable|disable)\n"
         "    [[ \"${FAKE_SYSTEMCTL_FAIL_COMMAND:-}\" != \"$1\" ]] || exit 42\n"
         "    if [[ -n \"${FAKE_SYSTEMCTL_LOG:-}\" ]]; then\n"
-        "      printf '%s %s\\n' \"$1\" \"${2:-}\" >> \"$FAKE_SYSTEMCTL_LOG\"\n"
+        "      printf '%s\\n' \"$*\" >> \"$FAKE_SYSTEMCTL_LOG\"\n"
         "    fi\n"
         "    exit 0 ;;\n"
         "esac\n"
@@ -173,6 +181,24 @@ def _fake_npm(tmp_path: Path, base_env: dict[str, str], *, fail_ls: bool = False
         "PATH": f"{bin_dir}:{base_env['PATH']}",
         "FAKE_NPM_LOG": str(log),
         "FAKE_NPM_FAIL_LS": "1" if fail_ls else "0",
+    }
+
+
+def _fake_loginctl(tmp_path: Path, base_env: dict[str, str], *, linger: str = "yes") -> dict[str, str]:
+    bin_dir = tmp_path / "loginctl-bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "loginctl"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        "if [[ \"${1:-}\" == \"show-user\" ]]; then printf '%s\\n' \"${FAKE_LINGER:-yes}\"; exit 0; fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    return {
+        "PATH": f"{bin_dir}:{base_env['PATH']}",
+        "FAKE_LINGER": linger,
     }
 
 
@@ -364,7 +390,8 @@ def test_install_and_preflight_require_distinct_clean_runtime(tmp_path: Path) ->
 
     install = _run(
         [
-            str(INSTALLER),
+            # o guard de proveniência exige rodar de dentro do runtime, como no corte
+            str(runtime_root / "scripts" / "systemd" / "install-runtime-units.sh"),
             "--runtime-root",
             str(runtime_root),
             "--unit-dir",
@@ -520,7 +547,8 @@ def test_installer_refuses_to_replace_a_loaded_transient_frontend(tmp_path: Path
 
     result = _run(
         [
-            str(INSTALLER),
+            # o guard de proveniência exige rodar de dentro do runtime, como no corte
+            str(runtime_root / "scripts" / "systemd" / "install-runtime-units.sh"),
             "--runtime-root",
             str(runtime_root),
             "--unit-dir",
@@ -696,6 +724,31 @@ def test_snapshot_state_refuses_to_run_from_a_foreign_checkout(tmp_path: Path) -
     assert not (state_dir / "rollback-bin").exists()
 
 
+def test_install_units_refuses_to_run_from_a_foreign_checkout(tmp_path: Path) -> None:
+    # Risk 4C: render_template lê os templates do diretório do script. Rodar o
+    # instalador da árvore de desenvolvimento contra um clone de runtime
+    # materializaria as units renderizadas do dev, não do runtime pinado; a
+    # guarda de proveniência precisa recusar antes de qualquer escrita.
+    runtime_root = _runtime_clone(tmp_path)
+    unit_dir = tmp_path / "units"
+    env = _fake_wslpath(tmp_path)
+    env |= _fake_systemctl(tmp_path, unit_dir, env)
+
+    foreign = _run(
+        [
+            str(INSTALLER),  # ROOT/scripts/systemd, outside runtime_root
+            "--runtime-root",
+            str(runtime_root),
+            "--unit-dir",
+            str(unit_dir),
+        ],
+        env=env,
+    )
+    assert foreign.returncode != 0
+    assert "de dentro da raiz de runtime" in foreign.stderr
+    assert not unit_dir.exists() or not any(unit_dir.iterdir())
+
+
 def test_snapshot_materializes_loaded_units_for_transient_safe_rollback(tmp_path: Path) -> None:
     source_units = tmp_path / "loaded-units"
     source_units.mkdir()
@@ -828,7 +881,8 @@ def test_preflight_rejects_unhealthy_frontend_tree_even_when_vite_exists(tmp_pat
     env |= _fake_npm(tmp_path, env, fail_ls=True)
     install = _run(
         [
-            str(INSTALLER),
+            # o guard de proveniência exige rodar de dentro do runtime, como no corte
+            str(runtime_root / "scripts" / "systemd" / "install-runtime-units.sh"),
             "--runtime-root",
             str(runtime_root),
             "--unit-dir",
@@ -1247,3 +1301,167 @@ def test_restore_units_does_not_enable_materialized_linked_or_static_units(tmp_p
     actions = log_path.read_text(encoding="utf-8")
     assert "enable rastro-irado-p-dynamic-ledger.service" not in actions
     assert "enable rastro-irado-gex.timer" not in actions
+
+
+def test_restore_units_preserves_runtime_only_enablement_scope(tmp_path: Path) -> None:
+    # Risk 4B: uma unit capturada como enabled-runtime (symlinks em /run) precisa
+    # ser restaurada com o mesmo escopo (enable --runtime), não promovida a
+    # enable persistente — senão o rollback muda o estado que deveria preservar.
+    backup_dir = tmp_path / "backup"
+    _write_materialized_unit_backup(
+        backup_dir,
+        {
+            "rastro-irado-api.service": "enabled",
+            "rastro-irado-gex.timer": "enabled-runtime",
+        },
+    )
+    env = _fake_wslpath(tmp_path)
+    env |= _fake_systemctl(tmp_path, tmp_path / "loaded-units", env)
+    log_path = tmp_path / "systemctl.log"
+    env["FAKE_SYSTEMCTL_LOG"] = str(log_path)
+
+    restored = _run(
+        [
+            str(RESTORE_RUNTIME_UNITS),
+            "--backup-dir",
+            str(backup_dir),
+            "--unit-dir",
+            str(tmp_path / "restored-units"),
+            "--apply",
+        ],
+        env=env,
+    )
+    assert restored.returncode == 0, restored.stderr
+    actions = log_path.read_text(encoding="utf-8")
+    # persistente para enabled, runtime-only para enabled-runtime
+    assert "enable rastro-irado-api.service" in actions
+    assert "enable --runtime rastro-irado-gex.timer" in actions
+    # a unit runtime-only nunca é promovida a persistente
+    assert "enable rastro-irado-gex.timer" not in actions
+
+
+def _seed_runtime_timer_dir(unit_dir: Path, *, foreign_wants: Path | None = None) -> None:
+    """Materialize the two runtime timers plus their timers.target.wants links.
+
+    By default each wants symlink resolves into unit_dir (the runtime). Passing
+    foreign_wants points them at a real file outside unit_dir to reproduce the
+    stale dev-checkout hazard the durability gate must catch.
+    """
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    wants_dir = unit_dir / "timers.target.wants"
+    wants_dir.mkdir(parents=True, exist_ok=True)
+    if foreign_wants is not None:
+        foreign_wants.mkdir(parents=True, exist_ok=True)
+    for timer in TIMER_UNITS:
+        unit_file = unit_dir / timer
+        unit_file.write_text(
+            f"[Unit]\nDescription={timer}\n[Timer]\nOnCalendar=daily\n"
+            "[Install]\nWantedBy=timers.target\n",
+            encoding="utf-8",
+        )
+        link = wants_dir / timer
+        if foreign_wants is not None:
+            target = foreign_wants / timer
+            target.write_text("stale dev copy\n", encoding="utf-8")
+            link.symlink_to(target)
+        else:
+            link.symlink_to(unit_file)
+
+
+def _verify_env(tmp_path: Path, unit_dir: Path, **overrides: str) -> dict[str, str]:
+    env = _fake_systemctl(tmp_path, unit_dir, os.environ.copy())
+    env["FAKE_SYSTEMCTL_ACTIVE"] = "1"
+    env.update(overrides)
+    return env
+
+
+def test_verify_timers_passes_when_durably_enabled(tmp_path: Path) -> None:
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir),
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_verify_timers_rejects_runtime_only_enablement(tmp_path: Path) -> None:
+    # Risk 4A: a timer left enabled --runtime (or merely started) loses its 17:56
+    # fire at the next wsl --shutdown, and the ledger timer is Persistent=false —
+    # the missed fire is never recovered. Only a persistent enable passes.
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir, FAKE_SYSTEMCTL_ENABLED="enabled-runtime"),
+    )
+    assert result.returncode != 0
+    assert "não persistente" in result.stderr
+
+
+def test_verify_timers_rejects_wants_symlink_outside_runtime(tmp_path: Path) -> None:
+    # Risk 4A: a wants symlink still pointing at the dev checkout dangles the day
+    # the dev tree moves, silently stopping the timer.
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir, foreign_wants=tmp_path / "dev-checkout")
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir),
+    )
+    assert result.returncode != 0
+    assert "aponta fora do runtime" in result.stderr
+
+
+def test_verify_timers_requires_linger_when_asked(tmp_path: Path) -> None:
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    env = _verify_env(tmp_path, unit_dir)
+    env |= _fake_loginctl(tmp_path, env, linger="no")
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir), "--require-linger"],
+        env=env,
+    )
+    assert result.returncode != 0
+    assert "linger desativado" in result.stderr
+
+
+def test_verify_timers_rejects_inactive_timer(tmp_path: Path) -> None:
+    # Risk 4A: enabled porém inativo (ex.: reenable sem start) não dispara.
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir, FAKE_SYSTEMCTL_ACTIVE="0"),
+    )
+    assert result.returncode != 0
+    assert "timer inativo" in result.stderr
+
+
+def test_verify_timers_rejects_missing_next_fire(tmp_path: Path) -> None:
+    # Risk 4A: is-enabled/is-active podem passar enquanto o timer não tem próximo
+    # disparo agendado (NextElapseUSecRealtime=0); o gate não pode aceitar isso —
+    # é o furo que o antigo `list-timers | grep` deixava passar.
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir, FAKE_SYSTEMCTL_NEXT_ELAPSE="0"),
+    )
+    assert result.returncode != 0
+    assert "sem próximo disparo" in result.stderr
+
+
+def test_verify_timers_rejects_broken_wants_symlink(tmp_path: Path) -> None:
+    # Risk 4A: o dia em que o checkout de dev é movido, o symlink wants herdado
+    # dangla (realpath -e falha) e o timer para em silêncio; o gate deve rejeitar.
+    unit_dir = tmp_path / "units"
+    _seed_runtime_timer_dir(unit_dir)
+    link = unit_dir / "timers.target.wants" / TIMER_UNITS[0]
+    link.unlink()
+    link.symlink_to(tmp_path / "gone" / TIMER_UNITS[0])
+    result = _run(
+        [str(VERIFY_RUNTIME_UNITS), "--unit-dir", str(unit_dir)],
+        env=_verify_env(tmp_path, unit_dir),
+    )
+    assert result.returncode != 0
+    assert "aponta fora do runtime" in result.stderr
