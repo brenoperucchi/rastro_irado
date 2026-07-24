@@ -45,7 +45,10 @@ sem a autorização explícita de corte**.
    não transformar um typo em uma raiz nova.
 4. Confirmar janela de manutenção e a ausência de writers não gerenciados. O
    checkpoint e os manifestos detectam concorrência observável, mas não podem
-   provar que um processo externo não escreverá após a última checagem.
+   provar que um processo externo não escreverá após a última checagem. A
+   evidência executável dessa ausência está no fim do passo 2 (bloco
+   pós-stop/pré-cópia); este pré-requisito segue sendo o ack humano do resíduo
+   t+1 que nenhum comando cobre.
 5. Confirmar espaço em `C:` para um clone, `data/`, staging e estado de
    rollback. O estado de rollback deve ficar fora do checkout e no mesmo
    volume NTFS.
@@ -109,6 +112,162 @@ Todos precisam estar `inactive`. O GEX é parado antes do collector porque seu
 wrapper pode religar o collector no `trap`. O frontend transient também deve
 ter descarregado; o instalador recusa continuar se o `FragmentPath` ainda vier
 de `/run/user/.../systemd/transient/`.
+
+Antes de copiar, prove que nenhum writer **não gerenciado** sobreviveu ao stop.
+`is-active == inactive` só prova que o systemd desligou a UNIT; o wrapper da API
+dá `exec` num `py.exe` do Windows (`api-wsl.sh:19`) e o de ticks lança o terminal
+MT5 pelo `powershell.exe` e só depois dá `exec` num `py.exe`
+(`win-ticks-wsl.sh:22-26`) — um órfão Windows pode seguir vivo segurando
+`irai.db`, **invisível ao `lsof` do WSL** (que só enxerga processos Linux). A
+checagem **autoritativa** aqui é a sonda de *open exclusivo* (1): ela pega
+QUALQUER handle Windows do arquivo — inclusive de outro usuário/SYSTEM e de um
+writer "formato operador" (uma calibração, um `db.py --migrate` ou um REPL cuja
+CommandLine não casa nenhum marker de serviço). As demais checagens corroboram e
+ajudam a achar o PID. Rode este bloco DEPOIS do `is-active` e IMEDIATAMENTE antes
+da cópia; ele é a evidência executável do Pré-requisito Humano 4 (o resíduo t+1
+continua sendo o ack humano de janela).
+
+> Rode as linhas **sem** `set -e`: o `is-active` acima retorna status ≠ 0
+> justamente no caso esperado (`inactive`), e num shell com `set -e` isso
+> abortaria antes deste bloco.
+
+```bash
+PS_BIN=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe  # caminho absoluto: não depende do PATH interop
+DB_ROOT="$SOURCE_ROOT"          # corte inicial checkpoint-a a ORIGEM (na "Atualização" abaixo, DB_ROOT="$RUNTIME_ROOT")
+DB_PATH="$DB_ROOT/data/irai.db"
+DB_WIN="$(wslpath -w "$DB_PATH")"   # caminho NTFS (C:\...) para as sondas do Windows
+
+# (0) GUARDA DE IDENTIDADE: as units escrevem via o WorkingDirectory DELAS. Prove
+#     que esse arquivo é o MESMO que DB_PATH (hoje é alias do mesmo inode). Se
+#     divergir, o checkpoint/cópia tocaria um db diferente do que os writers
+#     seguram, e (1)-(8) pareceriam limpas sobre o db errado.
+UNIT_WD="$(systemctl --user show -p WorkingDirectory --value rastro-irado-api.service 2>/dev/null)"
+[ -n "$UNIT_WD" ] || UNIT_WD=/home/brenoperucchi/Devs/rastro_irado
+if [ "$(readlink -f "$UNIT_WD/data/irai.db" 2>/dev/null)" = "$(readlink -f "$DB_PATH" 2>/dev/null)" ]; then
+    echo "OK: units e DB_ROOT apontam para o mesmo irai.db"
+else
+    echo "FALHA: WorkingDirectory das units ($UNIT_WD) != DB_ROOT ($DB_ROOT) — NÃO copie até resolver"
+fi
+
+# (1) SONDA AUTORITATIVA (Windows) — open EXCLUSIVO do irai.db. FileShare 'None'
+#     lança IOException se QUALQUER processo Windows (qualquer usuário, incl.
+#     SYSTEM) tiver o arquivo aberto — pega writer "formato operador"/SYSTEM que a
+#     (3) por CommandLine e a (5) handle.exe sem admin NÃO enxergam. É read+close,
+#     não muta. $p/$s são do PowerShell (\$ no bash); $DB_WIN é expandido pelo bash.
+"$PS_BIN" -NoProfile -Command "
+  \$p = '$DB_WIN'
+  if (-not (Test-Path -LiteralPath \$p)) { 'NAO CHECADO: irai.db nao encontrado no Windows -> ' + \$p; exit 2 }
+  try {
+    ([IO.File]::Open(\$p,'Open','ReadWrite','None')).Close()
+    'OK: irai.db LIVRE (0 handle Windows)'
+    foreach (\$s in @(\$p + '-wal', \$p + '-shm')) {
+      if (Test-Path -LiteralPath \$s) {
+        try { ([IO.File]::Open(\$s,'Open','ReadWrite','None')).Close(); 'OK: livre ' + \$s }
+        catch { 'SEGURADO no Windows: ' + \$s + ' -> ' + \$_.Exception.Message; exit 1 }
+      }
+    }
+  } catch { 'SEGURADO no Windows: irai.db -> ' + \$_.Exception.Message + ' (use (3) p/ achar o PID)'; exit 1 }
+"
+
+# (2) SERVIÇOS NSSM: o repo tem scripts/install_nssm_services.ps1, que instala
+#     IRAI_* como serviços Windows LocalSystem (SYSTEM) — deployment alternativo ao
+#     systemd. Se existirem NESTE host, rodam à revelia do systemd e com CommandLine
+#     nula sem admin (invisíveis a (3)). Esperado: nenhum. Se listar, pare/desinstale
+#     em shell ELEVADO antes de prosseguir.
+"$PS_BIN" -NoProfile -Command "\$s = Get-Service IRAI_* -EA SilentlyContinue; if (\$s) { (\$s | Format-Table -Auto Name,Status,StartType | Out-String); 'ATENCAO: serviços NSSM IRAI_* existem -> pare/desinstale ELEVADO' } else { 'OK: nenhum serviço NSSM IRAI_*' }"
+
+# (3) IDENTIFICAÇÃO (Windows) — lista processos IRAI por CommandLine p/ achar o PID
+#     a matar. NÃO é o gate (writer operador/SYSTEM não casa aqui — use (1)/(2)).
+#     Aspas SIMPLES no bash: $_ e $PID são do PowerShell. Get-CimInstance/Win32_Process
+#     traz CommandLine (legível p/ processos do mesmo usuário sem admin). $PID exclui
+#     o próprio powershell (cuja CommandLine contém os markers do filtro). INSPECIONE.
+"$PS_BIN" -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -match "backend[\\/]workers|backend\.api\.main|uvicorn|collector_wsl|gex_worker|tick_collector_wsl") -and $_.ProcessId -ne $PID } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | Format-List'
+
+# (4) PORTA 8888 (API = py.exe Windows): Get-NetTCPConnection dá o OwningProcess,
+#     que o curl NÃO dá. -ErrorVariable separa "sem listener" (NotFound = ok) de erro
+#     REAL de consulta (=> NAO CHECADO), sem o fail-open do -EA SilentlyContinue mudo.
+#     mirrored (/mnt/c/Users/brenoperucchi/.wslconfig:2): curl 127.0.0.1:8888 ATÉ
+#     alcança a API Windows; só não identifica o dono.
+"$PS_BIN" -NoProfile -Command "if (-not (Get-Command Get-NetTCPConnection -EA SilentlyContinue)) { 'NAO CHECADO: Get-NetTCPConnection ausente -> netstat -ano | findstr :8888'; exit 2 }; \$e=\$null; \$c = Get-NetTCPConnection -State Listen -LocalPort 8888 -EA SilentlyContinue -ErrorVariable e; if (\$c) { \$c | Select-Object LocalAddress,LocalPort,OwningProcess | Format-List; 'porta 8888: HA listener (OwningProcess acima)' } elseif (\$e -and \$e[0].FullyQualifiedErrorId -notmatch 'NotFound') { 'NAO CHECADO: consulta 8888 falhou -> ' + \$e[0].Exception.Message; exit 2 } else { 'porta 8888: nada escutando' }"
+
+# (5) HANDLE (Sysinternals handle.exe) — CORROBORAÇÃO de (1), não autoritativa: SEM
+#     shell elevado a cobertura é INCOMPLETA (pode não ver handles de outro usuário/
+#     SYSTEM), e a (1) já cobre esses. Trate binário-ausente e status ≠ 0 como
+#     "NÃO CHECADO", nunca como limpo.
+if command -v handle.exe >/dev/null 2>&1; then
+    handle.exe -accepteula -nobanner irai.db || echo "NÃO CHECADO: handle.exe status ≠ 0 (rode elevado; a autoritativa é (1))"
+else
+    echo "handle.exe indisponível (não bloqueante; a sonda (1) é a autoritativa)"
+fi
+
+# (6) LINUX — strays nativos (ledger python3; vite/node) + holder Linux do db.
+if command -v pgrep >/dev/null 2>&1 && command -v grep >/dev/null 2>&1; then
+    strays="$(pgrep -af 'rastro_irado|irai|uvicorn|vite|p[-_]dynamic|collector|win[-_]ticks' | grep -v -e pgrep -e '/verify-')"
+    [ -n "$strays" ] && { printf '%s\n' "$strays"; echo "^ INSPECIONE strays Linux"; } || echo "(nenhum stray Linux por nome)"
+else
+    echo "NÃO CHECADO: pgrep/grep ausente"
+fi
+if command -v lsof >/dev/null 2>&1; then
+    if [ -e "$DB_PATH" ]; then
+        holders="$(lsof -- "$DB_PATH" 2>/dev/null)"   # lsof é Windows-cego; complementa (1)
+        [ -n "$holders" ] && { printf '%s\n' "$holders"; echo "^ holder Linux do db"; } || echo "lsof: nenhum holder Linux do db"
+    else
+        echo "NÃO CHECADO: $DB_PATH inexistente (DB_ROOT errado?)"
+    fi
+else
+    echo "NÃO CHECADO: lsof ausente"
+fi
+
+# (7) PORTAS 5175 (Vite) e 8888, lado LINUX (em mirrored o Get-NetTCPConnection pode
+#     não mostrar um listener Linux). Captura o ss ANTES do grep p/ falha de ss virar
+#     "NÃO CHECADO", não "fechado".
+if command -v ss >/dev/null 2>&1; then
+    if lst="$(ss -ltnH 2>/dev/null)"; then
+        open="$(printf '%s\n' "$lst" | grep -E ':(5175|8888)\b' || true)"
+        [ -n "$open" ] && { printf '%s\n' "$open"; echo "FALHA: 5175/8888 ainda aberto no lado Linux"; } || echo "OK: 5175/8888 fechados (Linux)"
+    else
+        echo "NÃO CHECADO: ss falhou"
+    fi
+else
+    echo "NÃO CHECADO: ss ausente -> netstat -ltn | grep -E ':(5175|8888)'"
+fi
+
+# (8) Sinal barato e não-mutante do -wal (1 amostra: mede PRESENÇA/tamanho, NÃO
+#     'crescendo'). -wal grande sugere writer recente; ausente/0 é normal. NÃO é o selo.
+if [ -e "$DB_PATH" ]; then
+    if [ -e "$DB_PATH-wal" ]; then ls -l "$DB_PATH-wal"; echo "^ -wal presente (tamanho; p/ tendência amostre 2x com sleep)"; else echo "sem -wal (quiescente)"; fi
+else
+    echo "NÃO CHECADO: $DB_PATH inexistente"
+fi
+```
+
+**Não leia um `echo` de falha como prova de ausência:** um comando que não roda
+(binário ausente, sem permissão, consulta com erro) reporta **"NÃO CHECADO"**, não
+quiescência — as guardas acima separam "rodou e não achou" de "não rodou/falhou".
+A checagem que MANDA é a sonda de open exclusivo (1); (3)/(5) só ajudam a achar o
+PID. Qualquer processo listado em (3) que seja inequivocamente IRAI e que o systemd
+já deveria ter parado: Windows → `"$PS_BIN" -NoProfile -Command "Stop-Process -Id
+<PID> -Force"`; Linux → `kill <PID>`. **Nunca** mate um PID só porque o nome é
+python/node — confirme a CommandLine primeiro. O terminal MT5 do win-ticks
+(portable, path `ira_ticks`) pode remanescer: é fonte de dados, não writer do
+`irai.db`, e é fechado à parte. Depois **re-rode (0)-(8)** até a (1) dar LIVRE.
+
+O selo final NÃO é manual: `copy-runtime-data.sh --apply` executa
+`runtime_require_all_units_inactive` e `wal_checkpoint(TRUNCATE)` exigindo
+`0|0|0` + `-wal` vazio como PRIMEIRA ação, imediatamente antes do stage-read
+(`runtime-data.sh:17-39`, `copy-runtime-data.sh:68,76-82`). Um checkpoint
+`0|0|0` bem-sucedido prova quiescência **naquele instante** — se um writer
+estiver de fato escrevendo ou segurando o write-lock, o `TRUNCATE` não retorna
+`0|0|0` e a cópia ABORTA sem tocar o runtime. Duas ressalvas mantêm o
+Pré-requisito Humano 4 como ack: (a) ele **não** prova que não exista uma conexão
+ociosa capaz de escrever DEPOIS (os manifestos `source-before`/`source-after` só
+detectam mudança DURANTE a cópia); (b) esse checkpoint roda no `sqlite3` **Linux
+sobre 9p** (a origem é DrvFs), enquanto os writers são `py.exe` **Windows/NTFS** —
+a interoperabilidade de lock 9p↔NTFS não é garantida, então o `0|0|0` não deve ser
+o ÚNICO detector de um writer Windows vivo. É por isso que a sonda de open
+exclusivo (1) roda ANTES, no mesmo domínio de lock dos writers: ela prova
+zero-handle-Windows para o checkpoint Linux nunca disputar com um writer nativo.
+Este bloco REDUZ, não elimina, a janela.
 
 ### 3. Copiar dados e provisionar frontend
 
@@ -239,6 +398,12 @@ systemctl --user stop rastro-irado-gex.service || true
 systemctl --user stop rastro-irado-api.service rastro-irado-win-ticks.service \
   rastro-irado-frontend.service rastro-irado-collector.service
 
+# Rode aqui as checagens (0)-(8) do bloco pós-stop/pré-cópia do passo 2, porém
+# SUBSTITUINDO a atribuição por DB_ROOT="$RUNTIME_ROOT" (não é reexecução literal:
+# o bloco fixa DB_ROOT="$SOURCE_ROOT") — inclusive a sonda de open exclusivo (1),
+# que agora prova o RUNTIME db livre. A atualização checkpoint-a o próprio DB do
+# runtime via snapshot-runtime-state.sh, não a origem.
+
 # Requer todas as units inativas, checkpoint WAL e snapshot verificado de data/.
 "$RUNTIME_ROOT/scripts/systemd/snapshot-runtime-state.sh" \
   --runtime-root "$RUNTIME_ROOT" --state-dir "$UPDATE_STATE_DIR" --apply
@@ -276,7 +441,10 @@ antes de escolher uma direção.
 ## Evidência de Conclusão
 
 Anexar ao IRAI-25, após a execução humana, os SHAs de runtime e rollback, os
-manifestos, `integrity_check`, `runtime-preflight` antes/depois da API, status
-das units, a saída de `verify-runtime-units.sh --require-linger` (prova de que os
-timers ficaram persistentes, ativos e wants-linked no runtime) e a confirmação de
-que o frontend persistente responde em `:5175`.
+manifestos, `integrity_check`, a saída do bloco de quiescência pós-stop
+(sonda de open exclusivo do `irai.db` = LIVRE, serviços NSSM ausentes,
+processos Windows/Linux, portas 8888/5175),
+`runtime-preflight` antes/depois da API, status das units, a saída de
+`verify-runtime-units.sh --require-linger` (prova de que os timers ficaram
+persistentes, ativos e wants-linked no runtime) e a confirmação de que o
+frontend persistente responde em `:5175`.
